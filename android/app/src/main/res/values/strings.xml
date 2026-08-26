@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">agroX</string>
+    <string name="title_activity_main">agroX</string>
+    <string name="package_name">market.agrox.app</string>
+    <string name="custom_url_scheme">market.agrox.app</string>
+</resources>

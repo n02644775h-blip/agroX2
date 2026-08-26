@@ -1,0 +1,6 @@
+{
+  "name": "agroX",
+  "description": "A modern agricultural marketplace platform connecting local farmers directly with buyers, featuring real-time ordering, farm inventory management, in-app messaging, notifications, and location-based discovery.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

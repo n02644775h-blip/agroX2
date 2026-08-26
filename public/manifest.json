@@ -1,0 +1,51 @@
+{
+  "name": "agroX - Direct Farm Market",
+  "short_name": "agroX",
+  "description": "Direct agricultural marketplace connecting farmers with buyers",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "window-controls-overlay"],
+  "background_color": "#F4F7F5",
+  "theme_color": "#166534",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "categories": ["shopping", "business", "food", "agriculture"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Marketplace",
+      "short_name": "Market",
+      "description": "Browse fresh local farm produce",
+      "url": "/?tab=marketplace",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Orders",
+      "short_name": "Orders",
+      "description": "Track active agricultural orders",
+      "url": "/?tab=orders",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Direct Messages",
+      "short_name": "Messages",
+      "description": "Chat with local producers and buyers",
+      "url": "/?tab=messages",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
