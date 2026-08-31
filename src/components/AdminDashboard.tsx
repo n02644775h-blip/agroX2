@@ -46,7 +46,10 @@ export const AdminDashboard: React.FC = () => {
   const [annContent, setAnnContent] = useState('');
   const [annPriority, setAnnPriority] = useState<'normal' | 'urgent'>('normal');
   const [annTarget, setAnnTarget] = useState<'all' | 'farmers' | 'buyers'>('all');
+  const [annCategory, setAnnCategory] = useState<'general' | 'logistics' | 'subsidy' | 'weather' | 'platform' | 'market_update'>('general');
+  const [annPinned, setAnnPinned] = useState(false);
   const [annSuccess, setAnnSuccess] = useState(false);
+  const [announcementsList, setAnnouncementsList] = useState<Announcement[]>([]);
 
   // New Category State
   const [newCatName, setNewCatName] = useState('');
@@ -55,18 +58,20 @@ export const AdminDashboard: React.FC = () => {
   const loadAdminData = async () => {
     setLoading(true);
     try {
-      const [statsData, usersData, prodsData, repsData, catsData] = await Promise.all([
+      const [statsData, usersData, prodsData, repsData, catsData, annsData] = await Promise.all([
         api.getAdminStats(),
         api.getUsers(),
         api.getProducts({}),
         api.getReports(),
-        api.getCategories()
+        api.getCategories(),
+        api.getAnnouncements()
       ]);
       setStats(statsData);
       setUsers(usersData);
       setProducts(prodsData);
       setReports(repsData);
       setCategories(catsData);
+      setAnnouncementsList(annsData);
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
@@ -116,15 +121,28 @@ export const AdminDashboard: React.FC = () => {
         content: annContent,
         priority: annPriority,
         targetAudience: annTarget,
-        author: 'Platform Administrator'
+        author: 'agroX Admin Team',
+        category: annCategory,
+        pinned: annPinned
       });
       setAnnSuccess(true);
       setAnnTitle('');
       setAnnContent('');
+      setAnnPinned(false);
       setTimeout(() => setAnnSuccess(false), 3000);
       await loadAdminData();
     } catch (err) {
       console.error('Failed to send announcement:', err);
+    }
+  };
+
+  const handleDeleteAnnouncement = async (annId: string) => {
+    if (!confirm('Remove this announcement post from public channels?')) return;
+    try {
+      await api.deleteAnnouncement(annId);
+      await loadAdminData();
+    } catch (err) {
+      console.error('Failed to delete announcement:', err);
     }
   };
 
@@ -481,79 +499,161 @@ export const AdminDashboard: React.FC = () => {
 
       {/* TAB: ANNOUNCEMENTS */}
       {activeTab === 'announcements' && (
-        <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs max-w-2xl space-y-4">
-          <h3 className="font-bold text-stone-900 text-base">Broadcast Marketplace Announcement</h3>
-          <p className="text-xs text-stone-500">
-            Publish site-wide banners to inform producers and buyers of logistics updates, market tips, and weather advisories.
-          </p>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-6 bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
+            <h3 className="font-bold text-stone-900 text-base flex items-center gap-2">
+              <Send className="w-4 h-4 text-purple-700" />
+              Broadcast Marketplace Bulletin
+            </h3>
+            <p className="text-xs text-stone-500">
+              Publish official announcements to the public community group visible in all Buyer and Seller accounts.
+            </p>
 
-          {annSuccess && (
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
-              Announcement broadcasted successfully to all users!
-            </div>
-          )}
+            {annSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-600" />
+                Announcement broadcasted successfully to all user feeds and community group!
+              </div>
+            )}
 
-          <form onSubmit={handleSendAnnouncement} className="space-y-4 text-xs">
-            <div>
-              <label className="font-semibold text-stone-700 block mb-1">Headline / Title</label>
-              <input
-                type="text"
-                value={annTitle}
-                onChange={e => setAnnTitle(e.target.value)}
-                placeholder="e.g. Winter Wheat Harvest Subsidy Announcement"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="font-semibold text-stone-700 block mb-1">Content / Message</label>
-              <textarea
-                rows={3}
-                value={annContent}
-                onChange={e => setAnnContent(e.target.value)}
-                placeholder="Detailed instructions or update message..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleSendAnnouncement} className="space-y-4 text-xs">
               <div>
-                <label className="font-semibold text-stone-700 block mb-1">Priority Level</label>
-                <select
-                  value={annPriority}
-                  onChange={e => setAnnPriority(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl"
-                >
-                  <option value="normal">Normal (Green)</option>
-                  <option value="urgent">Urgent / Alert (Amber)</option>
-                </select>
+                <label className="font-semibold text-stone-700 block mb-1">Headline / Title</label>
+                <input
+                  type="text"
+                  value={annTitle}
+                  onChange={e => setAnnTitle(e.target.value)}
+                  placeholder="e.g. 🌿 Direct Spring Market 2026 Opening"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  required
+                />
               </div>
 
               <div>
-                <label className="font-semibold text-stone-700 block mb-1">Target Audience</label>
-                <select
-                  value={annTarget}
-                  onChange={e => setAnnTarget(e.target.value as any)}
-                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl"
-                >
-                  <option value="all">Everyone (Farmers & Buyers)</option>
-                  <option value="farmers">Farmers Only</option>
-                  <option value="buyers">Buyers Only</option>
-                </select>
+                <label className="font-semibold text-stone-700 block mb-1">Content / Message</label>
+                <textarea
+                  rows={4}
+                  value={annContent}
+                  onChange={e => setAnnContent(e.target.value)}
+                  placeholder="Detailed instructions or update message for farmers and buyers..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  required
+                />
               </div>
-            </div>
 
-            <button
-              type="submit"
-              className="w-full py-3 bg-purple-800 hover:bg-purple-900 text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
-            >
-              <Send className="w-4 h-4" />
-              Publish Announcement
-            </button>
-          </form>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Category</label>
+                  <select
+                    value={annCategory}
+                    onChange={e => setAnnCategory(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl"
+                  >
+                    <option value="general">General Updates</option>
+                    <option value="platform">🌿 Platform Features</option>
+                    <option value="logistics">🚛 Logistics & Transport</option>
+                    <option value="subsidy">💰 Subsidies & Grants</option>
+                    <option value="weather">🌧️ Weather Advisory</option>
+                    <option value="market_update">📊 Market Prices</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Target Audience</label>
+                  <select
+                    value={annTarget}
+                    onChange={e => setAnnTarget(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl"
+                  >
+                    <option value="all">Everyone (Farmers & Buyers)</option>
+                    <option value="farmers">Farmers Only</option>
+                    <option value="buyers">Buyers Only</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 pt-1">
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Priority</label>
+                  <select
+                    value={annPriority}
+                    onChange={e => setAnnPriority(e.target.value as any)}
+                    className="px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl"
+                  >
+                    <option value="normal">Normal (Green)</option>
+                    <option value="urgent">Urgent Alert (Red)</option>
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-2 text-xs text-stone-700 cursor-pointer select-none mt-4">
+                  <input
+                    type="checkbox"
+                    checked={annPinned}
+                    onChange={e => setAnnPinned(e.target.checked)}
+                    className="rounded text-purple-700 focus:ring-purple-500"
+                  />
+                  <span>Pin to top of channel</span>
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-purple-800 hover:bg-purple-900 text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                Publish & Broadcast Live
+              </button>
+            </form>
+          </div>
+
+          {/* Active Announcements Stream List */}
+          <div className="lg:col-span-6 space-y-3">
+            <h3 className="font-bold text-stone-900 text-base">Published Channel Bulletins ({announcementsList.length})</h3>
+            <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
+              {announcementsList.length === 0 ? (
+                <div className="p-8 text-center bg-white rounded-2xl border border-stone-200 text-xs text-stone-400">
+                  No active announcements.
+                </div>
+              ) : (
+                announcementsList.map(ann => (
+                  <div
+                    key={ann.id}
+                    className="p-4 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-stone-900">{ann.title}</span>
+                        {ann.pinned && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                            Pinned
+                          </span>
+                        )}
+                        {ann.priority === 'urgent' && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
+                            Urgent
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAnnouncement(ann.id)}
+                        className="text-stone-400 hover:text-rose-600 p-1 rounded-lg transition-colors"
+                        title="Delete announcement"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-stone-600 leading-relaxed">{ann.content}</p>
+
+                    <div className="flex items-center justify-between text-[11px] text-stone-400 pt-1 border-t border-stone-100">
+                      <span>Audience: <strong>{ann.targetAudience}</strong></span>
+                      <span>{new Date(ann.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       )}
 

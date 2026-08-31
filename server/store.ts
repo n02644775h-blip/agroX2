@@ -559,7 +559,12 @@ class MarketplaceStore {
       if (a.targetAudience === 'all') return true;
       if (role && a.targetAudience === `${role}s`) return true;
       return true;
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }).sort((a, b) => {
+      // Pinned items first, then newest
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   }
 
   createAnnouncement(ann: Omit<Announcement, 'id' | 'createdAt' | 'active'>): Announcement {
@@ -568,11 +573,13 @@ class MarketplaceStore {
       ...ann,
       id,
       createdAt: new Date().toISOString(),
-      active: true
+      active: true,
+      likesCount: 0,
+      reactions: { '👍': 1 }
     };
     this.announcements.unshift(newAnn);
 
-    // Broadcast notifications
+    // Broadcast notifications to targeted users
     this.users.forEach(u => {
       if (ann.targetAudience === 'all' || (ann.targetAudience === 'farmers' && u.role === 'farmer') || (ann.targetAudience === 'buyers' && u.role === 'buyer')) {
         this.createNotification({
@@ -580,6 +587,7 @@ class MarketplaceStore {
           title: `Announcement: ${ann.title}`,
           message: ann.content.substring(0, 100) + '...',
           type: 'announcement',
+          link: '/messages',
           read: false,
           createdAt: new Date().toISOString()
         });
@@ -587,6 +595,25 @@ class MarketplaceStore {
     });
 
     return newAnn;
+  }
+
+  reactToAnnouncement(id: string, reaction: string): Announcement | undefined {
+    const ann = this.announcements.find(a => a.id === id);
+    if (ann) {
+      if (!ann.reactions) ann.reactions = {};
+      ann.reactions[reaction] = (ann.reactions[reaction] || 0) + 1;
+      ann.likesCount = (ann.likesCount || 0) + 1;
+    }
+    return ann;
+  }
+
+  deleteAnnouncement(id: string): boolean {
+    const idx = this.announcements.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      this.announcements.splice(idx, 1);
+      return true;
+    }
+    return false;
   }
 
   // --- Reports ---

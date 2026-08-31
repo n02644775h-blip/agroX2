@@ -27,13 +27,13 @@ interface AddEditProductModalProps {
 
 const SAMPLE_AGRI_IMAGES = [
   'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&q=80&w=800', // Tomatoes
-  'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&q=80&w=800', // Maize
+  'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&q=80&w=800', // Maize / Hybrid Seed
+  'https://images.unsplash.com/photo-1548550023-2bdb3c5beed7?auto=format&fit=crop&q=80&w=800', // Breeding Roadrunners / Poultry
+  'https://images.unsplash.com/photo-1524024973431-2ad916746881?auto=format&fit=crop&q=80&w=800', // Boer Goat Breeding Buck
+  'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?auto=format&fit=crop&q=80&w=800', // Cattle / Crossbred Heifers
   'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&q=80&w=800', // Eggs
   'https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&q=80&w=800', // Honey
-  'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&q=80&w=800', // Greens
-  'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&q=80&w=800', // Avocados
-  'https://images.unsplash.com/photo-1560493676-04071c5f467b?auto=format&fit=crop&q=80&w=800', // Carrots
-  'https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&q=80&w=800'  // Chicken
+  'https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&q=80&w=800'  // Avocados
 ];
 
 export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
@@ -227,14 +227,19 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
                 className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 bg-white"
               >
                 <option value="kg">Kilogram (kg)</option>
+                <option value="head">Head (Livestock / Sires)</option>
+                <option value="animal">Animal (Individual)</option>
+                <option value="pair">Breeding Pair (Male & Female)</option>
+                <option value="bird">Bird (Poultry / Pullet / Cockerel)</option>
+                <option value="bag_50kg">50kg Seed / Feed Bag</option>
+                <option value="bag">Standard Bag</option>
                 <option value="tray">Egg Tray (30pk)</option>
                 <option value="bunch">Fresh Bunch</option>
                 <option value="crate">Crate (Wooden/Plastic)</option>
                 <option value="litre">Litre (L)</option>
-                <option value="bag_50kg">50kg Sacked Bag</option>
-                <option value="bag">Standard Bag</option>
-                <option value="bird">Live/Dressed Bird</option>
-                <option value="piece">Per Piece / Head</option>
+                <option value="piece">Per Piece</option>
+                <option value="dozen">Per Dozen</option>
+                <option value="box">Per Box</option>
               </select>
             </div>
 
@@ -264,14 +269,27 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
             </div>
           </div>
 
+          {/* Special Breeding & Hybrid Tip */}
+          {category === 'cat-breeding' && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block font-bold">Crossbreed & Hybrid Listing Advice</strong>
+                <span>
+                  Highlight parent genetics (e.g. Kuroiler × Roadrunner, Boer × Matabele), age/stage, vaccination status, and expected hybrid performance (egg yield, drought resilience, growth rate).
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Description */}
           <div>
-            <label className="font-bold text-stone-700 block mb-1">Product Description & Harvest Notes</label>
+            <label className="font-bold text-stone-700 block mb-1">Product Description & Harvest / Lineage Notes</label>
             <textarea
               rows={3}
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="Describe taste, freshness, farming methods, and packaging specifications..."
+              placeholder="Describe breed characteristics, pedigree, vaccinations, growth rate, and collection details..."
               className="w-full px-3.5 py-2 rounded-xl border border-stone-300 text-stone-900 focus:outline-none"
             />
           </div>

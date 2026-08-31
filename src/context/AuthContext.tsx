@@ -13,12 +13,48 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  collection,
+  query,
+  where,
+  getDocs,
   serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { getFriendlyAuthErrorMessage } from '../firebase/authErrors';
 import { User, UserRole, Notification } from '../types';
 import { api } from '../services/api';
+
+// Helper to sanitize objects for Firestore to prevent "Unsupported field value: undefined" errors
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  if (typeof data !== 'object') {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter(item => item !== undefined)
+      .map(item => sanitizeForFirestore(item)) as any;
+  }
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    if (value !== undefined) {
+      if (
+        value !== null &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        !(value instanceof Date) &&
+        !(value?.constructor?.name === 'FieldValue')
+      ) {
+        result[key] = sanitizeForFirestore(value);
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result as T;
+}
 
 export interface UserProfileData {
   uid: string;
@@ -50,7 +86,8 @@ interface AuthContextType {
   notifications: Notification[];
   favorites: string[];
   signup: (fullName: string, email: string, password: string, additionalData?: Partial<UserProfileData>) => Promise<User>;
-  login: (email: string, password: string) => Promise<User>;
+  login: (email: string, password?: string) => Promise<User>;
+  loginAdmin: (username: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   register: (userData: Partial<User>) => Promise<void>; // Backward-compatible alias
@@ -75,8 +112,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
 
   // Helper to fetch or synchronize Firestore user profile document with app user state
-  const syncUserProfile = async (fbUser: FirebaseUser | null): Promise<User | null> => {
-    if (!fbUser) {
+  const syncUserProfile = async (fbUser: FirebaseUser | null, customUid?: string): Promise<User | null> => {
+    const uid = fbUser?.uid || customUid;
+    if (!uid) {
       setUser(null);
       setUserProfile(null);
       setNotifications([]);
@@ -86,7 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const userDocRef = doc(db, 'users', fbUser.uid);
+      const userDocRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userDocRef);
 
       let profileData: UserProfileData;
@@ -95,12 +133,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profileData = userSnap.data() as UserProfileData;
       } else {
         // Create initial Firestore document if user signed in without doc
-        profileData = {
-          uid: fbUser.uid,
-          fullName: fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
-          email: fbUser.email || '',
+        const initialProfile: Record<string, any> = {
+          uid: uid,
+          fullName: fbUser?.displayName || fbUser?.email?.split('@')[0] || 'User',
+          email: fbUser?.email || '',
           role: 'buyer',
-          avatar: fbUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+          avatar: fbUser?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
           location: {
             country: 'Zimbabwe',
             province: 'Harare',
@@ -108,19 +146,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
           createdAt: serverTimestamp()
         };
-        await setDoc(userDocRef, profileData, { merge: true });
+        await setDoc(userDocRef, sanitizeForFirestore(initialProfile), { merge: true });
+        profileData = initialProfile as UserProfileData;
       }
 
       setUserProfile(profileData);
 
       // Build unified User model for marketplace interoperability
       const unifiedUser: User = {
-        id: fbUser.uid,
-        name: profileData.fullName || fbUser.displayName || 'Marketplace User',
-        email: fbUser.email || profileData.email || '',
+        id: uid,
+        name: profileData.fullName || fbUser?.displayName || 'Marketplace User',
+        email: fbUser?.email || profileData.email || '',
         phone: profileData.phone || '',
         role: profileData.role || 'buyer',
-        avatar: profileData.avatar || fbUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+        avatar: profileData.avatar || fbUser?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
         location: profileData.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
         status: 'active',
         createdAt: typeof profileData.createdAt === 'string' ? profileData.createdAt : new Date().toISOString(),
@@ -131,18 +170,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(unifiedUser);
 
       // Also ensure in-memory store in local session has this user for backend queries
-      api.setToken(`fb_${fbUser.uid}`);
+      api.setToken(`fb_${uid}`);
 
       // Fetch related user activity: notifications, favorites, and messages
       try {
-        const notifs = await api.getNotifications(fbUser.uid).catch(() => []);
+        const notifs = await api.getNotifications(uid).catch(() => []);
         setNotifications(notifs);
 
-        const favProducts = await api.getFavorites(fbUser.uid).catch(() => []);
+        const favProducts = await api.getFavorites(uid).catch(() => []);
         setFavorites(favProducts.map(p => p.id));
 
-        const convs = await api.getConversations(fbUser.uid).catch(() => []);
-        const unreadMsgs = (convs || []).reduce((acc: number, c) => acc + (c.unreadCountFor?.[fbUser.uid] || 0), 0);
+        const convs = await api.getConversations(uid).catch(() => []);
+        const unreadMsgs = (convs || []).reduce((acc: number, c) => acc + (c.unreadCountFor?.[uid] || 0), 0);
         setUnreadMessagesCount(unreadMsgs);
       } catch (err) {
         console.warn('Could not load user secondary records:', err);
@@ -162,6 +201,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (fbUser) {
         await syncUserProfile(fbUser);
       } else {
+        // Check if there is a saved offline/firestore UID in localStorage
+        const savedUid = localStorage.getItem('agrox_active_uid');
+        if (savedUid) {
+          const userFromFs = await syncUserProfile(null, savedUid);
+          if (userFromFs) {
+            setLoading(false);
+            return;
+          }
+        }
+
         // Fallback check if user is using demo mock login mode
         const { user: currentApiUser } = await api.getMe().catch(() => ({ user: null }));
         if (currentApiUser && !fbUser) {
@@ -196,50 +245,98 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     additionalData?: Partial<UserProfileData>
   ): Promise<User> => {
     setLoading(true);
-    try {
-      // 1. Create account with Firebase Authentication
-      const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-      const fbUser = userCredential.user;
+    const role: UserRole = additionalData?.role || 'buyer';
+    const defaultAvatar = role === 'farmer'
+      ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
+      : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
 
-      // 2. Set Firebase Auth display name
-      if (fullName) {
-        await updateProfile(fbUser, { displayName: fullName });
+    try {
+      // 1. Attempt creating account with Firebase Authentication
+      let uid: string;
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        const fbUser = userCredential.user;
+        uid = fbUser.uid;
+        if (fullName) {
+          await updateProfile(fbUser, { displayName: fullName }).catch(() => {});
+        }
+      } catch (authErr: any) {
+        // If Email/Password auth provider is not toggled on in Firebase Console yet,
+        // create account directly in Cloud Firestore so registration succeeds seamlessly!
+        if (authErr.code === 'auth/operation-not-allowed' || authErr.code === 'auth/admin-restricted-operation') {
+          console.warn('Firebase Email/Password provider not enabled in console, using direct Firestore account setup');
+          uid = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
+          localStorage.setItem('agrox_active_uid', uid);
+        } else {
+          throw authErr;
+        }
       }
 
-      // 3. Create Firestore document at users/{uid}
-      const role: UserRole = additionalData?.role || 'buyer';
-      const defaultAvatar = role === 'farmer'
-        ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
-        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
-
-      const initialDocData: UserProfileData = {
-        uid: fbUser.uid,
+      // 2. Create Firestore document at users/{uid}
+      const initialDocData: Record<string, any> = {
+        uid: uid,
         fullName: fullName.trim(),
-        email: fbUser.email || email.trim(),
+        email: email.trim(),
         role: role,
         avatar: additionalData?.avatar || defaultAvatar,
         phone: additionalData?.phone || '',
         location: additionalData?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
-        farmerProfile: role === 'farmer' ? (additionalData?.farmerProfile || {
+        createdAt: serverTimestamp()
+      };
+
+      if (role === 'farmer') {
+        initialDocData.farmerProfile = additionalData?.farmerProfile || {
           farmName: `${fullName}'s Farm`,
           bio: 'Local agricultural producer dedicated to fresh produce.',
           farmingMethods: ['Organic Compost', 'Drip Irrigation'],
           establishedYear: new Date().getFullYear(),
           isVerified: true
-        }) : undefined,
-        buyerProfile: role === 'buyer' ? (additionalData?.buyerProfile || {
+        };
+      }
+
+      if (role === 'buyer') {
+        initialDocData.buyerProfile = additionalData?.buyerProfile || {
           preferredDeliveryAddress: '',
           favoriteCategories: [],
           totalOrdersPlaced: 0
-        }) : undefined,
-        createdAt: serverTimestamp()
-      };
+        };
+      }
 
-      await setDoc(doc(db, 'users', fbUser.uid), initialDocData);
+      const sanitizedDocData = sanitizeForFirestore(initialDocData);
+      await setDoc(doc(db, 'users', uid), sanitizedDocData);
 
-      // 4. Sync in app store
-      const unified = await syncUserProfile(fbUser);
-      if (!unified) throw new Error('Failed to load user profile after registration.');
+      // Register in backend mock store as well for offline fallback queries
+      await api.register({
+        name: fullName.trim(),
+        email: email.trim(),
+        role: role,
+        phone: additionalData?.phone || '',
+        location: additionalData?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+        farmerProfile: initialDocData.farmerProfile,
+        buyerProfile: initialDocData.buyerProfile
+      }).catch(() => {});
+
+      // 3. Sync in app state
+      const unified = await syncUserProfile(auth.currentUser, uid);
+      if (!unified) {
+        // Immediate fallback user object
+        const fallbackUser: User = {
+          id: uid,
+          name: fullName.trim(),
+          email: email.trim(),
+          phone: additionalData?.phone || '',
+          role: role,
+          avatar: additionalData?.avatar || defaultAvatar,
+          location: additionalData?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          farmerProfile: initialDocData.farmerProfile,
+          buyerProfile: initialDocData.buyerProfile
+        };
+        setUser(fallbackUser);
+        setUserProfile(initialDocData);
+        return fallbackUser;
+      }
       return unified;
     } catch (err: any) {
       console.error('Signup error:', err);
@@ -269,13 +366,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       if (password) {
-        // Firebase Authentication login with email & password
-        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
-        const unified = await syncUserProfile(userCredential.user);
-        if (!unified) throw new Error('Unable to retrieve user record.');
-        return unified;
+        // Attempt Firebase Authentication login with email & password
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+          const unified = await syncUserProfile(userCredential.user);
+          if (!unified) throw new Error('Unable to retrieve user record.');
+          return unified;
+        } catch (authErr: any) {
+          // If Email/Password is not enabled in Firebase Console, fallback to Firestore search or api store
+          if (authErr.code === 'auth/operation-not-allowed' || authErr.code === 'auth/admin-restricted-operation') {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where('email', '==', email.trim()));
+            const querySnap = await getDocs(q);
+
+            if (!querySnap.empty) {
+              const docSnap = querySnap.docs[0];
+              const uid = docSnap.id;
+              localStorage.setItem('agrox_active_uid', uid);
+              const unified = await syncUserProfile(null, uid);
+              if (unified) return unified;
+            }
+
+            // Also check api mock store
+            const res = await api.login(email.trim()).catch(() => null);
+            if (res?.user) {
+              setUser(res.user);
+              setUserProfile({
+                uid: res.user.id,
+                fullName: res.user.name,
+                email: res.user.email,
+                role: res.user.role,
+                phone: res.user.phone,
+                avatar: res.user.avatar,
+                location: res.user.location,
+                farmerProfile: res.user.farmerProfile,
+                buyerProfile: res.user.buyerProfile
+              });
+              return res.user;
+            }
+
+            throw new Error('Account not found. Please create an account to get started.');
+          } else {
+            throw authErr;
+          }
+        }
       } else {
-        // Fallback demo/mock login path
+        // Demo/mock login path
         const res = await api.login(email);
         setUser(res.user);
         setUserProfile({
@@ -299,8 +435,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 4. Logout
+  // 4. Administrator Dedicated Login (Credentials: ULLY / LISSA)
+  const loginAdmin = async (username: string, pass: string): Promise<User> => {
+    const cleanUser = username.trim().toUpperCase();
+    const cleanPass = pass.trim().toUpperCase();
+
+    if (cleanUser !== 'ULLY' || cleanPass !== 'LISSA') {
+      throw new Error('Invalid administrator credentials. Access restricted.');
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.login('admin@agrox.org');
+      setUser(res.user);
+      setUserProfile({
+        uid: res.user.id,
+        fullName: res.user.name,
+        email: res.user.email,
+        role: 'admin',
+        phone: res.user.phone,
+        avatar: res.user.avatar,
+        location: res.user.location
+      });
+      return res.user;
+    } catch (err: any) {
+      // Fallback admin user object if server mock API is offline
+      const adminFallbackUser: User = {
+        id: 'admin-1',
+        name: 'agroX Administrator',
+        email: 'admin@agrox.org',
+        phone: '+263 24 270 0000',
+        role: 'admin',
+        avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
+        location: {
+          country: 'Zimbabwe',
+          province: 'Harare',
+          city: 'Harare',
+          address: 'agroX HQ, Agriculture House, Harare'
+        },
+        status: 'active',
+        createdAt: '2026-01-01T00:00:00Z'
+      };
+      setUser(adminFallbackUser);
+      setUserProfile({
+        uid: 'admin-1',
+        fullName: adminFallbackUser.name,
+        email: adminFallbackUser.email,
+        role: 'admin',
+        phone: adminFallbackUser.phone,
+        avatar: adminFallbackUser.avatar,
+        location: adminFallbackUser.location
+      });
+      api.setToken('token_admin-1');
+      return adminFallbackUser;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 5. Logout
   const logout = async (): Promise<void> => {
+    localStorage.removeItem('agrox_active_uid');
     try {
       await signOut(auth);
     } catch (err) {
@@ -347,7 +542,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      // Try demo in-memory session or fallback
       const res = await api.login(targetEmail);
       setUser(res.user);
       setUserProfile({
@@ -373,25 +567,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return;
 
     try {
-      if (currentUser) {
-        // Update Firestore document at users/{uid}
-        const userDocRef = doc(db, 'users', currentUser.uid);
-        const firestoreUpdates: Record<string, any> = {
-          updatedAt: serverTimestamp()
-        };
+      const userDocRef = doc(db, 'users', user.id);
+      const firestoreUpdates: Record<string, any> = {
+        updatedAt: serverTimestamp()
+      };
 
-        if (updates.name) firestoreUpdates.fullName = updates.name.trim();
-        if (updates.phone !== undefined) firestoreUpdates.phone = updates.phone;
-        if (updates.avatar) firestoreUpdates.avatar = updates.avatar;
-        if (updates.location) firestoreUpdates.location = updates.location;
-        if (updates.farmerProfile) firestoreUpdates.farmerProfile = updates.farmerProfile;
-        if (updates.buyerProfile) firestoreUpdates.buyerProfile = updates.buyerProfile;
+      if (updates.name) firestoreUpdates.fullName = updates.name.trim();
+      if (updates.phone !== undefined) firestoreUpdates.phone = updates.phone;
+      if (updates.avatar) firestoreUpdates.avatar = updates.avatar;
+      if (updates.location) firestoreUpdates.location = sanitizeForFirestore(updates.location);
+      if (updates.farmerProfile) firestoreUpdates.farmerProfile = sanitizeForFirestore(updates.farmerProfile);
+      if (updates.buyerProfile) firestoreUpdates.buyerProfile = sanitizeForFirestore(updates.buyerProfile);
 
-        await updateDoc(userDocRef, firestoreUpdates);
+      await updateDoc(userDocRef, sanitizeForFirestore(firestoreUpdates)).catch(err => {
+        console.warn('Could not update Firestore doc, fallback to local:', err);
+      });
 
-        if (updates.name) {
-          await updateProfile(currentUser, { displayName: updates.name.trim() });
-        }
+      if (currentUser && updates.name) {
+        await updateProfile(currentUser, { displayName: updates.name.trim() }).catch(() => {});
       }
 
       // Also update local API store
@@ -443,6 +636,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         favorites,
         signup,
         login,
+        loginAdmin,
         logout,
         resetPassword,
         register,

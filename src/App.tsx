@@ -18,6 +18,7 @@ import { ReviewModal } from './components/ReviewModal';
 import { ReportModal } from './components/ReportModal';
 import { AuthModal } from './components/AuthModal';
 import { NotificationsModal } from './components/NotificationsModal';
+import { AdminAccessModal } from './components/AdminAccessModal';
 import { AndroidBottomNav } from './components/AndroidBottomNav';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { AndroidDeviceShell } from './components/AndroidDeviceShell';
@@ -30,7 +31,8 @@ import {
   ArrowRight,
   Phone,
   Mail,
-  MapPin
+  MapPin,
+  Lock
 } from 'lucide-react';
 
 export function App() {
@@ -53,6 +55,7 @@ export function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isAdminAccessOpen, setIsAdminAccessOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isAndroidView, setIsAndroidView] = useState(false);
 
@@ -69,6 +72,7 @@ export function App() {
       if (reportProduct) { setReportProduct(null); return true; }
       if (isAuthOpen) { setIsAuthOpen(false); return true; }
       if (isNotificationsOpen) { setIsNotificationsOpen(false); return true; }
+      if (isAdminAccessOpen) { setIsAdminAccessOpen(false); return true; }
       if (isInstallModalOpen) { setIsInstallModalOpen(false); return true; }
 
       // If on a sub-view, go back to marketplace
@@ -93,6 +97,7 @@ export function App() {
     reportProduct,
     isAuthOpen,
     isNotificationsOpen,
+    isAdminAccessOpen,
     isInstallModalOpen,
     currentView
   ]);
@@ -204,6 +209,7 @@ export function App() {
               setSelectedOrderForTracking(o);
               setCurrentView('orders');
             }}
+            onNavigate={handleNavigate}
           />
         )}
 
@@ -310,14 +316,24 @@ export function App() {
             <div className="space-y-2">
               <h5 className="font-bold text-white uppercase text-[11px] tracking-wider">Navigation</h5>
               <ul className="space-y-1.5 text-stone-400">
-                <li><button onClick={() => handleNavigate('marketplace')} className="hover:text-emerald-400">Marketplace Browse</button></li>
-                <li><button onClick={() => handleNavigate('buyer_dashboard')} className="hover:text-emerald-400">Buyer Hub</button></li>
-                <li><button onClick={() => handleNavigate('farmer_dashboard')} className="hover:text-emerald-400">Farmer Portal</button></li>
-                <li><button onClick={() => handleNavigate('orders')} className="hover:text-emerald-400">Order Tracking</button></li>
+                <li><button onClick={() => handleNavigate('marketplace')} className="hover:text-emerald-400 transition-colors">Marketplace Browse</button></li>
+                <li><button onClick={() => handleNavigate('buyer_dashboard')} className="hover:text-emerald-400 transition-colors">Buyer Hub</button></li>
+                <li><button onClick={() => handleNavigate('farmer_dashboard')} className="hover:text-emerald-400 transition-colors">Farmer Portal</button></li>
+                <li><button onClick={() => handleNavigate('orders')} className="hover:text-emerald-400 transition-colors">Order Tracking</button></li>
+                <li>
+                  <button
+                    id="footer-nav-admin-btn"
+                    onClick={() => setIsAdminAccessOpen(true)}
+                    className="text-stone-400 hover:text-purple-400 transition-colors flex items-center gap-1.5 font-medium pt-1"
+                  >
+                    <Lock className="w-3 h-3 text-purple-400" />
+                    <span>Admin Access</span>
+                  </button>
+                </li>
               </ul>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <h5 className="font-bold text-white uppercase text-[11px] tracking-wider">Contact & Support</h5>
               <div className="space-y-1.5 text-stone-400">
                 <div className="flex items-center gap-1.5">
@@ -333,17 +349,38 @@ export function App() {
                   <span>Harare & Provincial Hubs</span>
                 </div>
               </div>
+
+              {/* Prominent Footer Admin Access Button */}
+              <div className="pt-2">
+                <button
+                  id="footer-admin-access-btn"
+                  onClick={() => setIsAdminAccessOpen(true)}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-purple-950 text-stone-200 hover:text-white border border-stone-700/80 text-xs font-bold transition-all shadow-xs cursor-pointer group"
+                >
+                  <Lock className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300" />
+                  <span>Admin Access Portal</span>
+                </button>
+              </div>
             </div>
           </div>
 
           <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-stone-500 text-[11px]">
             <div>© {new Date().getFullYear()} agroX Digital Agricultural Marketplace. All rights reserved.</div>
-            <div className="flex gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <span>Fair Trade</span>
               <span>•</span>
               <span>Organic Standards</span>
               <span>•</span>
               <span>Direct Agriculture</span>
+              <span>•</span>
+              <button
+                id="footer-bottom-admin-access-link"
+                onClick={() => setIsAdminAccessOpen(true)}
+                className="text-stone-400 hover:text-purple-400 transition-colors flex items-center gap-1 font-semibold"
+              >
+                <ShieldCheck className="w-3 h-3 text-purple-400" />
+                <span>Admin Sign In</span>
+              </button>
             </div>
           </div>
         </div>
@@ -361,6 +398,18 @@ export function App() {
             setReportProduct(p);
           }}
           onSelectRelatedProduct={setSelectedProduct}
+        />
+      )}
+
+      {isAdminAccessOpen && (
+        <AdminAccessModal
+          isOpen={isAdminAccessOpen}
+          onClose={() => setIsAdminAccessOpen(false)}
+          onSuccess={() => {
+            setIsAdminAccessOpen(false);
+            setCurrentView('admin');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
       )}
 

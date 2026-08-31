@@ -301,6 +301,19 @@ class ApiService {
     });
   }
 
+  async reactToAnnouncement(id: string, reaction: string): Promise<Announcement> {
+    return this.request<Announcement>(`/announcements/${id}/react`, {
+      method: 'POST',
+      body: JSON.stringify({ reaction })
+    });
+  }
+
+  async deleteAnnouncement(id: string): Promise<void> {
+    await this.request(`/announcements/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   // --- Reports ---
   async getReports(): Promise<Report[]> {
     return this.request<Report[]>('/reports');

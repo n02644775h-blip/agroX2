@@ -23,7 +23,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onClose }) => {
-  const { login, signup, resetPassword, demoLogin } = useAuth();
+  const { login, signup, resetPassword, loginAdmin, demoLogin } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot_password'>(initialMode);
   const [role, setRole] = useState<UserRole>('buyer');
   const [fullName, setFullName] = useState('');
@@ -60,10 +60,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
 
     if (mode === 'login') {
       if (!email.trim()) {
-        setErrorMsg('Please enter your email address.');
+        setErrorMsg('Please enter your email or username.');
         return false;
       }
-      if (!/\S+@\S+\.\S+/.test(email.trim())) {
+      const isUllyAdmin = email.trim().toUpperCase() === 'ULLY';
+      if (!isUllyAdmin && !/\S+@\S+\.\S+/.test(email.trim())) {
         setErrorMsg('Please enter a valid email address.');
         return false;
       }
@@ -122,7 +123,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
         await resetPassword(email.trim());
         setSuccessMsg('Password reset email sent. Please check your inbox.');
       } else if (mode === 'login') {
-        await login(email.trim(), password);
+        if (email.trim().toUpperCase() === 'ULLY') {
+          await loginAdmin(email.trim(), password);
+        } else {
+          await login(email.trim(), password);
+        }
         onClose();
       } else {
         // Register user via Firebase Auth and create Firestore doc at users/{uid}

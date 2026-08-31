@@ -22,7 +22,8 @@ import {
   Package,
   Layers,
   Check,
-  ChevronDown
+  ChevronDown,
+  Dna
 } from 'lucide-react';
 
 interface MarketplaceProps {
@@ -31,6 +32,7 @@ interface MarketplaceProps {
 }
 
 const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
+  'cat-breeding': <Dna className="w-4 h-4" />,
   'cat-veg': <Carrot className="w-4 h-4" />,
   'cat-fruits': <Apple className="w-4 h-4" />,
   'cat-grains': <Wheat className="w-4 h-4" />,
@@ -201,7 +203,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
           {/* Quick Suggestions Chips */}
           <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-stone-300">
             <span className="font-medium opacity-80">Popular:</span>
-            {['Tomatoes', 'Maize', 'Fresh vegetables', 'Chicken', 'Eggs', 'Honey', 'Avocados'].map(tag => (
+            {['Breeding Crossbreeds', 'Hybrids', 'Tomatoes', 'Maize', 'Chicken', 'Eggs', 'Honey', 'Avocados'].map(tag => (
               <button
                 key={tag}
                 onClick={() => handleQuickTagClick(tag)}
@@ -451,6 +453,28 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
                 >
                   Apply Filters
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Breeding Spotlight Banner */}
+          {filters.category === 'cat-breeding' && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-linear-to-r from-emerald-900 via-teal-900 to-stone-900 text-white shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-emerald-700/50">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center shrink-0">
+                  <Dna className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                    <span>Breeding, Crossbreeds & Hybrids Hub</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/30 text-emerald-200 text-[10px] font-bold">
+                      Direct Farm Sires & F1 Hybrids
+                    </span>
+                  </h4>
+                  <p className="text-xs text-emerald-200/90 mt-0.5 leading-relaxed">
+                    Explore verified F1 crossbred livestock, disease-resilient hybrid roadrunners, superior bucks & bulls, and certified hybrid seed varieties directly from local breeders.
+                  </p>
+                </div>
               </div>
             </div>
           )}

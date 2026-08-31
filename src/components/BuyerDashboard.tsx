@@ -68,12 +68,21 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onNavigate, onSe
           </p>
         </div>
 
-        <button
-          onClick={() => onNavigate('marketplace')}
-          className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-900/30 transition-all shrink-0"
-        >
-          Explore Fresh Produce
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => onNavigate('messages')}
+            className="px-4 py-3 rounded-2xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs backdrop-blur-md transition-all shrink-0 flex items-center gap-2 border border-white/20"
+          >
+            <MessageSquare className="w-4 h-4 text-amber-300" />
+            <span>Community Chat & Bulletins</span>
+          </button>
+          <button
+            onClick={() => onNavigate('marketplace')}
+            className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-900/30 transition-all shrink-0"
+          >
+            Explore Fresh Produce
+          </button>
+        </div>
       </div>
 
       {/* Active Orders Tracker */}

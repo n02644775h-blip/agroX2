@@ -9,6 +9,8 @@ export function getFriendlyAuthErrorMessage(error: any): string {
   switch (code) {
     case 'auth/email-already-in-use':
       return 'An account with this email already exists. Please sign in instead.';
+    case 'auth/operation-not-allowed':
+      return 'Email/Password sign-in is not enabled in the Firebase Console. Please enable Email/Password under Firebase Console > Authentication > Sign-in method.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/weak-password':

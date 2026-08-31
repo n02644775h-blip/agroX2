@@ -1,6 +1,7 @@
 import { User, ProductCategory, Product, Order, Review, Message, Conversation, Notification, Announcement, Report } from '../src/types';
 
 export const INITIAL_CATEGORIES: ProductCategory[] = [
+  { id: 'cat-breeding', name: 'Breeding (Crossbreeds & Hybrids)', slug: 'breeding', icon: 'Dna', description: 'High-yield crossbred livestock, hybrid poultry, climate-resilient F1 seed varieties, and proven breeding stock' },
   { id: 'cat-veg', name: 'Vegetables', slug: 'vegetables', icon: 'Carrot', description: 'Fresh farm-picked leafy greens, roots, tubers & tomatoes' },
   { id: 'cat-fruits', name: 'Fruits', slug: 'fruits', icon: 'Apple', description: 'Seasonal orchard and field-harvested fresh fruits' },
   { id: 'cat-grains', name: 'Grains & Cereals', slug: 'grains', icon: 'Wheat', description: 'Maize, wheat, sorghum, millet, and rice' },
@@ -554,6 +555,131 @@ export const INITIAL_PRODUCTS: Product[] = [
     additionalNotes: 'Veterinary health clearance certificates provided on collection.',
     createdAt: '2026-08-01T10:00:00Z',
     updatedAt: '2026-08-19T11:00:00Z'
+  },
+  {
+    id: 'prod-13',
+    farmerId: 'farmer-2',
+    farmerName: 'Chipo Sibanda',
+    farmerAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+    farmName: 'Sunrise Pastoral & Poultry',
+    name: 'Kuroiler x Roadrunner F1 Crossbreed Breeding Pullets & Cockerels',
+    category: 'cat-breeding',
+    categoryName: 'Breeding (Crossbreeds & Hybrids)',
+    description: 'High-vitality F1 hybrid cross between dual-purpose Kuroiler genetics and indigenous resilient roadrunners. High egg laying capacity (220+ eggs/year), strong disease immunity, superior scavenging capability, and rapid meat maturity.',
+    price: 9.50,
+    unit: 'bird',
+    quantityAvailable: 45,
+    minOrderQuantity: 2,
+    images: [
+      'https://images.unsplash.com/photo-1548550023-2bdb3c5beed7?auto=format&fit=crop&q=80&w=800',
+      'https://images.unsplash.com/photo-1516467508483-a7212febe31a?auto=format&fit=crop&q=80&w=800'
+    ],
+    location: {
+      province: 'Midlands',
+      city: 'Gweru',
+      community: 'Thornhill Farmlands'
+    },
+    availability: 'available',
+    isOrganic: true,
+    featured: true,
+    rating: 4.9,
+    reviewsCount: 11,
+    additionalNotes: 'Fully vaccinated for Newcastle disease, Gumboro, and Fowl Pox. De-beaked and ready for free-range breeding.',
+    createdAt: '2026-08-20T09:00:00Z',
+    updatedAt: '2026-08-28T14:00:00Z'
+  },
+  {
+    id: 'prod-14',
+    farmerId: 'farmer-1',
+    farmerName: 'Tendai Moyo',
+    farmerAvatar: 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+    farmName: 'GreenFields Organic Farm',
+    name: 'Pure Boer x Mashona Cross Breeding Buck (Proven Sire Genetics)',
+    category: 'cat-breeding',
+    categoryName: 'Breeding (Crossbreeds & Hybrids)',
+    description: 'First-generation Boer x Mashona hybrid breeding buck (14 months old). Combines the thick muscular frame and rapid growth genetics of South African Boer goats with the tick-resistance, heat tolerance, and hardiness of indigenous Mashona goats.',
+    price: 135.00,
+    unit: 'head',
+    quantityAvailable: 5,
+    minOrderQuantity: 1,
+    images: [
+      'https://images.unsplash.com/photo-1524024973431-2ad916746881?auto=format&fit=crop&q=80&w=800'
+    ],
+    location: {
+      province: 'Mashonaland East',
+      city: 'Marondera',
+      community: 'Ruzawi Valley'
+    },
+    availability: 'available',
+    isOrganic: true,
+    featured: true,
+    rating: 5.0,
+    reviewsCount: 7,
+    additionalNotes: 'Ear-tagged, dewormed, and vetted with complete herd pedigree records.',
+    createdAt: '2026-08-18T10:00:00Z',
+    updatedAt: '2026-08-27T12:00:00Z'
+  },
+  {
+    id: 'prod-15',
+    farmerId: 'farmer-3',
+    farmerName: 'Farai Ndlovu',
+    farmerAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
+    farmName: 'Highlands Fruit & Dairy Estate',
+    name: 'Brahman x Simmental Cross Heifer (F1 Hybrid Breeding Stock)',
+    category: 'cat-breeding',
+    categoryName: 'Breeding (Crossbreeds & Hybrids)',
+    description: 'Top-tier F1 cross heifer showing remarkable hybrid vigor (heterosis). Exceptional daily weight gain, high milk yield potential for calves, superior foraging efficiency on veld pasture, and high tolerance to humid heat.',
+    price: 480.00,
+    unit: 'head',
+    quantityAvailable: 3,
+    minOrderQuantity: 1,
+    images: [
+      'https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?auto=format&fit=crop&q=80&w=800'
+    ],
+    location: {
+      province: 'Manicaland',
+      city: 'Mutare',
+      community: 'Vumba Highlands'
+    },
+    availability: 'available',
+    isOrganic: true,
+    featured: false,
+    rating: 4.9,
+    reviewsCount: 3,
+    additionalNotes: 'TB tested, Anthrax & Blackleg vaccinated. Sire breeding history available.',
+    createdAt: '2026-08-15T08:00:00Z',
+    updatedAt: '2026-08-26T16:00:00Z'
+  },
+  {
+    id: 'prod-16',
+    farmerId: 'farmer-1',
+    farmerName: 'Tendai Moyo',
+    farmerAvatar: 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+    farmName: 'GreenFields Organic Farm',
+    name: 'SC719 Certified Climate-Resilient Hybrid Seed Maize (50kg Bag)',
+    category: 'cat-breeding',
+    categoryName: 'Breeding (Crossbreeds & Hybrids)',
+    description: 'Certified three-way hybrid white dent seed maize. Engineered for remarkable drought resilience, high double-cobbing propensity, and exceptional grain yields exceeding 10-12 tonnes per hectare under good agronomic practice.',
+    price: 68.00,
+    unit: 'bag_50kg',
+    quantityAvailable: 40,
+    minOrderQuantity: 1,
+    images: [
+      'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&q=80&w=800'
+    ],
+    location: {
+      province: 'Mashonaland East',
+      city: 'Marondera',
+      community: 'Ruzawi Valley'
+    },
+    availability: 'available',
+    isOrganic: false,
+    featured: true,
+    rating: 5.0,
+    reviewsCount: 15,
+    additionalNotes: 'Pre-treated with fungicide and insecticide seed coating for superior germination vigor.',
+    createdAt: '2026-08-22T11:00:00Z',
+    updatedAt: '2026-08-29T10:00:00Z'
   }
 ];
 
@@ -889,23 +1015,51 @@ export const INITIAL_NOTIFICATIONS: Notification[] = [
 export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
   {
     id: 'ann-1',
-    title: 'Welcome to AgriConnect: Direct Spring Market 2026',
-    content: 'We are thrilled to launch AgriConnect connecting 150+ regional farming cooperatives directly with conscious household and commercial buyers. Enjoy zero middlemen markups and maximum freshness!',
+    title: '🌿 Welcome to agroX Marketplace: Direct Spring Harvest Season 2026',
+    content: 'We are thrilled to welcome all local farmers and buyers to agroX. Our platform connects regional farming cooperatives directly with conscious household and wholesale buyers with guaranteed zero middlemen markups and maximum harvest freshness.',
     priority: 'normal',
     targetAudience: 'all',
-    author: 'AgriConnect Team',
+    author: 'agroX Admin Team',
+    authorRole: 'admin',
+    authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
     createdAt: '2026-08-20T08:00:00Z',
-    active: true
+    active: true,
+    category: 'platform',
+    pinned: true,
+    likesCount: 24,
+    reactions: { '👍': 18, '❤️': 12, '🌱': 15 }
   },
   {
     id: 'ann-2',
-    title: 'Cold-Chain Delivery Subsidies Available for Registered Farmers',
-    content: 'Farmers in Mashonaland and Midlands can now access subsidized refrigerated collection routes every Tuesday and Friday through the AgriRoute initiative.',
+    title: '🚛 Cold-Chain Subsidized Routes for Registered Farmers',
+    content: 'Producers in Mashonaland and Midlands can now book subsidized refrigerated collection routes every Tuesday and Friday through the AgriRoute cold-chain initiative. Keep perishables fresh from farm gate to door!',
     priority: 'urgent',
     targetAudience: 'farmers',
     author: 'Agricultural Logistics Board',
+    authorRole: 'admin',
+    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
     createdAt: '2026-08-24T10:00:00Z',
-    active: true
+    active: true,
+    category: 'logistics',
+    pinned: false,
+    likesCount: 19,
+    reactions: { '👍': 14, '🚛': 9 }
+  },
+  {
+    id: 'ann-3',
+    title: '🌧️ Regional Weather & Rainfall Advisory for Midlands & Manicaland',
+    content: 'Scattered early showers are forecast across eastern highlands and central valleys this weekend. Buyers are advised to place weekend produce orders in advance to prevent road haulage delays.',
+    priority: 'normal',
+    targetAudience: 'all',
+    author: 'AgriMeteorology Desk',
+    authorRole: 'admin',
+    authorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400',
+    createdAt: '2026-08-28T07:30:00Z',
+    active: true,
+    category: 'weather',
+    pinned: false,
+    likesCount: 15,
+    reactions: { '🌧️': 11, '👍': 8 }
   }
 ];
 

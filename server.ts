@@ -461,7 +461,7 @@ async function startServer() {
   });
 
   app.post('/api/announcements', (req: Request, res: Response) => {
-    const { title, content, priority, targetAudience, author } = req.body;
+    const { title, content, priority, targetAudience, author, authorRole, authorAvatar, category, pinned } = req.body;
     if (!title || !content) return res.status(400).json({ error: 'Title and content required' });
 
     const newAnn = store.createAnnouncement({
@@ -469,10 +469,27 @@ async function startServer() {
       content,
       priority: priority || 'normal',
       targetAudience: targetAudience || 'all',
-      author: author || 'Platform Admin'
+      author: author || 'agroX Admin Team',
+      authorRole: authorRole || 'admin',
+      authorAvatar: authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+      category: category || 'general',
+      pinned: Boolean(pinned)
     });
 
     res.status(201).json(newAnn);
+  });
+
+  app.post('/api/announcements/:id/react', (req: Request, res: Response) => {
+    const { reaction } = req.body;
+    const updated = store.reactToAnnouncement(req.params.id, reaction || '👍');
+    if (!updated) return res.status(404).json({ error: 'Announcement not found' });
+    res.json(updated);
+  });
+
+  app.delete('/api/announcements/:id', (req: Request, res: Response) => {
+    const deleted = store.deleteAnnouncement(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Announcement not found' });
+    res.json({ success: true });
   });
 
   // --- Reports ---

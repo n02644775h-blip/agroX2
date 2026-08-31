@@ -14,6 +14,8 @@ export type ProductUnit =
   | 'liter'
   | 'litre'
   | 'head'
+  | 'animal'
+  | 'pair'
   | 'dozen'
   | 'box'
   | 'bird';
@@ -239,8 +241,36 @@ export interface Announcement {
   priority: 'low' | 'normal' | 'urgent';
   targetAudience: 'all' | 'farmers' | 'buyers';
   author: string;
+  authorRole?: string;
+  authorAvatar?: string;
   createdAt: string;
   active: boolean;
+  category?: 'logistics' | 'market_update' | 'subsidy' | 'weather' | 'general' | 'platform';
+  pinned?: boolean;
+  likesCount?: number;
+  reactions?: Record<string, number>;
+}
+
+export interface PublicAnnouncementMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: UserRole;
+  senderAvatar: string;
+  title?: string;
+  content: string;
+  priority: 'low' | 'normal' | 'urgent';
+  targetAudience: 'all' | 'farmers' | 'buyers';
+  category?: 'logistics' | 'market_update' | 'subsidy' | 'weather' | 'general' | 'platform';
+  isPinned?: boolean;
+  likesCount?: number;
+  likedBy?: string[];
+  createdAt: string;
+  attachments?: {
+    type: 'link' | 'image' | 'badge';
+    label: string;
+    url?: string;
+  }[];
 }
 
 export type ReportReason =

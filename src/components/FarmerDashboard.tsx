@@ -39,6 +39,7 @@ interface FarmerDashboardProps {
   onViewProduct: (product: Product) => void;
   onViewFarm: (farmerId: string) => void;
   onViewOrder: (order: Order) => void;
+  onNavigate?: (view: string, data?: any) => void;
 }
 
 export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
@@ -46,7 +47,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   onEditProduct,
   onViewProduct,
   onViewFarm,
-  onViewOrder
+  onViewOrder,
+  onNavigate
 }) => {
   const { user } = useAuth();
   const [stats, setStats] = useState<any>(null);
@@ -150,6 +152,16 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          {onNavigate && (
+            <button
+              id="farmer-announcements-chat-btn"
+              onClick={() => onNavigate('messages')}
+              className="px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold flex items-center gap-1.5 border border-emerald-200 transition-colors"
+            >
+              <span>📢 Bulletins & Chat</span>
+            </button>
+          )}
+
           {user && (
             <button
               id="view-public-farm-store-btn"
