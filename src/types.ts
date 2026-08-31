@@ -285,6 +285,44 @@ export type ReportReason =
   | 'out_of_stock_unresponsive'
   | 'fraud';
 
+export type AdRequestStatus = 'sent' | 'under_review' | 'approved' | 'rejected' | 'expired';
+
+export interface AdRequest {
+  id: string;
+  farmerId: string;
+  farmerName: string;
+  farmerAvatar?: string;
+  farmName: string;
+  farmerEmail?: string;
+  farmerPhone?: string;
+  productId?: string;
+  productName?: string;
+  productImage?: string;
+  productPrice?: number;
+  productUnit?: string;
+  category?: string;
+  categoryName?: string;
+  dealHeadline: string;
+  dealDescription: string;
+  discountPercentage?: number;
+  specialPrice?: number;
+  days: number; // 1 to 30 days
+  dailyRate: number; // $1 / day
+  totalAmount: number; // days * $1
+  proofOfPaymentUrl?: string; // POP image screenshot
+  proofOfPaymentFileName?: string;
+  paymentMethod?: 'ecocash' | 'innbucks' | 'bank_transfer' | 'cash';
+  paymentReference?: string;
+  status: AdRequestStatus;
+  adminFeedback?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  startDate?: string;
+  endDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Report {
   id: string;
   reporterId: string;

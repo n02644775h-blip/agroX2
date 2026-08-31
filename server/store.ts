@@ -10,7 +10,9 @@ import {
   Announcement,
   Report,
   OrderStatus,
-  ProductAvailability
+  ProductAvailability,
+  AdRequest,
+  AdRequestStatus
 } from '../src/types';
 import {
   INITIAL_USERS,
@@ -22,7 +24,8 @@ import {
   INITIAL_MESSAGES,
   INITIAL_NOTIFICATIONS,
   INITIAL_ANNOUNCEMENTS,
-  INITIAL_REPORTS
+  INITIAL_REPORTS,
+  INITIAL_AD_REQUESTS
 } from './data';
 
 class MarketplaceStore {
@@ -36,6 +39,7 @@ class MarketplaceStore {
   private notifications: Notification[] = [...INITIAL_NOTIFICATIONS];
   private announcements: Announcement[] = [...INITIAL_ANNOUNCEMENTS];
   private reports: Report[] = [...INITIAL_REPORTS];
+  private adRequests: AdRequest[] = [...INITIAL_AD_REQUESTS];
   private favorites: Record<string, string[]> = {
     'buyer-1': ['prod-1', 'prod-2', 'prod-5'],
     'buyer-2': ['prod-3', 'prod-4']
@@ -640,6 +644,132 @@ class MarketplaceStore {
       if (adminNotes) rep.adminNotes = adminNotes;
     }
     return rep;
+  }
+
+  // --- Advertisement Requests & Hot Deals ---
+  getAdRequests(farmerId?: string, status?: string): AdRequest[] {
+    let list = [...this.adRequests];
+    if (farmerId) {
+      list = list.filter(a => a.farmerId === farmerId);
+    }
+    if (status && status !== 'all') {
+      list = list.filter(a => a.status === status);
+    }
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  getAdRequestById(id: string): AdRequest | undefined {
+    return this.adRequests.find(a => a.id === id);
+  }
+
+  getActiveHotDeals(): AdRequest[] {
+    return this.adRequests
+      .filter(a => a.status === 'approved')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  createAdRequest(data: Omit<AdRequest, 'id' | 'createdAt' | 'updatedAt' | 'totalAmount' | 'dailyRate'> & { days: number }): AdRequest {
+    const id = `ad-${Date.now()}`;
+    const days = Math.min(Math.max(Number(data.days) || 1, 1), 30);
+    const dailyRate = 1.00;
+    const totalAmount = days * dailyRate;
+
+    const newAd: AdRequest = {
+      ...data,
+      id,
+      days,
+      dailyRate,
+      totalAmount,
+      status: data.status || 'sent',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    this.adRequests.unshift(newAd);
+
+    // Send notification to Admin
+    const admins = this.users.filter(u => u.role === 'admin');
+    admins.forEach(admin => {
+      this.createNotification({
+        userId: admin.id,
+        title: 'New Advertisement Request Submitted',
+        message: `${newAd.farmerName} (${newAd.farmName}) submitted a ${newAd.days}-day ad request ($${newAd.totalAmount.toFixed(2)}) for "${newAd.dealHeadline}".`,
+        type: 'announcement',
+        link: '/admin',
+        metadata: { adRequestId: newAd.id }
+      });
+    });
+
+    // Send confirmation to Farmer
+    this.createNotification({
+      userId: newAd.farmerId,
+      title: 'Advertisement Request Received (State: Sent)',
+      message: `Your ${newAd.days}-day promotion request for "${newAd.dealHeadline}" has been received and queued for administrative POP review.`,
+      type: 'order',
+      metadata: { adRequestId: newAd.id }
+    });
+
+    return newAd;
+  }
+
+  updateAdRequestStatus(
+    id: string,
+    status: AdRequestStatus,
+    adminFeedback?: string,
+    reviewedBy?: string
+  ): AdRequest | undefined {
+    const ad = this.adRequests.find(a => a.id === id);
+    if (!ad) return undefined;
+
+    ad.status = status;
+    ad.updatedAt = new Date().toISOString();
+    if (adminFeedback !== undefined) ad.adminFeedback = adminFeedback;
+    if (reviewedBy) ad.reviewedBy = reviewedBy;
+    ad.reviewedAt = new Date().toISOString();
+
+    if (status === 'approved') {
+      const now = new Date();
+      ad.startDate = now.toISOString();
+      const end = new Date(now.getTime() + ad.days * 24 * 60 * 60 * 1000);
+      ad.endDate = end.toISOString();
+
+      // Notify farmer of approval
+      this.createNotification({
+        userId: ad.farmerId,
+        title: '🎉 Advertisement Request APPROVED!',
+        message: `Your ad "${ad.dealHeadline}" has been approved and is now live on the Hot Deals banner for ${ad.days} days.`,
+        type: 'announcement',
+        metadata: { adRequestId: ad.id }
+      });
+    } else if (status === 'rejected') {
+      // Notify farmer of rejection
+      this.createNotification({
+        userId: ad.farmerId,
+        title: 'Advertisement Request Update: Rejected',
+        message: `Your ad request for "${ad.dealHeadline}" was declined.${adminFeedback ? ` Reason: ${adminFeedback}` : ''}`,
+        type: 'order',
+        metadata: { adRequestId: ad.id }
+      });
+    } else if (status === 'under_review') {
+      this.createNotification({
+        userId: ad.farmerId,
+        title: 'Advertisement Under Review',
+        message: `Your ad request for "${ad.dealHeadline}" is currently under review by our moderation team.`,
+        type: 'order',
+        metadata: { adRequestId: ad.id }
+      });
+    }
+
+    return ad;
+  }
+
+  deleteAdRequest(id: string): boolean {
+    const idx = this.adRequests.findIndex(a => a.id === id);
+    if (idx !== -1) {
+      this.adRequests.splice(idx, 1);
+      return true;
+    }
+    return false;
   }
 
   // --- Analytics & Statistics ---
