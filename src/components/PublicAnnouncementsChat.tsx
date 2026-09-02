@@ -44,6 +44,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
   const [isSending, setIsSending] = useState(false);
   const [showAdminComposer, setShowAdminComposer] = useState(false);
   const [postSuccessMessage, setPostSuccessMessage] = useState(false);
+  const [postErrorMessage, setPostErrorMessage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -70,11 +71,15 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
 
   const handleSendAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageInput.trim() || !titleInput.trim()) return;
+    if (!messageInput.trim() || !titleInput.trim()) {
+      setPostErrorMessage('Please enter both a title and message content.');
+      return;
+    }
 
     try {
       setIsSending(true);
-      await api.createAnnouncement({
+      setPostErrorMessage(null);
+      const created = await api.createAnnouncement({
         title: titleInput.trim(),
         content: messageInput.trim(),
         priority: priorityInput,
@@ -90,10 +95,12 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
       setMessageInput('');
       setPinInput(false);
       setPostSuccessMessage(true);
+      setAnnouncements(prev => [created, ...prev]);
       setTimeout(() => setPostSuccessMessage(false), 4000);
       await loadAnnouncements();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to broadcast announcement to chat:', err);
+      setPostErrorMessage(err?.message || 'Failed to post announcement. Please try again.');
     } finally {
       setIsSending(false);
     }
@@ -216,6 +223,12 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
               <div className="p-2.5 rounded-xl bg-emerald-100 border border-emerald-300 text-emerald-900 text-xs font-semibold flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-700" />
                 Announcement broadcasted successfully to all Buyer and Farmer feeds!
+              </div>
+            )}
+
+            {postErrorMessage && (
+              <div className="p-2.5 rounded-xl bg-red-100 border border-red-300 text-red-900 text-xs font-semibold flex items-center gap-2">
+                <span>⚠️ {postErrorMessage}</span>
               </div>
             )}
 

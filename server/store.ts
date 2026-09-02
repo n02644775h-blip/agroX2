@@ -512,9 +512,14 @@ class MarketplaceStore {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  createNotification(notif: Omit<Notification, 'id'>): Notification {
+  createNotification(notif: Partial<Notification> & { userId: string; title: string; message: string; type: Notification['type'] }): Notification {
     const id = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    const newNotif: Notification = { ...notif, id };
+    const newNotif: Notification = {
+      read: false,
+      createdAt: new Date().toISOString(),
+      ...notif,
+      id
+    };
     this.notifications.unshift(newNotif);
     return newNotif;
   }

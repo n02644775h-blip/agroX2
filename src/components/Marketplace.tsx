@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Product, ProductCategory, FilterState } from '../types';
+import { Product, ProductCategory, FilterState, AdRequest } from '../types';
 import { api } from '../services/api';
 import { ProductCard } from './ProductCard';
 import {
@@ -23,7 +23,12 @@ import {
   Layers,
   Check,
   ChevronDown,
-  Dna
+  Dna,
+  Flame,
+  Tag,
+  ArrowRight,
+  Clock,
+  ShieldCheck
 } from 'lucide-react';
 
 interface MarketplaceProps {
@@ -63,6 +68,7 @@ const PROVINCES = [
 export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSelectFarmer }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [hotDeals, setHotDeals] = useState<AdRequest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [showFiltersDrawer, setShowFiltersDrawer] = useState<boolean>(false);
 
@@ -81,7 +87,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
   const loadData = async () => {
     setLoading(true);
     try {
-      const [prodsData, catsData] = await Promise.all([
+      const [prodsData, catsData, hotDealsData] = await Promise.all([
         api.getProducts({
           searchQuery: filters.searchQuery,
           category: filters.category,
@@ -93,10 +99,12 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
           isOrganic: filters.isOrganic,
           sortBy: filters.sortBy
         }),
-        api.getCategories()
+        api.getCategories(),
+        api.getHotDeals().catch(() => [])
       ]);
       setProducts(prodsData);
       setCategories(catsData);
+      setHotDeals(hotDealsData);
     } catch (err) {
       console.error('Failed to load marketplace products:', err);
     } finally {
@@ -215,6 +223,134 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
           </div>
         </div>
       </div>
+
+      {/* SECTION: Hot Deals (Approved Advertisements) */}
+      {hotDeals.length > 0 && (
+        <section className="bg-gradient-to-r from-amber-50 via-orange-50 to-emerald-50 rounded-3xl p-6 border border-orange-200/80 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-orange-600 rounded-xl text-white shadow-xs">
+                <Flame className="w-5 h-5 fill-amber-300 text-white animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-black text-stone-900 text-lg sm:text-xl tracking-tight">
+                    Hot Deals & Farmer Specials
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full bg-orange-600 text-white font-extrabold text-[10px] uppercase tracking-wider shadow-2xs">
+                    Limited Time
+                  </span>
+                </div>
+                <p className="text-xs text-stone-600">
+                  Exclusive verified harvest promotions directly from our certified producers
+                </p>
+              </div>
+            </div>
+            <div className="text-xs text-orange-900 font-bold bg-white/80 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-orange-200 shrink-0">
+              ⚡ {hotDeals.length} Active {hotDeals.length === 1 ? 'Promotion' : 'Promotions'}
+            </div>
+          </div>
+
+          {/* Deals Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
+            {hotDeals.map(deal => (
+              <div
+                key={deal.id}
+                className="bg-white rounded-2xl border border-orange-200/70 p-4 shadow-sm hover:shadow-md hover:border-orange-400 transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group"
+              >
+                {/* Top Badge */}
+                <div className="flex items-start justify-between gap-2">
+                  <span className="px-2.5 py-1 rounded-lg bg-orange-100 text-orange-800 text-[11px] font-extrabold flex items-center gap-1 border border-orange-200">
+                    <Tag className="w-3 h-3 text-orange-600" />
+                    {deal.discountPercentage ? `${deal.discountPercentage}% OFF` : 'PROMO DEAL'}
+                  </span>
+                  <button
+                    onClick={() => onSelectFarmer(deal.farmerId)}
+                    className="text-[11px] font-bold text-stone-500 hover:text-emerald-700 truncate max-w-[140px]"
+                  >
+                    by {deal.farmName || deal.farmerName}
+                  </button>
+                </div>
+
+                {/* Product Image & Info */}
+                <div className="flex items-center gap-3">
+                  {deal.productImage && (
+                    <img
+                      src={deal.productImage}
+                      alt=""
+                      className="w-16 h-16 rounded-xl object-cover bg-stone-100 shrink-0 group-hover:scale-105 transition-transform"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-extrabold text-stone-900 text-sm leading-snug line-clamp-1">
+                      {deal.dealHeadline}
+                    </h3>
+                    <p className="text-[11px] text-stone-500 line-clamp-1 mt-0.5">
+                      {deal.dealDescription || deal.productName}
+                    </p>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      {deal.specialPrice ? (
+                        <>
+                          <span className="text-base font-black text-orange-700">
+                            ${deal.specialPrice.toFixed(2)}
+                          </span>
+                          {deal.productPrice && (
+                            <span className="text-xs text-stone-400 line-through">
+                              ${deal.productPrice.toFixed(2)}
+                            </span>
+                          )}
+                        </>
+                      ) : deal.productPrice ? (
+                        <span className="text-base font-black text-emerald-800">
+                          ${deal.productPrice.toFixed(2)}
+                        </span>
+                      ) : null}
+                      {deal.productUnit && (
+                        <span className="text-[11px] text-stone-500 font-medium">
+                          / {deal.productUnit}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action CTA */}
+                <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                  <span className="text-[10px] text-stone-400 font-semibold flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                    Verified Farmer POP
+                  </span>
+                  {deal.productId ? (
+                    <button
+                      onClick={() => {
+                        const targetProd = products.find(p => p.id === deal.productId);
+                        if (targetProd) {
+                          onSelectProduct(targetProd);
+                        } else {
+                          // Search for product by name
+                          handleQuickTagClick(deal.productName || deal.dealHeadline);
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <span>Claim Deal</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onSelectFarmer(deal.farmerId)}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <span>Visit Farm</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Main Two-Column Marketplace Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">

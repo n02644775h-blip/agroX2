@@ -16,7 +16,8 @@ import {
   Plus,
   Camera as CameraIcon,
   Upload,
-  Sparkles
+  Sparkles,
+  ChevronDown
 } from 'lucide-react';
 
 interface AddEditProductModalProps {
@@ -24,6 +25,18 @@ interface AddEditProductModalProps {
   onClose: () => void;
   onSuccess: (product: Product) => void;
 }
+
+const DEFAULT_CATEGORIES: ProductCategory[] = [
+  { id: 'cat-veg', name: 'Vegetables', slug: 'vegetables', icon: 'Carrot', description: 'Fresh vegetables' },
+  { id: 'cat-fruits', name: 'Fruits', slug: 'fruits', icon: 'Apple', description: 'Orchard and field fruits' },
+  { id: 'cat-breeding', name: 'Breeding (Crossbreeds & Hybrids)', slug: 'breeding', icon: 'Dna', description: 'High-yield crossbred livestock and hybrid seeds' },
+  { id: 'cat-poultry', name: 'Poultry & Game Birds', slug: 'poultry', icon: 'Bird', description: 'Chickens, ducks, turkeys, and game birds' },
+  { id: 'cat-livestock', name: 'Livestock & Small Ruminants', slug: 'livestock', icon: 'Beef', description: 'Cattle, goats, sheep, and pigs' },
+  { id: 'cat-dairy', name: 'Dairy & Farm Eggs', slug: 'dairy-eggs', icon: 'Egg', description: 'Fresh milk, artisanal cheeses, and farm eggs' },
+  { id: 'cat-grains', name: 'Grains, Cereals & Legumes', slug: 'grains', icon: 'Wheat', description: 'Maize, sorghum, millet, and dry beans' },
+  { id: 'cat-tubers', name: 'Tubers & Root Crops', slug: 'tubers', icon: 'Sprout', description: 'Potatoes, sweet potatoes, and cassava' },
+  { id: 'cat-honey', name: 'Honey & Natural Specialties', slug: 'honey', icon: 'Sparkles', description: 'Pure raw honey and bee products' }
+];
 
 const SAMPLE_AGRI_IMAGES = [
   'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&q=80&w=800', // Tomatoes
@@ -42,14 +55,14 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
   onSuccess
 }) => {
   const { user } = useAuth();
-  const [categories, setCategories] = useState<ProductCategory[]>([]);
-  const [loadingCats, setLoadingCats] = useState(true);
+  const [categories, setCategories] = useState<ProductCategory[]>(DEFAULT_CATEGORIES);
+  const [loadingCats, setLoadingCats] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const [name, setName] = useState(product?.name || '');
   const [category, setCategory] = useState(product?.category || 'cat-veg');
-  const [price, setPrice] = useState<string>(product?.price ? product.price.toString() : '');
+  const [price, setPrice] = useState<string>(product?.price !== undefined ? product.price.toString() : '');
   const [unit, setUnit] = useState<ProductUnit>(product?.unit || 'kg');
   const [quantityAvailable, setQuantityAvailable] = useState<string>(
     product?.quantityAvailable !== undefined ? product.quantityAvailable.toString() : '50'
@@ -66,13 +79,20 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
     product?.expiryDate ? product.expiryDate.split('T')[0] : ''
   );
   const [additionalNotes, setAdditionalNotes] = useState(product?.additionalNotes || '');
-  const [imageUrl, setImageUrl] = useState(product?.images[0] || SAMPLE_AGRI_IMAGES[0]);
+  const [imageUrl, setImageUrl] = useState(product?.images?.[0] || SAMPLE_AGRI_IMAGES[0]);
 
   useEffect(() => {
+    let isMounted = true;
     api.getCategories()
-      .then(cats => setCategories(cats))
-      .catch(() => {})
-      .finally(() => setLoadingCats(false));
+      .then(cats => {
+        if (isMounted && cats && cats.length > 0) {
+          setCategories(cats);
+        }
+      })
+      .catch(err => {
+        console.warn('Using default categories fallback:', err);
+      });
+    return () => { isMounted = false; };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -99,12 +119,12 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
     setErrorMsg('');
 
     try {
-      const selectedCategoryObj = categories.find(c => c.id === category);
+      const selectedCategoryObj = categories.find(c => c.id === category) || DEFAULT_CATEGORIES.find(c => c.id === category);
       const payload: Partial<Product> = {
         name: name.trim(),
-        category,
-        categoryName: selectedCategoryObj?.name || 'Produce',
-        description: description.trim(),
+        category: category || 'cat-veg',
+        categoryName: selectedCategoryObj?.name || 'Vegetables',
+        description: description.trim() || `${name.trim()} freshly harvested from ${user.farmerProfile?.farmName || user.name}`,
         price: numPrice,
         unit,
         quantityAvailable: numQty,
@@ -119,9 +139,9 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
         farmName: user.farmerProfile?.farmName || `${user.name}'s Farm`,
         farmerAvatar: user.avatar,
         location: {
-          province: user.location.province,
-          city: user.location.city,
-          community: user.location.community,
+          province: user.location?.province || 'Harare',
+          city: user.location?.city || 'Harare',
+          community: user.location?.community || 'Direct Market',
           address: user.farmerProfile?.address
         },
         availability: numQty <= 0 ? 'out_of_stock' : numQty <= 10 ? 'low_stock' : 'available'
@@ -191,15 +211,21 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
 
             <div>
               <label className="font-bold text-stone-700 block mb-1">Category *</label>
-              <select
-                value={category}
-                onChange={e => setCategory(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 bg-white focus:outline-none"
-              >
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="product-category-select"
+                  value={category}
+                  onChange={e => setCategory(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-medium appearance-none pr-8 cursor-pointer"
+                >
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
             </div>
           </div>
 

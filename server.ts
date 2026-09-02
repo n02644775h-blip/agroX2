@@ -556,6 +556,98 @@ async function startServer() {
     res.json(updated);
   });
 
+  // --- Advertisements, POP & Hot Deals ---
+  app.get('/api/ads', (req: Request, res: Response) => {
+    const farmerId = req.query.farmerId as string | undefined;
+    const status = req.query.status as string | undefined;
+    res.json(store.getAdRequests(farmerId, status));
+  });
+
+  app.get('/api/ads/hot-deals', (_req: Request, res: Response) => {
+    res.json(store.getActiveHotDeals());
+  });
+
+  app.get('/api/ads/:id', (req: Request, res: Response) => {
+    const ad = store.getAdRequestById(req.params.id);
+    if (!ad) return res.status(404).json({ error: 'Ad request not found' });
+    res.json(ad);
+  });
+
+  app.post('/api/ads', (req: Request, res: Response) => {
+    const {
+      farmerId,
+      farmerName,
+      farmerAvatar,
+      farmName,
+      farmerEmail,
+      farmerPhone,
+      productId,
+      productName,
+      productImage,
+      productPrice,
+      productUnit,
+      category,
+      categoryName,
+      dealHeadline,
+      dealDescription,
+      discountPercentage,
+      specialPrice,
+      days,
+      proofOfPaymentUrl,
+      proofOfPaymentFileName,
+      paymentMethod,
+      paymentReference
+    } = req.body;
+
+    if (!farmerId || !dealHeadline || !days) {
+      return res.status(400).json({ error: 'Missing required ad request fields' });
+    }
+
+    const created = store.createAdRequest({
+      farmerId,
+      farmerName: farmerName || 'Farmer',
+      farmerAvatar,
+      farmName: farmName || 'Local Farm',
+      farmerEmail,
+      farmerPhone,
+      productId,
+      productName,
+      productImage,
+      productPrice,
+      productUnit,
+      category,
+      categoryName,
+      dealHeadline,
+      dealDescription: dealDescription || '',
+      discountPercentage: discountPercentage ? Number(discountPercentage) : undefined,
+      specialPrice: specialPrice ? Number(specialPrice) : undefined,
+      days: Number(days),
+      proofOfPaymentUrl,
+      proofOfPaymentFileName,
+      paymentMethod: paymentMethod || 'ecocash',
+      paymentReference: paymentReference || '',
+      status: 'sent'
+    });
+
+    res.status(201).json(created);
+  });
+
+  app.put('/api/ads/:id/status', (req: Request, res: Response) => {
+    const { status, adminFeedback, reviewedBy } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+    const updated = store.updateAdRequestStatus(req.params.id, status, adminFeedback, reviewedBy);
+    if (!updated) return res.status(404).json({ error: 'Ad request not found' });
+    res.json(updated);
+  });
+
+  app.delete('/api/ads/:id', (req: Request, res: Response) => {
+    const deleted = store.deleteAdRequest(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Ad request not found' });
+    res.json({ success: true });
+  });
+
   // --- Statistics ---
   app.get('/api/stats/farmer/:id', (req: Request, res: Response) => {
     res.json(store.getFarmerStats(req.params.id));

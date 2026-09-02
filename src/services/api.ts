@@ -11,7 +11,10 @@ import {
   Report,
   OrderStatus,
   ProductAvailability,
-  FilterState
+  FilterState,
+  AdRequest,
+  AdRequestStatus,
+  AdStatus
 } from '../types';
 
 const API_BASE = '/api';
@@ -364,6 +367,48 @@ class ApiService {
 
   async getFarmerProfile(id: string): Promise<{ farmer: User; products: Product[]; reviews: Review[] }> {
     return this.request<{ farmer: User; products: Product[]; reviews: Review[] }>(`/farmers/${id}`);
+  }
+
+  // --- Ads, Advertisers & Hot Deals ---
+  async getAdRequests(params?: { farmerId?: string; status?: string }): Promise<AdRequest[]> {
+    const query = new URLSearchParams();
+    if (params?.farmerId) query.append('farmerId', params.farmerId);
+    if (params?.status) query.append('status', params.status);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    return this.request<AdRequest[]>(`/ads${queryString}`);
+  }
+
+  async getHotDeals(): Promise<AdRequest[]> {
+    return this.request<AdRequest[]>('/ads/hot-deals');
+  }
+
+  async getAdRequestById(id: string): Promise<AdRequest> {
+    return this.request<AdRequest>(`/ads/${id}`);
+  }
+
+  async createAdRequest(ad: Partial<AdRequest>): Promise<AdRequest> {
+    return this.request<AdRequest>('/ads', {
+      method: 'POST',
+      body: JSON.stringify(ad)
+    });
+  }
+
+  async updateAdRequestStatus(
+    id: string,
+    status: AdRequestStatus,
+    adminFeedback?: string,
+    reviewedBy?: string
+  ): Promise<AdRequest> {
+    return this.request<AdRequest>(`/ads/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, adminFeedback, reviewedBy })
+    });
+  }
+
+  async deleteAdRequest(id: string): Promise<void> {
+    await this.request(`/ads/${id}`, {
+      method: 'DELETE'
+    });
   }
 
   // --- Analytics ---

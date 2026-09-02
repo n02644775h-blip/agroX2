@@ -285,7 +285,8 @@ export type ReportReason =
   | 'out_of_stock_unresponsive'
   | 'fraud';
 
-export type AdRequestStatus = 'sent' | 'under_review' | 'approved' | 'rejected' | 'expired';
+export type AdRequestStatus = 'submitted' | 'sent' | 'under_review' | 'approved' | 'rejected' | 'expired';
+export type AdStatus = AdRequestStatus;
 
 export interface AdRequest {
   id: string;
@@ -306,14 +307,17 @@ export interface AdRequest {
   dealDescription: string;
   discountPercentage?: number;
   specialPrice?: number;
-  days: number; // 1 to 30 days
-  dailyRate: number; // $1 / day
-  totalAmount: number; // days * $1
+  durationDays?: number; // 1 to 30 days
+  days?: number; // 1 to 30 days
+  dailyRate?: number; // $1 / day
+  totalFee?: number; // days * $1
+  totalAmount?: number; // days * $1
   proofOfPaymentUrl?: string; // POP image screenshot
   proofOfPaymentFileName?: string;
-  paymentMethod?: 'ecocash' | 'innbucks' | 'bank_transfer' | 'cash';
+  paymentMethod?: string;
   paymentReference?: string;
   status: AdRequestStatus;
+  adminNotes?: string;
   adminFeedback?: string;
   reviewedBy?: string;
   reviewedAt?: string;

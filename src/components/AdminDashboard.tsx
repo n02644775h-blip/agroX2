@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { User, Product, Report, Announcement, ProductCategory } from '../types';
+import { User, Product, Report, Announcement, ProductCategory, AdRequest, AdStatus } from '../types';
 import {
   ShieldCheck,
   Users,
@@ -18,7 +18,18 @@ import {
   Layers,
   FileText,
   TrendingUp,
-  Tag
+  Tag,
+  Flame,
+  Clock,
+  Eye,
+  Check,
+  X,
+  ExternalLink,
+  Receipt,
+  FileCheck,
+  CreditCard,
+  MessageSquare,
+  AlertCircle
 } from 'lucide-react';
 import {
   BarChart,
@@ -38,7 +49,8 @@ export const AdminDashboard: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'products' | 'reports' | 'announcements' | 'categories'>('overview');
+  const [adRequests, setAdRequests] = useState<AdRequest[]>([]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'products' | 'reports' | 'announcements' | 'categories' | 'advertisers'>('overview');
   const [loading, setLoading] = useState(true);
 
   // Announcement state
@@ -49,22 +61,31 @@ export const AdminDashboard: React.FC = () => {
   const [annCategory, setAnnCategory] = useState<'general' | 'logistics' | 'subsidy' | 'weather' | 'platform' | 'market_update'>('general');
   const [annPinned, setAnnPinned] = useState(false);
   const [annSuccess, setAnnSuccess] = useState(false);
+  const [annError, setAnnError] = useState<string | null>(null);
+  const [isPublishingAnn, setIsPublishingAnn] = useState(false);
   const [announcementsList, setAnnouncementsList] = useState<Announcement[]>([]);
 
-  // New Category State
+  // Category State
   const [newCatName, setNewCatName] = useState('');
   const [newCatDesc, setNewCatDesc] = useState('');
+
+  // Advertisers POP Viewer Modal
+  const [viewingPopAd, setViewingPopAd] = useState<AdRequest | null>(null);
+  const [adStatusFilter, setAdStatusFilter] = useState<'all' | 'submitted' | 'under_review' | 'approved' | 'rejected'>('all');
+  const [adminNotesInput, setAdminNotesInput] = useState<{ [key: string]: string }>({});
+  const [updatingAdId, setUpdatingAdId] = useState<string | null>(null);
 
   const loadAdminData = async () => {
     setLoading(true);
     try {
-      const [statsData, usersData, prodsData, repsData, catsData, annsData] = await Promise.all([
+      const [statsData, usersData, prodsData, repsData, catsData, annsData, adsData] = await Promise.all([
         api.getAdminStats(),
         api.getUsers(),
         api.getProducts({}),
         api.getReports(),
         api.getCategories(),
-        api.getAnnouncements()
+        api.getAnnouncements(),
+        api.getAdRequests().catch(() => [])
       ]);
       setStats(statsData);
       setUsers(usersData);
@@ -72,6 +93,7 @@ export const AdminDashboard: React.FC = () => {
       setReports(repsData);
       setCategories(catsData);
       setAnnouncementsList(annsData);
+      setAdRequests(adsData);
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
@@ -112,27 +134,41 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  // Fixed Announcement Publication
   const handleSendAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!annTitle || !annContent) return;
+    if (!annTitle.trim() || !annContent.trim()) {
+      setAnnError('Please provide both a headline and content for the announcement.');
+      return;
+    }
+
     try {
-      await api.createAnnouncement({
-        title: annTitle,
-        content: annContent,
+      setIsPublishingAnn(true);
+      setAnnError(null);
+      const created = await api.createAnnouncement({
+        title: annTitle.trim(),
+        content: annContent.trim(),
         priority: annPriority,
         targetAudience: annTarget,
         author: 'agroX Admin Team',
+        authorRole: 'admin',
+        authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
         category: annCategory,
         pinned: annPinned
       });
+
       setAnnSuccess(true);
       setAnnTitle('');
       setAnnContent('');
       setAnnPinned(false);
-      setTimeout(() => setAnnSuccess(false), 3000);
+      setAnnouncementsList(prev => [created, ...prev]);
+      setTimeout(() => setAnnSuccess(false), 4000);
       await loadAdminData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to send announcement:', err);
+      setAnnError(err?.message || 'Failed to broadcast announcement. Please try again.');
+    } finally {
+      setIsPublishingAnn(false);
     }
   };
 
@@ -140,6 +176,7 @@ export const AdminDashboard: React.FC = () => {
     if (!confirm('Remove this announcement post from public channels?')) return;
     try {
       await api.deleteAnnouncement(annId);
+      setAnnouncementsList(prev => prev.filter(a => a.id !== annId));
       await loadAdminData();
     } catch (err) {
       console.error('Failed to delete announcement:', err);
@@ -148,11 +185,11 @@ export const AdminDashboard: React.FC = () => {
 
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatName) return;
+    if (!newCatName.trim()) return;
     try {
       await api.createCategory({
-        name: newCatName,
-        description: newCatDesc,
+        name: newCatName.trim(),
+        description: newCatDesc.trim(),
         icon: 'Package'
       });
       setNewCatName('');
@@ -162,6 +199,42 @@ export const AdminDashboard: React.FC = () => {
       console.error('Create category failed:', err);
     }
   };
+
+  // Advertisers Approval / Status Handlers
+  const handleUpdateAdStatus = async (adId: string, status: AdStatus) => {
+    setUpdatingAdId(adId);
+    try {
+      const notes = adminNotesInput[adId] || '';
+      await api.updateAdRequestStatus(adId, status, notes);
+      await loadAdminData();
+      if (viewingPopAd && viewingPopAd.id === adId) {
+        setViewingPopAd(prev => prev ? { ...prev, status, adminNotes: notes } : null);
+      }
+    } catch (err) {
+      console.error('Failed to update ad status:', err);
+    } finally {
+      setUpdatingAdId(null);
+    }
+  };
+
+  const handleDeleteAd = async (adId: string) => {
+    if (!confirm('Permanently delete this advertisement request?')) return;
+    try {
+      await api.deleteAdRequest(adId);
+      await loadAdminData();
+      if (viewingPopAd && viewingPopAd.id === adId) {
+        setViewingPopAd(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete ad request:', err);
+    }
+  };
+
+  const pendingAdsCount = adRequests.filter(a => a.status === 'submitted' || a.status === 'under_review').length;
+  const filteredAds = adRequests.filter(a => {
+    if (adStatusFilter === 'all') return true;
+    return a.status === adStatusFilter;
+  });
 
   return (
     <div className="space-y-8 pb-16">
@@ -176,17 +249,27 @@ export const AdminDashboard: React.FC = () => {
             agroX Governance & Controls
           </h1>
           <p className="text-purple-200 text-xs sm:text-sm">
-            Monitor platform metrics, manage producers and buyers, resolve reports, and broadcast agricultural announcements.
+            Monitor platform metrics, approve farmer advertising requests & POPs, manage users, and broadcast announcements.
           </p>
         </div>
 
-        <button
-          onClick={() => setActiveTab('announcements')}
-          className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-2 shadow-md shrink-0 transition-colors"
-        >
-          <Send className="w-3.5 h-3.5" />
-          Broadcast Update
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            id="admin-nav-advertisers-btn"
+            onClick={() => setActiveTab('advertisers')}
+            className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-extrabold text-xs flex items-center gap-2 shadow-md shrink-0 transition-colors"
+          >
+            <Flame className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
+            Advertisers {pendingAdsCount > 0 && `(${pendingAdsCount} Pending)`}
+          </button>
+          <button
+            onClick={() => setActiveTab('announcements')}
+            className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-2 shadow-md shrink-0 transition-colors"
+          >
+            <Send className="w-3.5 h-3.5" />
+            Broadcast Update
+          </button>
+        </div>
       </div>
 
       {/* Metrics Row */}
@@ -206,11 +289,11 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
-          <div className="text-xs text-stone-500 font-semibold">Registered Buyers</div>
-          <div className="text-2xl font-black text-amber-700 mt-1">
-            {users.filter(u => u.role === 'buyer').length}
+          <div className="text-xs text-stone-500 font-semibold">Ad Requests</div>
+          <div className="text-2xl font-black text-orange-600 mt-1">{adRequests.length}</div>
+          <div className="text-[11px] text-orange-700 font-medium">
+            {pendingAdsCount} awaiting review
           </div>
-          <div className="text-[11px] text-amber-600 mt-0.5">Consumers</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
@@ -240,25 +323,307 @@ export const AdminDashboard: React.FC = () => {
       <div className="flex items-center gap-2 border-b border-stone-200 pb-2 overflow-x-auto">
         {[
           { id: 'overview', label: 'Platform Analytics' },
+          { id: 'advertisers', label: `Advertisers (${adRequests.length})`, highlight: pendingAdsCount > 0 },
           { id: 'users', label: `Users (${users.length})` },
           { id: 'products', label: `Catalog Moderation (${products.length})` },
           { id: 'reports', label: `Reports (${reports.length})` },
-          { id: 'announcements', label: 'Broadcast Announcements' },
+          { id: 'announcements', label: `Broadcast Announcements (${announcementsList.length})` },
           { id: 'categories', label: `Categories (${categories.length})` }
         ].map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-colors ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-colors flex items-center gap-1.5 ${
               activeTab === tab.id
-                ? 'bg-purple-800 text-white'
+                ? tab.id === 'advertisers'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-purple-800 text-white'
+                : tab.highlight
+                ? 'text-orange-700 bg-orange-50 hover:bg-orange-100'
                 : 'text-stone-600 hover:bg-stone-100'
             }`}
           >
+            {tab.id === 'advertisers' && <Flame className="w-3.5 h-3.5 text-amber-300" />}
             {tab.label}
           </button>
         ))}
       </div>
+
+      {/* TAB: ADVERTISERS (Approve / Decline / Check POPs) */}
+      {activeTab === 'advertisers' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-stone-200 shadow-xs">
+            <div>
+              <div className="flex items-center gap-2">
+                <Flame className="w-5 h-5 text-orange-600 fill-orange-500" />
+                <h2 className="text-lg font-bold text-stone-900">Farmer Advertisement Requests & POP Approvals</h2>
+              </div>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Review farmer Hot Deals submissions, verify Proof of Payments (POP), and approve or decline $1/day promotions.
+              </p>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+              {[
+                { id: 'all', label: 'All Requests' },
+                { id: 'submitted', label: 'Sent / New' },
+                { id: 'under_review', label: 'Under Review' },
+                { id: 'approved', label: 'Approved (Live Deals)' },
+                { id: 'rejected', label: 'Rejected' }
+              ].map(pill => (
+                <button
+                  key={pill.id}
+                  onClick={() => setAdStatusFilter(pill.id as any)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+                    adStatusFilter === pill.id
+                      ? 'bg-orange-600 text-white shadow-xs'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                  }`}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredAds.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-3xl border border-stone-200 p-6 space-y-3">
+              <Flame className="w-12 h-12 text-stone-300 mx-auto" />
+              <h3 className="font-bold text-stone-800 text-base">No advertisement requests found</h3>
+              <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                {adStatusFilter === 'all'
+                  ? 'No farmers have submitted ad requests yet. Farmers can request ads at $1/day from their dashboard.'
+                  : `No requests match the "${adStatusFilter}" filter.`}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {filteredAds.map(ad => {
+                const isSent = ad.status === 'submitted';
+                const isUnderReview = ad.status === 'under_review';
+                const isApproved = ad.status === 'approved';
+                const isRejected = ad.status === 'rejected';
+
+                return (
+                  <div
+                    key={ad.id}
+                    className={`bg-white rounded-3xl border p-5 sm:p-6 shadow-xs transition-all space-y-4 ${
+                      isSent
+                        ? 'border-blue-300 bg-blue-50/20'
+                        : isUnderReview
+                        ? 'border-amber-300 bg-amber-50/20'
+                        : isApproved
+                        ? 'border-emerald-300'
+                        : 'border-stone-200 opacity-90'
+                    }`}
+                  >
+                    {/* Header line */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
+                          <Flame className="w-5 h-5 fill-orange-500 text-orange-600" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-extrabold text-stone-900 text-base">{ad.dealHeadline}</h3>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                                isSent
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : isUnderReview
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : isApproved
+                                  ? 'bg-emerald-100 text-emerald-900'
+                                  : 'bg-red-100 text-red-900'
+                              }`}
+                            >
+                              {ad.status.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          <div className="text-xs text-stone-500 mt-0.5">
+                            Farmer: <strong>{ad.farmerName}</strong> ({ad.farmName}) • {ad.farmerPhone || 'No phone'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 text-right">
+                        <div>
+                          <div className="text-xs text-stone-400 font-medium">Duration & Pricing</div>
+                          <div className="text-sm font-black text-stone-900">
+                            {ad.durationDays} Days @ $1/day = <strong className="text-orange-600">${ad.totalFee.toFixed(2)}</strong>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteAd(ad.id)}
+                          className="p-2 text-stone-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition-colors"
+                          title="Delete Ad Request"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Middle grid info */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                      {/* Product details */}
+                      <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200/70 space-y-2">
+                        <span className="font-bold text-stone-700 block">Promoted Item</span>
+                        <div className="flex items-center gap-2.5">
+                          {ad.productImage && (
+                            <img src={ad.productImage} alt="" className="w-12 h-12 rounded-xl object-cover bg-stone-200 shrink-0" />
+                          )}
+                          <div>
+                            <div className="font-bold text-stone-900 text-xs">{ad.productName || 'General Farm Deal'}</div>
+                            <div className="text-stone-500 text-[11px]">{ad.dealDescription || 'Special promo'}</div>
+                            {ad.specialPrice ? (
+                              <div className="font-black text-orange-700 text-xs mt-0.5">
+                                Special: ${ad.specialPrice.toFixed(2)} {ad.discountPercentage ? `(${ad.discountPercentage}% off)` : ''}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Payment & POP */}
+                      <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200/70 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-stone-700">Proof of Payment (POP)</span>
+                          <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                            {ad.paymentMethod.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="text-stone-600 text-[11px]">
+                          <div>Ref / Ecocash: <strong>{ad.paymentReference || 'Direct Transfer'}</strong></div>
+                          <div>Submitted: {new Date(ad.createdAt).toLocaleString()}</div>
+                        </div>
+                        {ad.proofOfPaymentUrl ? (
+                          <button
+                            onClick={() => setViewingPopAd(ad)}
+                            className="w-full py-1.5 bg-stone-900 hover:bg-black text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
+                          >
+                            <Receipt className="w-3.5 h-3.5 text-amber-300" />
+                            Inspect POP Receipt
+                          </button>
+                        ) : (
+                          <div className="text-[11px] text-amber-700 italic">No receipt image attached</div>
+                        )}
+                      </div>
+
+                      {/* Admin Notes & Control */}
+                      <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200/70 space-y-2 flex flex-col justify-between">
+                        <div>
+                          <span className="font-bold text-stone-700 block mb-1">Admin Resolution Notes</span>
+                          <input
+                            type="text"
+                            placeholder="e.g. Verified $14 EcoCash ref #9834..."
+                            defaultValue={ad.adminNotes || ''}
+                            onChange={e => setAdminNotesInput(prev => ({ ...prev, [ad.id]: e.target.value }))}
+                            className="w-full px-2.5 py-1.5 bg-white rounded-lg border border-stone-300 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                          />
+                        </div>
+
+                        {/* Status update buttons */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {ad.status !== 'approved' && (
+                            <button
+                              onClick={() => handleUpdateAdStatus(ad.id, 'approved')}
+                              disabled={updatingAdId === ad.id}
+                              className="flex-1 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              Approve Ad
+                            </button>
+                          )}
+
+                          {ad.status !== 'under_review' && ad.status !== 'approved' && (
+                            <button
+                              onClick={() => handleUpdateAdStatus(ad.id, 'under_review')}
+                              disabled={updatingAdId === ad.id}
+                              className="py-1.5 px-3 bg-amber-500 hover:bg-amber-600 text-stone-950 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Clock className="w-3.5 h-3.5" />
+                              Under Review
+                            </button>
+                          )}
+
+                          {ad.status !== 'rejected' && (
+                            <button
+                              onClick={() => handleUpdateAdStatus(ad.id, 'rejected')}
+                              disabled={updatingAdId === ad.id}
+                              className="py-1.5 px-3 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              Decline
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* POP Full-Screen Inspection Modal */}
+      {viewingPopAd && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-stone-200 animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-orange-600" />
+                <h3 className="font-extrabold text-stone-900 text-base">
+                  Proof of Payment: {viewingPopAd.farmerName}
+                </h3>
+              </div>
+              <button
+                onClick={() => setViewingPopAd(null)}
+                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs bg-stone-50 p-3 rounded-2xl border border-stone-200">
+              <div><strong>Deal Headline:</strong> {viewingPopAd.dealHeadline}</div>
+              <div><strong>Method:</strong> {viewingPopAd.paymentMethod.toUpperCase()}</div>
+              <div><strong>Duration:</strong> {viewingPopAd.durationDays} Days @ $1/day</div>
+              <div><strong>Amount Due:</strong> <span className="font-bold text-emerald-800">${viewingPopAd.totalFee.toFixed(2)}</span></div>
+              <div><strong>Ref ID:</strong> {viewingPopAd.paymentReference || 'N/A'}</div>
+              <div><strong>Status:</strong> <span className="uppercase font-bold text-orange-600">{viewingPopAd.status}</span></div>
+            </div>
+
+            {/* Image Preview Container */}
+            <div className="max-h-96 overflow-auto rounded-2xl border border-stone-200 bg-stone-900 flex items-center justify-center p-2">
+              <img
+                src={viewingPopAd.proofOfPaymentUrl}
+                alt="Proof of Payment"
+                className="max-h-80 w-auto rounded-xl object-contain"
+              />
+            </div>
+
+            {/* Decision Bar */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => handleUpdateAdStatus(viewingPopAd.id, 'rejected')}
+                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-xl font-bold text-xs transition-colors"
+              >
+                Decline POP
+              </button>
+              <button
+                onClick={() => handleUpdateAdStatus(viewingPopAd.id, 'approved')}
+                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors"
+              >
+                <Check className="w-4 h-4" />
+                Approve & Launch Hot Deal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB: OVERVIEW */}
       {activeTab === 'overview' && (
@@ -320,56 +685,42 @@ export const AdminDashboard: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {users.map(u => (
-                  <tr key={u.id} className="hover:bg-stone-50/80">
+                  <tr key={u.id} className="hover:bg-stone-50/70">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <img src={u.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                      <div className="flex items-center gap-3">
+                        <img src={u.avatar} alt="" className="w-8 h-8 rounded-full object-cover bg-stone-100" />
                         <div>
                           <div className="font-bold text-stone-900">{u.name}</div>
-                          <div className="text-stone-400 text-[11px]">{u.email}</div>
+                          <div className="text-[11px] text-stone-400">{u.email}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[11px] font-bold capitalize ${
-                          u.role === 'farmer'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : u.role === 'admin'
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
+                      <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] uppercase ${
+                        u.role === 'farmer' ? 'bg-emerald-100 text-emerald-900' : u.role === 'buyer' ? 'bg-blue-100 text-blue-900' : 'bg-purple-100 text-purple-900'
+                      }`}>
                         {u.role}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-stone-600">
-                      {u.location?.city}, {u.location?.province}
+                      {u.location?.city || 'Harare'}, {u.location?.province || 'Harare'}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                          u.status === 'active'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-red-50 text-red-700 border border-red-200'
-                        }`}
-                      >
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        u.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                      }`}>
                         {u.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {u.role !== 'admin' && (
-                        <button
-                          onClick={() => handleToggleUserStatus(u.id, u.status)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                            u.status === 'active'
-                              ? 'bg-red-50 text-red-600 hover:bg-red-100'
-                              : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                          }`}
-                        >
-                          {u.status === 'active' ? 'Suspend' : 'Activate'}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => handleToggleUserStatus(u.id, u.status)}
+                        className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors ${
+                          u.status === 'active' ? 'bg-stone-100 hover:bg-stone-200 text-stone-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        }`}
+                      >
+                        {u.status === 'active' ? 'Suspend' : 'Activate'}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -383,43 +734,39 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'products' && (
         <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
           <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-            <h3 className="font-bold text-stone-900 text-sm">Product Catalog Moderation</h3>
-            <span className="text-xs text-stone-500">{products.length} listed produce</span>
+            <h3 className="font-bold text-stone-900 text-sm">Active Product Listings ({products.length})</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-stone-50 text-stone-500 font-semibold uppercase tracking-wider">
                 <tr>
-                  <th className="px-4 py-3">Product Name</th>
-                  <th className="px-4 py-3">Producer / Farm</th>
+                  <th className="px-4 py-3">Listing</th>
+                  <th className="px-4 py-3">Producer</th>
                   <th className="px-4 py-3">Price</th>
-                  <th className="px-4 py-3">Stock Available</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Moderate</th>
+                  <th className="px-4 py-3">Stock</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {products.map(prod => (
-                  <tr key={prod.id} className="hover:bg-stone-50/80">
-                    <td className="px-4 py-3 font-bold text-stone-900">
-                      <div className="flex items-center gap-2">
-                        <img src={prod.images[0]} alt="" className="w-8 h-8 rounded-lg object-cover" />
-                        <span>{prod.name}</span>
+                  <tr key={prod.id} className="hover:bg-stone-50/70">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <img src={prod.images[0]} alt="" className="w-8 h-8 rounded-lg object-cover bg-stone-100" />
+                        <div>
+                          <div className="font-bold text-stone-900">{prod.name}</div>
+                          <div className="text-[11px] text-stone-400">{prod.categoryName}</div>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-stone-600 font-medium">{prod.farmName}</td>
+                    <td className="px-4 py-3 text-stone-700">{prod.farmName || prod.farmerName}</td>
                     <td className="px-4 py-3 font-bold text-stone-900">${prod.price.toFixed(2)} / {prod.unit}</td>
-                    <td className="px-4 py-3 font-semibold">{prod.quantityAvailable} {prod.unit}</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-700 capitalize">
-                        {prod.availability.replace(/_/g, ' ')}
-                      </span>
-                    </td>
+                    <td className="px-4 py-3">{prod.quantityAvailable} {prod.unit}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => handleDeleteProduct(prod.id)}
-                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-50"
-                        title="Remove listing"
+                        className="p-1.5 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50"
+                        title="Delete Product"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -434,57 +781,39 @@ export const AdminDashboard: React.FC = () => {
 
       {/* TAB: REPORTS */}
       {activeTab === 'reports' && (
-        <div className="space-y-4">
-          <h3 className="font-bold text-stone-900 text-base">Inappropriate Content & Listing Reports</h3>
+        <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
+          <div className="p-4 border-b border-stone-100 flex items-center justify-between">
+            <h3 className="font-bold text-stone-900 text-sm">Dispute & Content Reports ({reports.length})</h3>
+          </div>
           {reports.length === 0 ? (
-            <div className="p-8 text-center bg-white rounded-3xl border border-stone-200 text-xs text-stone-500">
-              No reports filed yet.
-            </div>
+            <div className="p-8 text-center text-xs text-stone-400">No reports submitted.</div>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-stone-100">
               {reports.map(rep => (
-                <div key={rep.id} className="p-5 rounded-2xl bg-white border border-stone-200 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between">
+                <div key={rep.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div>
                     <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-4 h-4 text-red-500" />
-                      <span className="font-bold text-stone-900 text-sm">
-                        Report on: {rep.itemTitle} ({rep.itemType})
+                      <span className="font-bold text-stone-900">{rep.itemTitle}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        rep.status === 'pending' ? 'bg-amber-100 text-amber-900' : 'bg-stone-100 text-stone-700'
+                      }`}>
+                        {rep.status}
                       </span>
                     </div>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold capitalize ${
-                        rep.status === 'pending'
-                          ? 'bg-amber-100 text-amber-800'
-                          : rep.status === 'resolved'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-stone-100 text-stone-700'
-                      }`}
-                    >
-                      {rep.status}
-                    </span>
+                    <p className="text-stone-600 mt-1">Reason: <strong>{rep.reason}</strong> - {rep.description}</p>
+                    <div className="text-[11px] text-stone-400 mt-0.5">By {rep.reporterName} on {new Date(rep.createdAt).toLocaleDateString()}</div>
                   </div>
-
-                  <div className="text-xs text-stone-600 bg-stone-50 p-3 rounded-xl">
-                    <div className="font-semibold text-stone-800 mb-1">
-                      Reason: <span className="text-red-700">{rep.reason.replace(/_/g, ' ')}</span>
-                    </div>
-                    <p className="text-stone-600">{rep.description}</p>
-                    <div className="text-[11px] text-stone-400 mt-2">
-                      Reported by {rep.reporterName} on {new Date(rep.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-
                   {rep.status === 'pending' && (
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={() => handleResolveReport(rep.id, 'resolved')}
-                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors"
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg"
                       >
-                        Resolve & Moderate
+                        Resolve
                       </button>
                       <button
                         onClick={() => handleResolveReport(rep.id, 'dismissed')}
-                        className="px-3.5 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-lg text-xs font-bold transition-colors"
+                        className="px-3 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold rounded-lg"
                       >
                         Dismiss
                       </button>
@@ -497,7 +826,7 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* TAB: ANNOUNCEMENTS */}
+      {/* TAB: ANNOUNCEMENTS (Fixed Bulletin & Broadcast) */}
       {activeTab === 'announcements' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-6 bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
@@ -510,9 +839,16 @@ export const AdminDashboard: React.FC = () => {
             </p>
 
             {annSuccess && (
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
                 <CheckCircle className="w-4 h-4 text-emerald-600" />
-                Announcement broadcasted successfully to all user feeds and community group!
+                Announcement broadcasted successfully to all user feeds and community channel!
+              </div>
+            )}
+
+            {annError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600" />
+                {annError}
               </div>
             )}
 
@@ -520,6 +856,7 @@ export const AdminDashboard: React.FC = () => {
               <div>
                 <label className="font-semibold text-stone-700 block mb-1">Headline / Title</label>
                 <input
+                  id="admin-bulletin-title"
                   type="text"
                   value={annTitle}
                   onChange={e => setAnnTitle(e.target.value)}
@@ -532,6 +869,7 @@ export const AdminDashboard: React.FC = () => {
               <div>
                 <label className="font-semibold text-stone-700 block mb-1">Content / Message</label>
                 <textarea
+                  id="admin-bulletin-content"
                   rows={4}
                   value={annContent}
                   onChange={e => setAnnContent(e.target.value)}
@@ -597,11 +935,13 @@ export const AdminDashboard: React.FC = () => {
               </div>
 
               <button
+                id="admin-publish-announcement-btn"
                 type="submit"
-                className="w-full py-3 bg-purple-800 hover:bg-purple-900 text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
+                disabled={isPublishingAnn}
+                className="w-full py-3 bg-purple-800 hover:bg-purple-900 disabled:bg-stone-300 text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Send className="w-4 h-4" />
-                Publish & Broadcast Live
+                {isPublishingAnn ? 'Publishing live...' : 'Publish & Broadcast Live'}
               </button>
             </form>
           </div>

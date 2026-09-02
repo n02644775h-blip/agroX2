@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Product, Order, OrderStatus, ProductAvailability } from '../types';
+import { FarmerProfileModal } from './FarmerProfileModal';
+import { FarmerAdvertModal } from './FarmerAdvertModal';
 import {
   DollarSign,
   Package,
@@ -19,7 +21,16 @@ import {
   MapPin,
   Calendar,
   Layers,
-  Filter
+  Filter,
+  User as UserIcon,
+  Flame,
+  Megaphone,
+  Phone,
+  Mail,
+  ShieldCheck,
+  CreditCard,
+  Lock,
+  Camera
 } from 'lucide-react';
 import {
   AreaChart,
@@ -28,9 +39,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar
+  ResponsiveContainer
 } from 'recharts';
 
 interface FarmerDashboardProps {
@@ -55,8 +64,12 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'orders'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'orders' | 'advertising' | 'profile'>('overview');
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+
+  // Modals
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAdvertModal, setShowAdvertModal] = useState(false);
 
   const loadFarmerData = async () => {
     if (!user) return;
@@ -119,21 +132,29 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   };
 
   const pendingOrders = orders.filter(o => o.status === 'pending');
-  const activeOrders = orders.filter(o => ['accepted', 'preparing', 'ready_for_collection', 'out_for_delivery'].includes(o.status));
 
   return (
     <div className="space-y-8 pb-16">
       {/* Header Banner */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <img
-            src={user?.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'}
-            alt=""
-            className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-600 shadow-md"
-          />
+          <div className="relative group shrink-0">
+            <img
+              src={user?.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'}
+              alt=""
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-emerald-600 shadow-md bg-white"
+            />
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="absolute inset-0 bg-black/40 rounded-2xl flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Change Profile Picture (400×400p)"
+            >
+              <Camera className="w-5 h-5" />
+            </button>
+          </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-bold text-stone-900 tracking-tight">
                 {user?.farmerProfile?.farmName || `${user?.name}'s Farm`}
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -141,45 +162,63 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
               </span>
             </div>
             <div className="text-xs text-stone-500 mt-1 flex flex-wrap items-center gap-3">
-              <span>Managed by {user?.name}</span>
+              <span>Producer: <strong>{user?.name}</strong></span>
               <span>•</span>
               <span className="flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-stone-400" />
-                {user?.location.city}, {user?.location.province}
+                {user?.location?.city || 'Harare'}, {user?.location?.province || 'Harare'}
               </span>
+              {user?.phone && (
+                <>
+                  <span>•</span>
+                  <span>{user.phone}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {onNavigate && (
-            <button
-              id="farmer-announcements-chat-btn"
-              onClick={() => onNavigate('messages')}
-              className="px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold flex items-center gap-1.5 border border-emerald-200 transition-colors"
-            >
-              <span>📢 Bulletins & Chat</span>
-            </button>
-          )}
+        {/* Action Buttons Toolbar */}
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+          {/* Edit Profile Button */}
+          <button
+            id="farmer-edit-profile-btn"
+            onClick={() => setShowProfileModal(true)}
+            className="px-3.5 py-2.5 rounded-xl border border-stone-300 hover:bg-stone-100 text-stone-700 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+            title="Edit farm profile, contact numbers, and 400x400 avatar"
+          >
+            <UserIcon className="w-3.5 h-3.5 text-stone-500" />
+            Edit Profile
+          </button>
+
+          {/* Request Advertisement ($1/day) Button */}
+          <button
+            id="farmer-request-advert-btn"
+            onClick={() => setShowAdvertModal(true)}
+            className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-md shadow-orange-500/20 transition-all cursor-pointer"
+          >
+            <Flame className="w-4 h-4 text-amber-200 fill-amber-200" />
+            Request Advertisement ($1/day)
+          </button>
 
           {user && (
             <button
               id="view-public-farm-store-btn"
               onClick={() => onViewFarm(user.id)}
-              className="px-4 py-2.5 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="px-3.5 py-2.5 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              Public Farm Store
+              Public Store
             </button>
           )}
 
           <button
             id="farmer-add-new-product-btn"
             onClick={onOpenAddProduct}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all"
+            className="px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-700/20 transition-all"
           >
             <Plus className="w-4 h-4" />
-            Add New Product
+            Add Produce Listing
           </button>
         </div>
       </div>
@@ -238,10 +277,10 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-stone-200 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 ${
             activeTab === 'overview'
               ? 'bg-emerald-700 text-white'
               : 'text-stone-600 hover:bg-stone-100'
@@ -251,7 +290,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('orders')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 ${
             activeTab === 'orders'
               ? 'bg-emerald-700 text-white'
               : 'text-stone-600 hover:bg-stone-100'
@@ -266,13 +305,35 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
         </button>
         <button
           onClick={() => setActiveTab('products')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors shrink-0 ${
             activeTab === 'products'
               ? 'bg-emerald-700 text-white'
               : 'text-stone-600 hover:bg-stone-100'
           }`}
         >
-          Manage Farm Produce ({products.length})
+          Manage Produce ({products.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('advertising')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'advertising'
+              ? 'bg-orange-600 text-white'
+              : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+          <span>Hot Deals & Advertising</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'profile'
+              ? 'bg-emerald-700 text-white'
+              : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          <UserIcon className="w-3.5 h-3.5" />
+          <span>Farm Profile</span>
         </button>
       </div>
 
@@ -314,9 +375,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
             </div>
           </div>
 
-          {/* Urgent Orders & Stock Alerts Sidebar */}
+          {/* Urgent Orders & Quick Actions */}
           <div className="space-y-6">
-            {/* Action Needed Card */}
             <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-stone-900 text-sm">Action Needed: Pending Orders</h3>
@@ -360,17 +420,20 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
               )}
             </div>
 
-            {/* Quick Farm Health Checklist */}
-            <div className="bg-emerald-800 text-white p-5 rounded-3xl space-y-3 shadow-md">
-              <h3 className="font-bold text-sm">Farmer Selling Tip</h3>
-              <p className="text-xs text-emerald-100 leading-relaxed">
-                Keep your available stock quantities accurate to avoid order rejections and keep your verified seller rating above 4.8 stars!
+            {/* Hot Deals Quick Card */}
+            <div className="p-5 bg-gradient-to-r from-orange-50 to-amber-50 rounded-3xl border border-orange-200 space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-orange-900 text-xs">
+                <Flame className="w-4 h-4 text-orange-600 fill-orange-500" />
+                <span>Boost Harvest Sales ($1/Day)</span>
+              </div>
+              <p className="text-[11px] text-stone-600">
+                Feature your products on the top marketplace Hot Deals banner with custom duration and admin approval.
               </p>
               <button
-                onClick={() => setActiveTab('products')}
-                className="w-full py-2 bg-white text-emerald-900 font-bold text-xs rounded-xl hover:bg-emerald-50 transition-colors"
+                onClick={() => setShowAdvertModal(true)}
+                className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors"
               >
-                Update Stock Levels
+                Request Advertisement
               </button>
             </div>
           </div>
@@ -653,6 +716,192 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB 4: ADVERTISING & HOT DEALS */}
+      {activeTab === 'advertising' && (
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 space-y-6 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <Flame className="w-5 h-5 text-orange-600 fill-orange-500" />
+                <h2 className="text-xl font-bold text-stone-900">Farmer Advertising & Hot Deals Portal</h2>
+              </div>
+              <p className="text-xs text-stone-500 mt-1">
+                Advertise your produce on the marketplace homepage with flat $1.00/day throttling and admin proof-of-payment review.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAdvertModal(true)}
+              className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-2 shadow-md transition-all self-start"
+            >
+              <Plus className="w-4 h-4" />
+              Request New Advertisement
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-1.5">
+              <div className="font-bold text-stone-900 text-xs flex items-center gap-1.5">
+                <DollarSign className="w-4 h-4 text-orange-600" />
+                <span>Affordable Flat Fee</span>
+              </div>
+              <p className="text-xs text-stone-600">
+                Only <strong>$1.00 per day</strong> with a custom duration slider up to 30 days.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-1.5">
+              <div className="font-bold text-stone-900 text-xs flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                <span>Verified POP Approvals</span>
+              </div>
+              <p className="text-xs text-stone-600">
+                Upload your EcoCash or InnBucks payment receipt for instant admin queueing.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-1.5">
+              <div className="font-bold text-stone-900 text-xs flex items-center gap-1.5">
+                <Flame className="w-4 h-4 text-blue-600" />
+                <span>Homepage Hero Visibility</span>
+              </div>
+              <p className="text-xs text-stone-600">
+                Approved campaigns appear prominently on the Hot Deals & Promotions banner.
+              </p>
+            </div>
+          </div>
+
+          {/* Open full ad modal trigger */}
+          <div className="text-center py-6">
+            <button
+              onClick={() => setShowAdvertModal(true)}
+              className="px-6 py-3 bg-stone-900 hover:bg-black text-white text-xs font-bold rounded-2xl shadow-sm inline-flex items-center gap-2 cursor-pointer"
+            >
+              <Megaphone className="w-4 h-4 text-amber-400" />
+              Open Ad Request Manager & Review Trackers
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: PROFILE OVERVIEW */}
+      {activeTab === 'profile' && (
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 space-y-6 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-5">
+            <div>
+              <h2 className="text-xl font-bold text-stone-900">Farm & Producer Profile Settings</h2>
+              <p className="text-xs text-stone-500 mt-1">
+                Your public producer profile, verified contact numbers, and payment details
+              </p>
+            </div>
+            <button
+              id="open-profile-edit-modal-btn"
+              onClick={() => setShowProfileModal(true)}
+              className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-colors self-start cursor-pointer"
+            >
+              <Edit2 className="w-4 h-4" />
+              Edit Profile & Picture (400×400p)
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Identity & Contact Details */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-4 text-xs">
+              <div className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                <UserIcon className="w-4 h-4 text-emerald-700" />
+                <span>Producer Identity & Contacts</span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between py-1.5 border-b border-stone-200">
+                  <span className="text-stone-500 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-stone-400" />
+                    Legal Account Name:
+                  </span>
+                  <span className="font-bold text-stone-800 bg-stone-200/70 px-2 py-0.5 rounded text-stone-600 select-none">
+                    {user?.name} (Verified / Locked)
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1.5 border-b border-stone-200">
+                  <span className="text-stone-500 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-stone-400" />
+                    Contact Phone:
+                  </span>
+                  <span className="font-bold text-stone-900">{user?.phone || 'Not set'}</span>
+                </div>
+
+                <div className="flex items-center justify-between py-1.5 border-b border-stone-200">
+                  <span className="text-stone-500 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                    WhatsApp Direct:
+                  </span>
+                  <span className="font-bold text-stone-900">{user?.farmerProfile?.whatsapp || user?.phone || 'Not set'}</span>
+                </div>
+
+                <div className="flex items-center justify-between py-1.5">
+                  <span className="text-stone-500 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-stone-400" />
+                    Email Address:
+                  </span>
+                  <span className="font-semibold text-stone-800">{user?.email}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Farm Details */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-4 text-xs">
+              <div className="font-bold text-stone-900 text-sm flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-emerald-700" />
+                <span>Farm Location & Land Area</span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between py-1.5 border-b border-stone-200">
+                  <span className="text-stone-500">Farm Brand Name:</span>
+                  <span className="font-bold text-stone-900">{user?.farmerProfile?.farmName || `${user?.name}'s Farm`}</span>
+                </div>
+
+                <div className="flex items-center justify-between py-1.5 border-b border-stone-200">
+                  <span className="text-stone-500">Province & City:</span>
+                  <span className="font-bold text-stone-900">
+                    {user?.location?.city || 'Harare'}, {user?.location?.province || 'Harare'}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between py-1.5 border-b border-stone-200">
+                  <span className="text-stone-500">Farm Size / Area:</span>
+                  <span className="font-bold text-stone-900">{user?.farmerProfile?.farmSize || '15 Hectares'}</span>
+                </div>
+
+                <div className="flex items-center justify-between py-1.5">
+                  <span className="text-stone-500">Dispatch Address:</span>
+                  <span className="font-semibold text-stone-800 text-right truncate max-w-[200px]">
+                    {user?.farmerProfile?.address || 'Direct Farm Gate'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Modal */}
+      {showProfileModal && (
+        <FarmerProfileModal
+          onClose={() => setShowProfileModal(false)}
+          onSuccess={() => loadFarmerData()}
+        />
+      )}
+
+      {/* Advertisement Request Modal */}
+      {showAdvertModal && (
+        <FarmerAdvertModal
+          onClose={() => setShowAdvertModal(false)}
+          onSuccess={() => loadFarmerData()}
+          products={products}
+        />
       )}
     </div>
   );
