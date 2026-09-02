@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based details (farmers, buyers, admins)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique identifier matching Firebase Auth UID" },
+        "fullName": { "type": "string", "description": "Full display name of user" },
+        "email": { "type": "string", "description": "User email address" },
+        "role": { "type": "string", "enum": ["farmer", "buyer", "admin"], "description": "Account role" },
+        "phone": { "type": "string", "description": "Contact telephone number" },
+        "avatar": { "type": "string", "description": "Profile picture URL" },
+        "status": { "type": "string", "enum": ["active", "suspended", "pending_verification"], "description": "User status" },
+        "location": { "type": "object", "description": "Geographical location in Zimbabwe" },
+        "farmerProfile": { "type": "object", "description": "Farm and producer details" },
+        "buyerProfile": { "type": "object", "description": "Buyer preferences" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["uid", "fullName", "email", "role"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Farm produce and livestock marketplace listing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Listing ID" },
+        "farmerId": { "type": "string", "description": "Farmer account UID" },
+        "name": { "type": "string", "description": "Produce item name" },
+        "price": { "type": "number", "description": "Unit price in USD" },
+        "unit": { "type": "string", "description": "Measuring unit" },
+        "category": { "type": "string", "description": "Category identifier" },
+        "quantityAvailable": { "type": "number", "description": "Available stock quantity" }
+      },
+      "required": ["farmerId", "name", "price", "unit"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Produce purchase order between buyer and farmer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Order ID" },
+        "buyerId": { "type": "string", "description": "Buyer UID" },
+        "farmerId": { "type": "string", "description": "Farmer UID" },
+        "totalAmount": { "type": "number", "description": "Total order amount" },
+        "status": { "type": "string", "description": "Current order lifecycle status" }
+      },
+      "required": ["buyerId", "farmerId", "totalAmount", "status"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Public community broadcasts, weather bulletins, logistics updates, and subsidies",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Announcement ID" },
+        "title": { "type": "string", "description": "Headline of announcement" },
+        "content": { "type": "string", "description": "Announcement body message" },
+        "priority": { "type": "string", "enum": ["normal", "urgent"], "description": "Priority level" },
+        "category": { "type": "string", "description": "Channel topic (platform, logistics, subsidy, weather, market_update, general)" },
+        "targetAudience": { "type": "string", "enum": ["all", "farmers", "buyers"], "description": "Target user group" },
+        "author": { "type": "string", "description": "Author name" },
+        "authorRole": { "type": "string", "description": "Author role" },
+        "pinned": { "type": "boolean", "description": "Whether pinned to top of channel" }
+      },
+      "required": ["title", "content"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and registration signups collection"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Marketplace produce listings"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Direct farm purchases and transactions"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Community broadcast and bulletin announcements channel"
+    }
+  }
+}

@@ -124,29 +124,102 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
+      // 1. Check local cached user profile first for instant availability
+      let localCachedUser: User | null = null;
+      try {
+        const cachedRaw = localStorage.getItem(`agrox_user_profile_${uid}`);
+        if (cachedRaw) {
+          localCachedUser = JSON.parse(cachedRaw);
+        }
+      } catch (err) {
+        console.warn('Error reading local user cache:', err);
+      }
+
       const userDocRef = doc(db, 'users', uid);
-      const userSnap = await getDoc(userDocRef);
+      const userSnap = await getDoc(userDocRef).catch(err => {
+        console.warn('Firestore getDoc warning:', err);
+        return null;
+      });
 
       let profileData: UserProfileData;
 
-      if (userSnap.exists()) {
-        profileData = userSnap.data() as UserProfileData;
+      if (userSnap && userSnap.exists()) {
+        const fsData = userSnap.data() as UserProfileData;
+        profileData = {
+          ...fsData,
+          // Merge local cached fields if present to avoid losing unsaved details
+          farmerProfile: fsData.farmerProfile ? {
+            ...(localCachedUser?.farmerProfile || {}),
+            ...fsData.farmerProfile
+          } : localCachedUser?.farmerProfile,
+          buyerProfile: fsData.buyerProfile ? {
+            ...(localCachedUser?.buyerProfile || {}),
+            ...fsData.buyerProfile
+          } : localCachedUser?.buyerProfile,
+          location: fsData.location || localCachedUser?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' }
+        };
       } else {
-        // Create initial Firestore document if user signed in without doc
+        // If document does not exist in Firestore yet:
+        let baseUser: Partial<User> = localCachedUser || {};
+        if (!baseUser.name || !baseUser.role) {
+          const apiUser = await api.getUserById(uid).catch(() => null);
+          if (apiUser) {
+            baseUser = apiUser;
+          }
+        }
+
+        const role: UserRole = baseUser.role || (uid.startsWith('farmer') ? 'farmer' : uid.startsWith('admin') ? 'admin' : 'buyer');
+        const defaultAvatar = role === 'farmer'
+          ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
+          : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
+
         const initialProfile: Record<string, any> = {
           uid: uid,
-          fullName: fbUser?.displayName || fbUser?.email?.split('@')[0] || 'User',
-          email: fbUser?.email || '',
-          role: 'buyer',
-          avatar: fbUser?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-          location: {
+          fullName: baseUser.name || fbUser?.displayName || (role === 'farmer' ? 'Tendai Moyo' : 'Marketplace User'),
+          email: baseUser.email || fbUser?.email || `${uid}@agrox.org`,
+          role: role,
+          phone: baseUser.phone || (role === 'farmer' ? '+263 77 210 4930' : ''),
+          avatar: baseUser.avatar || fbUser?.photoURL || defaultAvatar,
+          location: baseUser.location || {
             country: 'Zimbabwe',
             province: 'Harare',
-            city: 'Harare'
+            city: 'Harare',
+            community: 'Direct Market'
           },
           createdAt: serverTimestamp()
         };
-        await setDoc(userDocRef, sanitizeForFirestore(initialProfile), { merge: true });
+
+        if (role === 'farmer') {
+          initialProfile.farmerProfile = baseUser.farmerProfile || {
+            farmName: `${initialProfile.fullName}'s Farm`,
+            bio: 'Local agricultural producer offering fresh, high quality farm produce.',
+            farmSize: '15 Hectares',
+            address: 'Plot 14, Golden Valley Corridor',
+            whatsapp: initialProfile.phone || '+263 77 210 4930',
+            practices: ['100% Organic', 'Same-Day Harvest', 'Drip Irrigated'],
+            farmingMethods: ['Organic Compost', 'Drip Irrigation'],
+            rating: 5.0,
+            totalReviews: 0,
+            isVerified: true,
+            verified: true,
+            paymentInfo: {
+              ecocash: '0772 210 493',
+              innbucks: 'INB-8839',
+              bankAccount: 'CABS 100492812'
+            }
+          };
+        } else if (role === 'buyer') {
+          initialProfile.buyerProfile = baseUser.buyerProfile || {
+            preferredDeliveryAddress: '',
+            favoriteCategories: [],
+            totalOrdersPlaced: 0
+          };
+        }
+
+        // Persist initial doc to Firestore using setDoc with merge: true
+        await setDoc(userDocRef, sanitizeForFirestore(initialProfile), { merge: true }).catch(err => {
+          console.warn('Could not bootstrap initial user in Firestore:', err);
+        });
         profileData = initialProfile as UserProfileData;
       }
 
@@ -155,19 +228,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Build unified User model for marketplace interoperability
       const unifiedUser: User = {
         id: uid,
-        name: profileData.fullName || fbUser?.displayName || 'Marketplace User',
-        email: fbUser?.email || profileData.email || '',
-        phone: profileData.phone || '',
-        role: profileData.role || 'buyer',
-        avatar: profileData.avatar || fbUser?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-        location: profileData.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+        name: profileData.fullName || fbUser?.displayName || localCachedUser?.name || 'Marketplace User',
+        email: fbUser?.email || profileData.email || localCachedUser?.email || '',
+        phone: profileData.phone || localCachedUser?.phone || '',
+        role: profileData.role || localCachedUser?.role || 'buyer',
+        avatar: profileData.avatar || fbUser?.photoURL || localCachedUser?.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+        location: profileData.location || localCachedUser?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
         status: 'active',
         createdAt: typeof profileData.createdAt === 'string' ? profileData.createdAt : new Date().toISOString(),
-        farmerProfile: profileData.farmerProfile,
-        buyerProfile: profileData.buyerProfile
+        farmerProfile: profileData.farmerProfile || localCachedUser?.farmerProfile,
+        buyerProfile: profileData.buyerProfile || localCachedUser?.buyerProfile
       };
 
       setUser(unifiedUser);
+      localStorage.setItem('agrox_active_uid', uid);
+      localStorage.setItem(`agrox_user_profile_${uid}`, JSON.stringify(unifiedUser));
 
       // Also ensure in-memory store in local session has this user for backend queries
       api.setToken(`fb_${uid}`);
@@ -201,7 +276,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (fbUser) {
         await syncUserProfile(fbUser);
       } else {
-        // Check if there is a saved offline/firestore UID in localStorage
+        // Check if there is a saved active UID in localStorage
         const savedUid = localStorage.getItem('agrox_active_uid');
         if (savedUid) {
           const userFromFs = await syncUserProfile(null, savedUid);
@@ -214,18 +289,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Fallback check if user is using demo mock login mode
         const { user: currentApiUser } = await api.getMe().catch(() => ({ user: null }));
         if (currentApiUser && !fbUser) {
-          setUser(currentApiUser);
-          setUserProfile({
-            uid: currentApiUser.id,
-            fullName: currentApiUser.name,
-            email: currentApiUser.email,
-            role: currentApiUser.role,
-            phone: currentApiUser.phone,
-            avatar: currentApiUser.avatar,
-            location: currentApiUser.location,
-            farmerProfile: currentApiUser.farmerProfile,
-            buyerProfile: currentApiUser.buyerProfile
-          });
+          await syncUserProfile(null, currentApiUser.id);
         } else {
           setUser(null);
           setUserProfile(null);
@@ -527,36 +591,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchDemoRole = async (target: string) => {
     setLoading(true);
     let targetEmail = 'grace.chidzero@gmail.com';
+    let targetId = 'buyer-1';
     if (target === 'farmer' || target === 'farmer-1') {
       targetEmail = 'tendai.moyo@greenfields.co.zw';
+      targetId = 'farmer-1';
     } else if (target === 'farmer-2') {
       targetEmail = 'chipo@sunrisepoultry.co.zw';
+      targetId = 'farmer-2';
     } else if (target === 'buyer' || target === 'buyer-1') {
       targetEmail = 'grace.chidzero@gmail.com';
+      targetId = 'buyer-1';
     } else if (target === 'buyer-2') {
       targetEmail = 'kuda.restocatering@gmail.com';
+      targetId = 'buyer-2';
     } else if (target === 'admin' || target === 'admin-1') {
       targetEmail = 'admin@agrox.org';
+      targetId = 'admin-1';
     } else {
       targetEmail = target;
+      targetId = target;
     }
 
     try {
-      const res = await api.login(targetEmail);
-      setUser(res.user);
-      setUserProfile({
-        uid: res.user.id,
-        fullName: res.user.name,
-        email: res.user.email,
-        role: res.user.role,
-        phone: res.user.phone,
-        avatar: res.user.avatar,
-        location: res.user.location,
-        farmerProfile: res.user.farmerProfile,
-        buyerProfile: res.user.buyerProfile
-      });
+      localStorage.setItem('agrox_active_uid', targetId);
+      const res = await api.login(targetEmail).catch(() => null);
+      if (res?.user) {
+        await syncUserProfile(null, res.user.id);
+      } else {
+        await syncUserProfile(null, targetId);
+      }
     } catch (err) {
       console.error('Demo switch failed:', err);
+      await syncUserProfile(null, targetId);
     } finally {
       setLoading(false);
     }
@@ -568,35 +634,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       const userDocRef = doc(db, 'users', user.id);
-      const firestoreUpdates: Record<string, any> = {
+
+      // Deeply merge into updated user object
+      const updatedUser: User = {
+        ...user,
+        ...updates,
+        name: updates.name ? updates.name.trim() : user.name,
+        phone: updates.phone !== undefined ? updates.phone.trim() : user.phone,
+        avatar: updates.avatar || user.avatar,
+        location: updates.location ? {
+          ...(user.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' }),
+          ...updates.location
+        } : user.location,
+        farmerProfile: (user.role === 'farmer' || updates.farmerProfile) ? {
+          ...(user.farmerProfile || {}),
+          ...(updates.farmerProfile || {})
+        } : user.farmerProfile,
+        buyerProfile: (user.role === 'buyer' || updates.buyerProfile) ? {
+          ...(user.buyerProfile || {}),
+          ...(updates.buyerProfile || {})
+        } : user.buyerProfile
+      };
+
+      // 1. Immediately save to persistent localStorage
+      localStorage.setItem('agrox_active_uid', user.id);
+      localStorage.setItem(`agrox_user_profile_${user.id}`, JSON.stringify(updatedUser));
+
+      // 2. Prepare comprehensive Firestore document payload
+      const firestoreDocPayload: Record<string, any> = {
+        uid: user.id,
+        fullName: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        phone: updatedUser.phone || '',
+        avatar: updatedUser.avatar,
+        location: sanitizeForFirestore(updatedUser.location),
         updatedAt: serverTimestamp()
       };
 
-      if (updates.name) firestoreUpdates.fullName = updates.name.trim();
-      if (updates.phone !== undefined) firestoreUpdates.phone = updates.phone;
-      if (updates.avatar) firestoreUpdates.avatar = updates.avatar;
-      if (updates.location) firestoreUpdates.location = sanitizeForFirestore(updates.location);
-      if (updates.farmerProfile) firestoreUpdates.farmerProfile = sanitizeForFirestore(updates.farmerProfile);
-      if (updates.buyerProfile) firestoreUpdates.buyerProfile = sanitizeForFirestore(updates.buyerProfile);
+      if (updatedUser.role === 'farmer' && updatedUser.farmerProfile) {
+        firestoreDocPayload.farmerProfile = sanitizeForFirestore(updatedUser.farmerProfile);
+      }
+      if (updatedUser.role === 'buyer' && updatedUser.buyerProfile) {
+        firestoreDocPayload.buyerProfile = sanitizeForFirestore(updatedUser.buyerProfile);
+      }
 
-      await updateDoc(userDocRef, sanitizeForFirestore(firestoreUpdates)).catch(err => {
-        console.warn('Could not update Firestore doc, fallback to local:', err);
+      // 3. Write to Firestore using setDoc with merge: true (creates or updates reliably)
+      await setDoc(userDocRef, sanitizeForFirestore(firestoreDocPayload), { merge: true }).catch(err => {
+        console.warn('Could not write profile to Firestore, relying on local persistence:', err);
       });
 
       if (currentUser && updates.name) {
         await updateProfile(currentUser, { displayName: updates.name.trim() }).catch(() => {});
       }
 
-      // Also update local API store
-      const updated = await api.updateUser(user.id, updates).catch(() => ({ ...user, ...updates }));
-      setUser(updated);
-      setUserProfile(prev => prev ? {
-        ...prev,
-        fullName: updates.name || prev.fullName,
-        phone: updates.phone || prev.phone,
-        avatar: updates.avatar || prev.avatar,
-        location: updates.location || prev.location
-      } : null);
+      // 4. Update backend API store
+      await api.updateUser(user.id, updatedUser).catch(err => {
+        console.warn('API store user update warning:', err);
+      });
+
+      // 5. Update local React state
+      setUser(updatedUser);
+      setUserProfile({
+        uid: user.id,
+        fullName: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        phone: updatedUser.phone,
+        avatar: updatedUser.avatar,
+        location: updatedUser.location,
+        farmerProfile: updatedUser.farmerProfile,
+        buyerProfile: updatedUser.buyerProfile
+      });
     } catch (err: any) {
       console.error('Failed to update profile:', err);
       throw new Error(getFriendlyAuthErrorMessage(err));

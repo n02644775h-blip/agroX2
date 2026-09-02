@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { Announcement, UserRole } from '../types';
+import {
+  subscribeToFirebaseAnnouncements,
+  createFirebaseAnnouncement,
+  reactToFirebaseAnnouncement,
+  deleteFirebaseAnnouncement,
+  INITIAL_ANNOUNCEMENTS
+} from '../services/firebaseAnnouncements';
+import { Announcement } from '../types';
 import {
   Megaphone,
   Send,
@@ -20,7 +27,14 @@ import {
   CheckCircle2,
   Trash2,
   Lock,
-  ChevronDown
+  ChevronDown,
+  Truck,
+  CloudRain,
+  Coins,
+  TrendingUp,
+  Layers,
+  RefreshCw,
+  Share2
 } from 'lucide-react';
 
 interface PublicAnnouncementsChatProps {
@@ -34,7 +48,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
-  // Admin message authoring inputs (visible to admins or when authorized)
+  // Admin message authoring inputs
   const [titleInput, setTitleInput] = useState('');
   const [messageInput, setMessageInput] = useState('');
   const [priorityInput, setPriorityInput] = useState<'normal' | 'urgent'>('normal');
@@ -50,23 +64,17 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
 
   const isAdmin = user?.role === 'admin' || user?.email?.toLowerCase().includes('admin') || user?.name?.toLowerCase().includes('admin');
 
-  const loadAnnouncements = async () => {
-    try {
-      setLoading(true);
-      const data = await api.getAnnouncements(user?.role);
-      setAnnouncements(data);
-    } catch (err) {
-      console.error('Failed to load announcements group chat:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadAnnouncements();
-    // Auto refresh periodically every 15s to catch new announcements live
-    const interval = setInterval(loadAnnouncements, 15000);
-    return () => clearInterval(interval);
+    setLoading(true);
+    // Subscribe to Firestore announcements in real-time
+    const unsubscribe = subscribeToFirebaseAnnouncements(user?.role, (data) => {
+      setAnnouncements(data);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [user?.role]);
 
   const handleSendAnnouncement = async (e: React.FormEvent) => {
@@ -79,7 +87,8 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
     try {
       setIsSending(true);
       setPostErrorMessage(null);
-      const created = await api.createAnnouncement({
+
+      const payload: Partial<Announcement> = {
         title: titleInput.trim(),
         content: messageInput.trim(),
         priority: priorityInput,
@@ -88,18 +97,28 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
         authorRole: 'admin',
         authorAvatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
         category: categoryInput,
-        pinned: pinInput
-      });
+        pinned: pinInput,
+        reactions: { '👍': 1 },
+        likesCount: 1
+      };
+
+      // 1. Create in Firebase Firestore
+      const created = await createFirebaseAnnouncement(payload);
+
+      // 2. Also notify backend API store
+      try {
+        await api.createAnnouncement(payload);
+      } catch (err) {
+        console.warn('Backend store announcement sync fallback:', err);
+      }
 
       setTitleInput('');
       setMessageInput('');
       setPinInput(false);
       setPostSuccessMessage(true);
-      setAnnouncements(prev => [created, ...prev]);
       setTimeout(() => setPostSuccessMessage(false), 4000);
-      await loadAnnouncements();
     } catch (err: any) {
-      console.error('Failed to broadcast announcement to chat:', err);
+      console.error('Failed to broadcast announcement to channel:', err);
       setPostErrorMessage(err?.message || 'Failed to post announcement. Please try again.');
     } finally {
       setIsSending(false);
@@ -123,21 +142,36 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
           return ann;
         })
       );
-      await api.reactToAnnouncement(annId, emoji);
+      await reactToFirebaseAnnouncement(annId, emoji);
+      try {
+        await api.reactToAnnouncement(annId, emoji);
+      } catch {}
     } catch (err) {
       console.error('Failed to submit reaction:', err);
     }
   };
 
   const handleDelete = async (annId: string) => {
-    if (!confirm('Are you sure you want to remove this announcement post?')) return;
+    if (!confirm('Are you sure you want to remove this bulletin post?')) return;
     try {
       setAnnouncements(prev => prev.filter(a => a.id !== annId));
-      await api.deleteAnnouncement(annId);
+      await deleteFirebaseAnnouncement(annId);
+      try {
+        await api.deleteAnnouncement(annId);
+      } catch {}
     } catch (err) {
       console.error('Failed to delete announcement:', err);
     }
   };
+
+  const categoriesList = [
+    { id: 'all', label: 'All Updates', icon: Megaphone, count: announcements.length },
+    { id: 'platform', label: 'Platform & App', icon: Sparkles, count: announcements.filter(a => a.category === 'platform').length },
+    { id: 'logistics', label: 'Logistics & Routes', icon: Truck, count: announcements.filter(a => a.category === 'logistics').length },
+    { id: 'subsidy', label: 'Subsidies & Grants', icon: Coins, count: announcements.filter(a => a.category === 'subsidy').length },
+    { id: 'weather', label: 'Weather Advisory', icon: CloudRain, count: announcements.filter(a => a.category === 'weather').length },
+    { id: 'market_update', label: 'Market Prices', icon: TrendingUp, count: announcements.filter(a => a.category === 'market_update').length }
+  ];
 
   const filteredAnnouncements = announcements.filter(a => {
     const matchesCategory = filterCategory === 'all' || a.category === filterCategory;
@@ -149,36 +183,27 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
     return matchesCategory && matchesSearch;
   });
 
-  const categoriesList = [
-    { id: 'all', label: 'All Updates' },
-    { id: 'platform', label: '🌿 Platform' },
-    { id: 'logistics', label: '🚛 Logistics & Routes' },
-    { id: 'subsidy', label: '💰 Subsidies & Grants' },
-    { id: 'weather', label: '🌧️ Weather Advisory' },
-    { id: 'market_update', label: '📊 Market Prices' }
-  ];
-
   return (
-    <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden flex flex-col h-[750px]">
+    <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden flex flex-col h-[780px]">
       {/* Top Group Banner */}
-      <div className="p-4 sm:p-5 bg-linear-to-r from-emerald-900 via-teal-900 to-stone-900 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-emerald-800">
+      <div className="p-4 sm:p-5 bg-linear-to-r from-emerald-900 via-teal-950 to-stone-900 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-emerald-800">
         <div className="flex items-center gap-3.5">
           <div className="relative">
             <div className="w-12 h-12 rounded-2xl bg-emerald-600/40 border border-emerald-400/40 backdrop-blur-md flex items-center justify-center text-white shadow-inner">
-              <Megaphone className="w-6 h-6 text-emerald-300 animate-pulse" />
+              <Megaphone className="w-6 h-6 text-emerald-300" />
             </div>
             <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-emerald-950 rounded-full flex items-center justify-center">
-              <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
             </span>
           </div>
 
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-lg font-extrabold tracking-tight text-white flex items-center gap-1.5">
-                Community Announcements Channel
+                Community Bulletin Channels
               </h2>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                Official Broadcast
+                Live Broadcast
               </span>
             </div>
             <p className="text-xs text-emerald-200/90 mt-0.5">
@@ -196,20 +221,20 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
               className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-stone-950 text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95"
             >
               <Send className="w-3.5 h-3.5" />
-              {showAdminComposer ? 'Close Composer' : 'Post Announcement'}
+              {showAdminComposer ? 'Close Composer' : 'Broadcast Announcement'}
             </button>
           ) : (
             <div className="px-3 py-1.5 rounded-xl bg-white/10 text-white/90 text-xs font-medium backdrop-blur-xs flex items-center gap-1.5 border border-white/10">
               <Users className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Visible to All Buyers & Producers</span>
+              <span>Visible to All Members</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Admin Post Composer Drawer (If opened by Admin) */}
+      {/* Admin Post Composer Drawer */}
       {isAdmin && showAdminComposer && (
-        <div className="p-4 bg-emerald-50/70 border-b border-emerald-200 animate-in fade-in slide-in-from-top-4 duration-200">
+        <div className="p-4 bg-emerald-50/80 border-b border-emerald-200 animate-in fade-in slide-in-from-top-4 duration-200">
           <div className="max-w-4xl mx-auto space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-emerald-900 font-bold text-xs uppercase tracking-wider">
@@ -266,7 +291,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
               <div>
                 <textarea
                   id="admin-ann-content-input"
-                  rows={2}
+                  rows={3}
                   value={messageInput}
                   onChange={e => setMessageInput(e.target.value)}
                   placeholder="Type the full announcement details here for buyers and farmers to read..."
@@ -323,7 +348,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
                     className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-stone-300 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    {isSending ? 'Broadcasting...' : 'Broadcast to Group'}
+                    {isSending ? 'Broadcasting...' : 'Broadcast to Channel'}
                   </button>
                 </div>
               </div>
@@ -332,47 +357,59 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
         </div>
       )}
 
-      {/* Filter and Search Bar */}
-      <div className="p-3 bg-stone-50 border-b border-stone-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto py-0.5">
-          {categoriesList.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setFilterCategory(cat.id)}
-              className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                filterCategory === cat.id
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'bg-white text-stone-600 hover:bg-stone-200/70 border border-stone-200'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
+      {/* Filter and Channel Selector Tabs */}
+      <div className="p-3 bg-stone-50 border-b border-stone-200 flex flex-col lg:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto w-full lg:w-auto py-1">
+          {categoriesList.map(cat => {
+            const Icon = cat.icon;
+            const isSelected = filterCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setFilterCategory(cat.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  isSelected
+                    ? 'bg-emerald-800 text-white shadow-xs'
+                    : 'bg-white text-stone-700 hover:bg-stone-200/80 border border-stone-200'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-emerald-300' : 'text-stone-500'}`} />
+                <span>{cat.label}</span>
+                {cat.count > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    isSelected ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600'
+                  }`}>
+                    {cat.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="relative w-full sm:w-64">
+        <div className="relative w-full lg:w-64">
           <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search bulletins..."
+            placeholder="Search bulletins & alerts..."
             className="w-full pl-8 pr-3 py-1.5 bg-white rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
         </div>
       </div>
 
       {/* Messages Stream Area */}
-      <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-5 bg-stone-50/50">
+      <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-stone-50/60">
         {loading && announcements.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-stone-400 space-y-2">
             <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-xs">Loading community announcements...</p>
+            <p className="text-xs">Connecting to live bulletin channels...</p>
           </div>
         ) : filteredAnnouncements.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center p-6 space-y-2">
             <Megaphone className="w-10 h-10 text-stone-300" />
-            <h4 className="font-bold text-stone-700 text-sm">No announcements matching criteria</h4>
+            <h4 className="font-bold text-stone-700 text-sm">No announcements in this channel</h4>
             <p className="text-xs text-stone-400 max-w-sm">
               Check back soon for new logistic subsidies, weather bulletins, and regional harvest updates from the admin team.
             </p>
@@ -387,9 +424,9 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
                 key={ann.id || idx}
                 className={`relative rounded-2xl p-4 sm:p-5 transition-all shadow-xs ${
                   isPinned
-                    ? 'bg-amber-50/60 border-2 border-amber-300'
+                    ? 'bg-amber-50/70 border-2 border-amber-300'
                     : isUrgent
-                    ? 'bg-rose-50/40 border-2 border-rose-200'
+                    ? 'bg-rose-50/50 border-2 border-rose-200'
                     : 'bg-white border border-stone-200/90'
                 }`}
               >
@@ -410,6 +447,11 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
                           <ShieldCheck className="w-3 h-3 text-purple-700" />
                           Admin Team
                         </span>
+                        {ann.category && ann.category !== 'general' && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold capitalize">
+                            {ann.category.replace('_', ' ')}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-stone-400 flex items-center gap-1.5 mt-0.5">
                         <Clock className="w-3 h-3" />
@@ -470,7 +512,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
                 <div className="mt-4 pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[11px] font-medium text-stone-400 mr-1">Reactions:</span>
-                    {['👍', '❤️', '🌱', '🚛', '🌧️'].map(emoji => {
+                    {['👍', '❤️', '🌱', '🚛', '🌧️', '📊'].map(emoji => {
                       const count = ann.reactions?.[emoji] || 0;
                       return (
                         <button

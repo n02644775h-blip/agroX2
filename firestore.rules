@@ -2,45 +2,22 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Helper function to check if the caller is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    // Helper function to check if user is operating on their own document
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
     // User profiles collection
     match /users/{userId} {
-      // Public profiles are readable
       allow read: if true;
-      // Allow profile creation during registration (both Firebase Auth and fallback mode)
-      allow create: if isOwner(userId) || request.auth == null;
-      allow update: if isOwner(userId) || request.auth == null;
-      // Disallow client deletions for user records
+      allow create, update: if true;
       allow delete: if false;
     }
 
     // Product listings collection
     match /products/{productId} {
-      // Marketplace browsing is public
       allow read: if true;
-      // Farmers can create products
-      allow create: if (isAuthenticated() && request.resource.data.farmerId == request.auth.uid) || request.auth == null;
-      // Farmers can update or delete only their own products
-      allow update, delete: if (isAuthenticated() && resource.data.farmerId == request.auth.uid) || request.auth == null;
+      allow create, update, delete: if true;
     }
 
     // Orders collection
     match /orders/{orderId} {
-      // Buyers and farmers involved in the order can read it
-      allow read: if true;
-      // Buyers can create orders
-      allow create: if isAuthenticated() || request.auth == null;
-      // Involved parties can update order status
-      allow update: if isAuthenticated() || request.auth == null;
+      allow read, create, update: if true;
       allow delete: if false;
     }
 
@@ -55,15 +32,17 @@ service cloud.firestore {
 
     // Product reviews
     match /reviews/{reviewId} {
-      allow read: if true;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read, create, update, delete: if true;
+    }
+
+    // Community Broadcast & Bulletin Announcements Channel
+    match /announcements/{announcementId} {
+      allow read, create, update, delete: if true;
     }
 
     // Notifications
     match /notifications/{notificationId} {
-      allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated();
+      allow read, create, update, delete: if true;
     }
   }
 }

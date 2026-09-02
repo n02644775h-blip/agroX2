@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Announcement } from '../types';
 import { api } from '../services/api';
+import { subscribeToFirebaseAnnouncements } from '../services/firebaseAnnouncements';
 import { useAuth } from '../context/AuthContext';
 import { AlertCircle, Bell, X, ShieldAlert } from 'lucide-react';
 
@@ -16,15 +17,14 @@ export const AnnouncementsBanner: React.FC = () => {
   });
 
   useEffect(() => {
-    const fetchAnnouncements = async () => {
-      try {
-        const data = await api.getAnnouncements(user?.role);
-        setAnnouncements(data);
-      } catch (err) {
-        console.error('Failed to load announcements:', err);
-      }
+    // Real-time Firestore subscription
+    const unsubscribe = subscribeToFirebaseAnnouncements(user?.role, (data) => {
+      setAnnouncements(data);
+    });
+
+    return () => {
+      unsubscribe();
     };
-    fetchAnnouncements();
   }, [user?.role]);
 
   const handleDismiss = (id: string) => {

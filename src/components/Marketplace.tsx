@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Product, ProductCategory, FilterState, AdRequest } from '../types';
 import { api } from '../services/api';
+import { subscribeToFirebaseProducts } from '../services/firebaseProducts';
 import { ProductCard } from './ProductCard';
 import {
   Search,
@@ -114,6 +115,25 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
 
   useEffect(() => {
     loadData();
+
+    // Attach real-time product updates from Firestore
+    const unsubscribe = subscribeToFirebaseProducts(undefined, (fbProducts) => {
+      if (fbProducts && fbProducts.length > 0) {
+        setProducts(prev => {
+          const combined = [...fbProducts];
+          prev.forEach(p => {
+            if (!combined.some(c => c.id === p.id)) {
+              combined.push(p);
+            }
+          });
+          return combined;
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [filters.category, filters.province, filters.availability, filters.isOrganic, filters.sortBy]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {

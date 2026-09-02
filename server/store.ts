@@ -73,8 +73,42 @@ class MarketplaceStore {
 
   updateUser(id: string, updates: Partial<User>): User | undefined {
     const index = this.users.findIndex(u => u.id === id);
-    if (index === -1) return undefined;
-    this.users[index] = { ...this.users[index], ...updates };
+    if (index === -1) {
+      const newUser: User = {
+        id,
+        name: updates.name || 'User',
+        email: updates.email || `${id}@agrox.org`,
+        role: updates.role || (id.startsWith('farmer') ? 'farmer' : id.startsWith('admin') ? 'admin' : 'buyer'),
+        phone: updates.phone || '',
+        avatar: updates.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+        location: updates.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        farmerProfile: updates.farmerProfile,
+        buyerProfile: updates.buyerProfile,
+        ...updates
+      };
+      this.users.push(newUser);
+      return newUser;
+    }
+
+    const existing = this.users[index];
+    this.users[index] = {
+      ...existing,
+      ...updates,
+      farmerProfile: updates.farmerProfile ? {
+        ...(existing.farmerProfile || {}),
+        ...updates.farmerProfile
+      } : existing.farmerProfile,
+      buyerProfile: updates.buyerProfile ? {
+        ...(existing.buyerProfile || {}),
+        ...updates.buyerProfile
+      } : existing.buyerProfile,
+      location: updates.location ? {
+        ...(existing.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' }),
+        ...updates.location
+      } : existing.location
+    };
     return this.users[index];
   }
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Product, Order, OrderStatus, ProductAvailability } from '../types';
+import { subscribeToFirebaseProducts, deleteProductFromFirebase } from '../services/firebaseProducts';
 import { FarmerProfileModal } from './FarmerProfileModal';
 import { FarmerAdvertModal } from './FarmerAdvertModal';
 import {
@@ -92,6 +93,30 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
 
   useEffect(() => {
     loadFarmerData();
+
+    if (user?.id) {
+      const unsubscribeProducts = subscribeToFirebaseProducts(
+        { farmerId: user.id },
+        (fbProducts) => {
+          if (fbProducts && fbProducts.length > 0) {
+            setProducts(prev => {
+              const combined = [...fbProducts];
+              // Add any from API that might not be in Firebase yet
+              prev.forEach(p => {
+                if (!combined.some(c => c.id === p.id)) {
+                  combined.push(p);
+                }
+              });
+              return combined;
+            });
+          }
+        }
+      );
+
+      return () => {
+        unsubscribeProducts();
+      };
+    }
   }, [user]);
 
   const handleUpdateOrderStatus = async (orderId: string, newStatus: OrderStatus, note?: string) => {
@@ -124,6 +149,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   const handleDeleteProduct = async (productId: string) => {
     if (!confirm('Are you sure you want to remove this product listing?')) return;
     try {
+      setProducts(prev => prev.filter(p => p.id !== productId));
+      await deleteProductFromFirebase(productId);
       await api.deleteProduct(productId);
       await loadFarmerData();
     } catch (err) {
