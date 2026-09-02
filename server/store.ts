@@ -116,13 +116,13 @@ class MarketplaceStore {
         list = list.filter(p => p.farmerId === filters.farmerId);
       }
       if (filters.category && filters.category !== 'all') {
-        list = list.filter(p => p.category === filters.category || p.categoryName.toLowerCase() === filters.category.toLowerCase());
+        list = list.filter(p => p.category === filters.category || (p.categoryName && p.categoryName.toLowerCase() === filters.category!.toLowerCase()));
       }
       if (filters.province && filters.province !== 'all') {
-        list = list.filter(p => p.location.province.toLowerCase() === filters.province!.toLowerCase());
+        list = list.filter(p => p.location?.province && p.location.province.toLowerCase() === filters.province!.toLowerCase());
       }
       if (filters.city && filters.city !== 'all') {
-        list = list.filter(p => p.location.city.toLowerCase() === filters.city!.toLowerCase());
+        list = list.filter(p => p.location?.city && p.location.city.toLowerCase() === filters.city!.toLowerCase());
       }
       if (filters.minPrice !== undefined && !isNaN(filters.minPrice)) {
         list = list.filter(p => p.price >= filters.minPrice!);
@@ -139,13 +139,13 @@ class MarketplaceStore {
       if (filters.search && filters.search.trim() !== '') {
         const query = filters.search.toLowerCase().trim();
         list = list.filter(p =>
-          p.name.toLowerCase().includes(query) ||
-          p.description.toLowerCase().includes(query) ||
-          p.categoryName.toLowerCase().includes(query) ||
-          p.farmerName.toLowerCase().includes(query) ||
-          p.farmName.toLowerCase().includes(query) ||
-          p.location.city.toLowerCase().includes(query) ||
-          p.location.province.toLowerCase().includes(query)
+          (p.name && p.name.toLowerCase().includes(query)) ||
+          (p.description && p.description.toLowerCase().includes(query)) ||
+          (p.categoryName && p.categoryName.toLowerCase().includes(query)) ||
+          (p.farmerName && p.farmerName.toLowerCase().includes(query)) ||
+          (p.farmName && p.farmName.toLowerCase().includes(query)) ||
+          (p.location?.city && p.location.city.toLowerCase().includes(query)) ||
+          (p.location?.province && p.location.province.toLowerCase().includes(query))
         );
       }
       // Sort
@@ -576,32 +576,63 @@ class MarketplaceStore {
     });
   }
 
-  createAnnouncement(ann: Omit<Announcement, 'id' | 'createdAt' | 'active'>): Announcement {
-    const id = `ann-${Date.now()}`;
+  createAnnouncement(ann: Partial<Announcement>): Announcement {
+    const id = `ann-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const title = (ann.title || 'Platform Announcement').toString().trim();
+    const content = (ann.content || '').toString().trim();
+    const category = ann.category || 'general';
+    const priority = ann.priority || 'normal';
+    const targetAudience = ann.targetAudience || 'all';
+    const author = (ann.author || 'agroX Admin Team').toString().trim();
+    const authorRole = ann.authorRole || 'admin';
+    const authorAvatar = ann.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
+
     const newAnn: Announcement = {
-      ...ann,
       id,
+      title,
+      content,
+      category,
+      priority,
+      targetAudience,
+      author,
+      authorRole,
+      authorAvatar,
+      pinned: Boolean(ann.pinned),
       createdAt: new Date().toISOString(),
       active: true,
       likesCount: 0,
       reactions: { '👍': 1 }
     };
+
+    if (!Array.isArray(this.announcements)) {
+      this.announcements = [];
+    }
     this.announcements.unshift(newAnn);
 
-    // Broadcast notifications to targeted users
-    this.users.forEach(u => {
-      if (ann.targetAudience === 'all' || (ann.targetAudience === 'farmers' && u.role === 'farmer') || (ann.targetAudience === 'buyers' && u.role === 'buyer')) {
-        this.createNotification({
-          userId: u.id,
-          title: `Announcement: ${ann.title}`,
-          message: ann.content.substring(0, 100) + '...',
-          type: 'announcement',
-          link: '/messages',
-          read: false,
-          createdAt: new Date().toISOString()
+    // Broadcast notifications to targeted users safely
+    try {
+      if (Array.isArray(this.users)) {
+        this.users.forEach(u => {
+          if (
+            targetAudience === 'all' ||
+            (targetAudience === 'farmers' && u.role === 'farmer') ||
+            (targetAudience === 'buyers' && u.role === 'buyer')
+          ) {
+            this.createNotification({
+              userId: u.id,
+              title: `Announcement: ${title}`,
+              message: content.length > 100 ? `${content.substring(0, 100)}...` : content,
+              type: 'announcement',
+              link: '/messages',
+              read: false,
+              createdAt: new Date().toISOString()
+            });
+          }
         });
       }
-    });
+    } catch (err) {
+      console.warn('Failed to broadcast user notification for announcement:', err);
+    }
 
     return newAnn;
   }

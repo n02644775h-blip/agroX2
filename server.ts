@@ -177,96 +177,166 @@ async function startServer() {
   });
 
   app.post('/api/products', (req: Request, res: Response) => {
-    const {
-      farmerId,
-      name,
-      category,
-      categoryName,
-      description,
-      price,
-      unit,
-      quantityAvailable,
-      minOrderQuantity,
-      images,
-      location,
-      harvestDate,
-      expiryDate,
-      isOrganic,
-      additionalNotes
-    } = req.body;
+    try {
+      const {
+        farmerId,
+        farmerName,
+        farmerAvatar,
+        farmName,
+        name,
+        category,
+        categoryName,
+        description,
+        price,
+        unit,
+        quantityAvailable,
+        minOrderQuantity,
+        images,
+        location,
+        harvestDate,
+        expiryDate,
+        isOrganic,
+        availability,
+        additionalNotes
+      } = req.body || {};
 
-    if (!name || !price || !unit || quantityAvailable === undefined || !farmerId) {
-      return res.status(400).json({ error: 'Missing required product listing fields (name, price, unit, quantity, farmerId)' });
+      if (!name || price === undefined || price === null || !unit) {
+        return res.status(400).json({ error: 'Missing required produce listing fields (name, price, unit)' });
+      }
+
+      const numPrice = typeof price === 'number' ? price : parseFloat(price);
+      if (isNaN(numPrice) || numPrice <= 0) {
+        return res.status(400).json({ error: 'Please provide a valid price greater than 0.' });
+      }
+
+      const numQty = quantityAvailable !== undefined ? (typeof quantityAvailable === 'number' ? quantityAvailable : parseFloat(quantityAvailable)) : 50;
+      const numMin = minOrderQuantity !== undefined ? (typeof minOrderQuantity === 'number' ? minOrderQuantity : parseFloat(minOrderQuantity)) : 1;
+
+      // Check if farmer exists in store; if not, use provided metadata from request safely
+      const existingFarmer = farmerId ? store.getUserById(farmerId) : undefined;
+      const finalFarmerId = farmerId || existingFarmer?.id || 'farmer-1';
+      const finalFarmerName = (farmerName || existingFarmer?.name || 'Local Producer').toString().trim();
+      const finalFarmerAvatar = farmerAvatar || existingFarmer?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400';
+      const finalFarmName = (farmName || existingFarmer?.farmerProfile?.farmName || `${finalFarmerName}'s Farm`).toString().trim();
+
+      const finalLocation = location || (existingFarmer?.location ? {
+        province: existingFarmer.location?.province || 'Harare',
+        city: existingFarmer.location?.city || 'Harare',
+        community: existingFarmer.location?.community || 'Direct Market',
+        address: existingFarmer.farmerProfile?.address || 'Direct Farm Gate'
+      } : {
+        province: 'Harare',
+        city: 'Harare',
+        community: 'Direct Market',
+        address: 'Direct Farm Gate'
+      });
+
+      const defaultImages = [
+        'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&q=80&w=800'
+      ];
+
+      const newProduct: Product = {
+        id: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        farmerId: finalFarmerId,
+        farmerName: finalFarmerName,
+        farmerAvatar: finalFarmerAvatar,
+        farmName: finalFarmName,
+        name: name.toString().trim(),
+        category: category || 'cat-veg',
+        categoryName: categoryName || 'Vegetables',
+        description: description ? description.toString().trim() : `${name} freshly harvested from ${finalFarmName}.`,
+        price: numPrice,
+        unit: (unit || 'kg').toString().trim(),
+        quantityAvailable: isNaN(numQty) ? 50 : Math.max(0, numQty),
+        minOrderQuantity: isNaN(numMin) ? 1 : Math.max(1, numMin),
+        images: (Array.isArray(images) && images.length > 0 && images[0]) ? images : defaultImages,
+        location: finalLocation,
+        harvestDate: harvestDate || undefined,
+        expiryDate: expiryDate || undefined,
+        availability: availability || (numQty <= 0 ? 'out_of_stock' : numQty <= 10 ? 'low_stock' : 'available'),
+        isOrganic: Boolean(isOrganic),
+        featured: false,
+        rating: 5.0,
+        reviewsCount: 0,
+        additionalNotes: additionalNotes ? additionalNotes.toString().trim() : '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      store.createProduct(newProduct);
+      return res.status(201).json(newProduct);
+    } catch (err: any) {
+      console.error('Error creating product in /api/products:', err);
+      return res.status(500).json({ error: err?.message || 'Server error creating produce listing' });
     }
-
-    const farmer = store.getUserById(farmerId);
-    if (!farmer) {
-      return res.status(404).json({ error: 'Farmer profile not found' });
-    }
-
-    const defaultImages = [
-      'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&q=80&w=800'
-    ];
-
-    const newProduct: Product = {
-      id: `prod-${Date.now()}`,
-      farmerId,
-      farmerName: farmer.name,
-      farmerAvatar: farmer.avatar,
-      farmName: farmer.farmerProfile?.farmName || `${farmer.name}'s Farm`,
-      name,
-      category: category || 'cat-veg',
-      categoryName: categoryName || 'Vegetables',
-      description: description || '',
-      price: parseFloat(price),
-      unit,
-      quantityAvailable: parseInt(quantityAvailable, 10),
-      minOrderQuantity: parseInt(minOrderQuantity || '1', 10),
-      images: (images && images.length > 0) ? images : defaultImages,
-      location: location || {
-        province: farmer.location.province,
-        city: farmer.location.city,
-        community: farmer.location.community
-      },
-      harvestDate: harvestDate || undefined,
-      expiryDate: expiryDate || undefined,
-      availability: parseInt(quantityAvailable, 10) > 0 ? 'available' : 'out_of_stock',
-      isOrganic: Boolean(isOrganic),
-      featured: false,
-      rating: 5.0,
-      reviewsCount: 0,
-      additionalNotes: additionalNotes || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    store.createProduct(newProduct);
-    res.status(201).json(newProduct);
   });
 
   app.put('/api/products/:id', (req: Request, res: Response) => {
-    const updated = store.updateProduct(req.params.id, req.body);
-    if (!updated) {
-      return res.status(404).json({ error: 'Product not found' });
+    try {
+      const updated = store.updateProduct(req.params.id, req.body);
+      if (!updated) {
+        // Safe auto-upsert if store was cleared or reloaded
+        const fallbackProd: Product = {
+          id: req.params.id,
+          farmerId: req.body.farmerId || 'farmer-1',
+          farmerName: req.body.farmerName || 'Local Producer',
+          farmerAvatar: req.body.farmerAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
+          farmName: req.body.farmName || 'Direct Farm Gate',
+          name: req.body.name || 'Produce Item',
+          category: req.body.category || 'cat-veg',
+          categoryName: req.body.categoryName || 'Vegetables',
+          description: req.body.description || '',
+          price: parseFloat(req.body.price) || 1.0,
+          unit: req.body.unit || 'kg',
+          quantityAvailable: parseFloat(req.body.quantityAvailable) || 10,
+          minOrderQuantity: parseFloat(req.body.minOrderQuantity) || 1,
+          images: req.body.images || ['https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&q=80&w=800'],
+          location: req.body.location || { province: 'Harare', city: 'Harare', community: 'Direct' },
+          availability: req.body.availability || 'available',
+          isOrganic: Boolean(req.body.isOrganic),
+          featured: false,
+          rating: 5.0,
+          reviewsCount: 0,
+          additionalNotes: req.body.additionalNotes || '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...req.body
+        };
+        store.createProduct(fallbackProd);
+        return res.json(fallbackProd);
+      }
+      return res.json(updated);
+    } catch (err: any) {
+      console.error('Error updating product:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to update produce listing' });
     }
-    res.json(updated);
   });
 
   app.delete('/api/products/:id', (req: Request, res: Response) => {
-    const success = store.deleteProduct(req.params.id);
-    if (!success) {
-      return res.status(404).json({ error: 'Product not found or already removed' });
+    try {
+      const success = store.deleteProduct(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: 'Product not found or already removed' });
+      }
+      return res.json({ message: 'Product deleted successfully' });
+    } catch (err: any) {
+      console.error('Error deleting product:', err);
+      return res.status(500).json({ error: 'Failed to delete produce listing' });
     }
-    res.json({ message: 'Product deleted successfully' });
   });
 
   app.put('/api/products/:id/toggle-status', (req: Request, res: Response) => {
-    const { availability } = req.body;
-    const updated = store.updateProductAvailability(req.params.id, availability);
-    if (!updated) {
-      return res.status(404).json({ error: 'Product not found' });
+    try {
+      const { availability } = req.body || {};
+      const updated = store.updateProductAvailability(req.params.id, availability || 'available');
+      if (!updated) {
+        return res.status(404).json({ error: 'Product not found' });
+      }
+      return res.json(updated);
+    } catch (err: any) {
+      console.error('Error toggling product status:', err);
+      return res.status(500).json({ error: 'Failed to update availability status' });
     }
-    res.json(updated);
   });
 
   // --- Orders ---
@@ -456,40 +526,66 @@ async function startServer() {
 
   // --- Announcements ---
   app.get('/api/announcements', (req: Request, res: Response) => {
-    const role = req.query.role as string;
-    res.json(store.getAnnouncements(role));
+    try {
+      const role = req.query.role as string;
+      const data = store.getAnnouncements(role);
+      res.json(data);
+    } catch (err: any) {
+      console.error('Error fetching announcements:', err);
+      res.status(500).json({ error: 'Failed to retrieve announcements' });
+    }
   });
 
   app.post('/api/announcements', (req: Request, res: Response) => {
-    const { title, content, priority, targetAudience, author, authorRole, authorAvatar, category, pinned } = req.body;
-    if (!title || !content) return res.status(400).json({ error: 'Title and content required' });
+    try {
+      const { title, content, message, text, priority, targetAudience, author, authorRole, authorAvatar, category, pinned } = req.body || {};
+      const finalTitle = (title || '').toString().trim();
+      const finalContent = (content || message || text || '').toString().trim();
 
-    const newAnn = store.createAnnouncement({
-      title,
-      content,
-      priority: priority || 'normal',
-      targetAudience: targetAudience || 'all',
-      author: author || 'agroX Admin Team',
-      authorRole: authorRole || 'admin',
-      authorAvatar: authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-      category: category || 'general',
-      pinned: Boolean(pinned)
-    });
+      if (!finalTitle || !finalContent) {
+        return res.status(400).json({ error: 'Both Title and Message content are required to publish an announcement.' });
+      }
 
-    res.status(201).json(newAnn);
+      const newAnn = store.createAnnouncement({
+        title: finalTitle,
+        content: finalContent,
+        priority: priority || 'normal',
+        targetAudience: targetAudience || 'all',
+        author: author || 'agroX Admin Team',
+        authorRole: authorRole || 'admin',
+        authorAvatar: authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+        category: category || 'general',
+        pinned: Boolean(pinned)
+      });
+
+      return res.status(201).json(newAnn);
+    } catch (err: any) {
+      console.error('Error creating announcement on server:', err);
+      return res.status(500).json({ error: err?.message || 'Server error while publishing announcement.' });
+    }
   });
 
   app.post('/api/announcements/:id/react', (req: Request, res: Response) => {
-    const { reaction } = req.body;
-    const updated = store.reactToAnnouncement(req.params.id, reaction || '👍');
-    if (!updated) return res.status(404).json({ error: 'Announcement not found' });
-    res.json(updated);
+    try {
+      const { reaction } = req.body || {};
+      const updated = store.reactToAnnouncement(req.params.id, reaction || '👍');
+      if (!updated) return res.status(404).json({ error: 'Announcement not found' });
+      res.json(updated);
+    } catch (err: any) {
+      console.error('Error reacting to announcement:', err);
+      res.status(500).json({ error: 'Failed to record reaction' });
+    }
   });
 
   app.delete('/api/announcements/:id', (req: Request, res: Response) => {
-    const deleted = store.deleteAnnouncement(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'Announcement not found' });
-    res.json({ success: true });
+    try {
+      const deleted = store.deleteAnnouncement(req.params.id);
+      if (!deleted) return res.status(404).json({ error: 'Announcement not found' });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('Error deleting announcement:', err);
+      res.status(500).json({ error: 'Failed to remove announcement' });
+    }
   });
 
   // --- Reports ---

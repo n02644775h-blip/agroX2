@@ -49,6 +49,7 @@ export function App() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+  const [farmerRefreshKey, setFarmerRefreshKey] = useState(0);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
   const [reportProduct, setReportProduct] = useState<Product | null>(null);
@@ -195,6 +196,7 @@ export function App() {
 
         {currentView === 'farmer_dashboard' && (
           <FarmerDashboard
+            key={`farmer-dash-${farmerRefreshKey}`}
             onOpenAddProduct={() => {
               setEditingProduct(null);
               setIsAddProductOpen(true);
@@ -423,10 +425,7 @@ export function App() {
           onSuccess={() => {
             setIsAddProductOpen(false);
             setEditingProduct(null);
-            // Refresh view
-            if (currentView === 'farmer_dashboard') {
-              setCurrentView('farmer_dashboard');
-            }
+            setFarmerRefreshKey(k => k + 1);
           }}
         />
       )}
