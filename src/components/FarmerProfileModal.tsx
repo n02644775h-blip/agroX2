@@ -62,6 +62,7 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
   const { user, updateUserProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [name, setName] = useState(user?.name || '');
   const [avatar, setAvatar] = useState(user?.avatar || PRESET_AVATARS[0].url);
   const [phone, setPhone] = useState(user?.phone || '');
   const [farmName, setFarmName] = useState(user?.farmerProfile?.farmName || `${user?.name || 'Farmer'}'s Farm`);
@@ -120,6 +121,7 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
 
     try {
       const updates: Partial<User> = {
+        name: name.trim() || user.name,
         avatar,
         phone: phone.trim(),
         location: {
@@ -284,33 +286,30 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
             </div>
           </div>
 
-          {/* 2. Full Name (Greyed out / Disabled as requested) & Farm Name */}
+          {/* 2. Full Name & Farm Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* FULL NAME - LOCKED / GREYED OUT */}
+            {/* FULL NAME - FULLY EDITABLE */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-stone-600 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-stone-400" />
-                  Legal Account Name
+                <label className="font-bold text-stone-700 flex items-center gap-1.5">
+                  <UserIcon className="w-3.5 h-3.5 text-emerald-600" />
+                  Producer Full Name *
                 </label>
-                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200">
-                  Verified Identity (Locked)
+                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  Editable
                 </span>
               </div>
-              <div className="relative">
-                <input
-                  id="farmer-locked-name-input"
-                  type="text"
-                  value={user?.name || ''}
-                  disabled
-                  readOnly
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-100 text-stone-500 font-semibold cursor-not-allowed select-none shadow-inner"
-                  title="Account Name cannot be changed directly to protect identity verification. Contact Platform Admin to request name amendments."
-                />
-                <Lock className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-              <p className="text-[10px] text-stone-400 mt-1">
-                To prevent fraud and maintain verified trust, legal producer names cannot be edited.
+              <input
+                id="farmer-name-input"
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Tendai Moyo"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                required
+              />
+              <p className="text-[10px] text-stone-500 mt-1">
+                Your primary producer and account contact name.
               </p>
             </div>
 

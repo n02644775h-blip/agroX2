@@ -23,6 +23,12 @@ import { auth, db } from '../firebase/config';
 import { getFriendlyAuthErrorMessage } from '../firebase/authErrors';
 import { User, UserRole, Notification } from '../types';
 import { api } from '../services/api';
+import {
+  persistUserSession,
+  getPersistedUserSession,
+  clearUserSession,
+  getCookie
+} from '../services/cookieService';
 
 // Helper to sanitize objects for Firestore to prevent "Unsupported field value: undefined" errors
 export function sanitizeForFirestore<T>(data: T): T {
@@ -103,10 +109,26 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Synchronously restore user from multi-layer storage (cookies, localStorage, sessionStorage)
+  const initialPersistedUser = getPersistedUserSession();
+
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(() => {
+    if (!initialPersistedUser) return null;
+    return {
+      uid: initialPersistedUser.id,
+      fullName: initialPersistedUser.name,
+      email: initialPersistedUser.email,
+      role: initialPersistedUser.role,
+      phone: initialPersistedUser.phone,
+      avatar: initialPersistedUser.avatar,
+      location: initialPersistedUser.location,
+      farmerProfile: initialPersistedUser.farmerProfile,
+      buyerProfile: initialPersistedUser.buyerProfile
+    };
+  });
+  const [user, setUser] = useState<User | null>(() => initialPersistedUser);
+  const [loading, setLoading] = useState<boolean>(!initialPersistedUser);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
@@ -115,21 +137,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const syncUserProfile = async (fbUser: FirebaseUser | null, customUid?: string): Promise<User | null> => {
     const uid = fbUser?.uid || customUid;
     if (!uid) {
-      setUser(null);
-      setUserProfile(null);
-      setNotifications([]);
-      setFavorites([]);
-      setUnreadMessagesCount(0);
+      // Only clear if explicitly empty
+      if (!initialPersistedUser && !user) {
+        setUser(null);
+        setUserProfile(null);
+        setNotifications([]);
+        setFavorites([]);
+        setUnreadMessagesCount(0);
+      }
       return null;
     }
 
     try {
-      // 1. Check local cached user profile first for instant availability
+      // 1. Check local cached user profile first
       let localCachedUser: User | null = null;
       try {
-        const cachedRaw = localStorage.getItem(`agrox_user_profile_${uid}`);
-        if (cachedRaw) {
-          localCachedUser = JSON.parse(cachedRaw);
+        const persisted = getPersistedUserSession();
+        if (persisted && persisted.id === uid) {
+          localCachedUser = persisted;
+        } else {
+          const cachedRaw = localStorage.getItem(`agrox_user_profile_${uid}`);
+          if (cachedRaw) {
+            localCachedUser = JSON.parse(cachedRaw);
+          }
         }
       } catch (err) {
         console.warn('Error reading local user cache:', err);
@@ -145,18 +175,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (userSnap && userSnap.exists()) {
         const fsData = userSnap.data() as UserProfileData;
+        // Merge giving local edits priority so recently saved farm profile changes are preserved
         profileData = {
-          ...fsData,
-          // Merge local cached fields if present to avoid losing unsaved details
-          farmerProfile: fsData.farmerProfile ? {
-            ...(localCachedUser?.farmerProfile || {}),
-            ...fsData.farmerProfile
-          } : localCachedUser?.farmerProfile,
-          buyerProfile: fsData.buyerProfile ? {
-            ...(localCachedUser?.buyerProfile || {}),
-            ...fsData.buyerProfile
-          } : localCachedUser?.buyerProfile,
-          location: fsData.location || localCachedUser?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' }
+          uid,
+          fullName: localCachedUser?.name || fsData.fullName || fbUser?.displayName || 'Producer User',
+          email: fsData.email || localCachedUser?.email || fbUser?.email || `${uid}@agrox.org`,
+          role: (localCachedUser?.role || fsData.role || (uid.startsWith('farmer') ? 'farmer' : uid.startsWith('admin') ? 'admin' : 'buyer')) as UserRole,
+          phone: localCachedUser?.phone || fsData.phone || '',
+          avatar: localCachedUser?.avatar || fsData.avatar || fbUser?.photoURL || '',
+          location: {
+            country: 'Zimbabwe',
+            province: 'Harare',
+            city: 'Harare',
+            ...(fsData.location || {}),
+            ...(localCachedUser?.location || {})
+          },
+          farmerProfile: {
+            ...(fsData.farmerProfile || {}),
+            ...(localCachedUser?.farmerProfile || {})
+          },
+          buyerProfile: {
+            ...(fsData.buyerProfile || {}),
+            ...(localCachedUser?.buyerProfile || {})
+          }
         };
       } else {
         // If document does not exist in Firestore yet:
@@ -235,17 +276,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         avatar: profileData.avatar || fbUser?.photoURL || localCachedUser?.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
         location: profileData.location || localCachedUser?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
         status: 'active',
-        createdAt: typeof profileData.createdAt === 'string' ? profileData.createdAt : new Date().toISOString(),
+        createdAt: (localCachedUser && localCachedUser.createdAt) || (typeof profileData.createdAt === 'string' ? profileData.createdAt : new Date().toISOString()),
         farmerProfile: profileData.farmerProfile || localCachedUser?.farmerProfile,
         buyerProfile: profileData.buyerProfile || localCachedUser?.buyerProfile
       };
 
       setUser(unifiedUser);
-      localStorage.setItem('agrox_active_uid', uid);
-      localStorage.setItem(`agrox_user_profile_${uid}`, JSON.stringify(unifiedUser));
+      // Multi-layer persistence across localStorage, sessionStorage, and browser cookies
+      persistUserSession(unifiedUser);
 
-      // Also ensure in-memory store in local session has this user for backend queries
-      api.setToken(`fb_${uid}`);
+      // Ensure API token is set
+      api.setToken(`token_${uid}`);
 
       // Fetch related user activity: notifications, favorites, and messages
       try {
@@ -265,32 +306,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return unifiedUser;
     } catch (error) {
       console.error('Error synchronizing user profile from Firestore:', error);
+      if (localCachedUser) {
+        setUser(localCachedUser);
+        return localCachedUser;
+      }
       return null;
     }
   };
 
   // Listen to Firebase Authentication state changes across refresh & tab reload
   useEffect(() => {
+    // If we have an initial persisted user, configure API token immediately
+    const existingUser = getPersistedUserSession();
+    if (existingUser) {
+      api.setToken(localStorage.getItem('agriconnect_token') || `token_${existingUser.id}`);
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       setCurrentUser(fbUser);
       if (fbUser) {
         await syncUserProfile(fbUser);
       } else {
-        // Check if there is a saved active UID in localStorage
-        const savedUid = localStorage.getItem('agrox_active_uid');
-        if (savedUid) {
-          const userFromFs = await syncUserProfile(null, savedUid);
-          if (userFromFs) {
+        // Firebase has no active session or returned null.
+        // Check our multi-layer session storage:
+        const currentPersisted = getPersistedUserSession();
+        const activeUid = currentPersisted?.id || localStorage.getItem('agrox_active_uid') || getCookie('agrox_uid');
+
+        if (activeUid) {
+          const synced = await syncUserProfile(null, activeUid);
+          if (synced) {
+            setLoading(false);
+            return;
+          } else if (currentPersisted) {
+            // Keep the persisted user - do NOT log out!
+            setUser(currentPersisted);
+            setUserProfile({
+              uid: currentPersisted.id,
+              fullName: currentPersisted.name,
+              email: currentPersisted.email,
+              role: currentPersisted.role,
+              phone: currentPersisted.phone,
+              avatar: currentPersisted.avatar,
+              location: currentPersisted.location,
+              farmerProfile: currentPersisted.farmerProfile,
+              buyerProfile: currentPersisted.buyerProfile
+            });
             setLoading(false);
             return;
           }
         }
 
-        // Fallback check if user is using demo mock login mode
+        // Fallback check if server session has a logged-in user
         const { user: currentApiUser } = await api.getMe().catch(() => ({ user: null }));
-        if (currentApiUser && !fbUser) {
+        if (currentApiUser) {
           await syncUserProfile(null, currentApiUser.id);
-        } else {
+        } else if (!currentPersisted) {
+          // Only clear if genuinely no user was persisted anywhere
           setUser(null);
           setUserProfile(null);
         }
@@ -298,7 +369,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Listen for storage access granted events from CookieAccessBanner
+    const handleStorageAccessGranted = () => {
+      const refreshedUser = getPersistedUserSession();
+      if (refreshedUser) {
+        persistUserSession(refreshedUser);
+        syncUserProfile(null, refreshedUser.id);
+      }
+    };
+    window.addEventListener('agrox_storage_access_granted', handleStorageAccessGranted);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('agrox_storage_access_granted', handleStorageAccessGranted);
+    };
   }, []);
 
   // 1. User Registration / Signup
@@ -454,6 +538,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Also check api mock store
             const res = await api.login(email.trim()).catch(() => null);
             if (res?.user) {
+              persistUserSession(res.user, res.token);
               setUser(res.user);
               setUserProfile({
                 uid: res.user.id,
@@ -477,6 +562,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         // Demo/mock login path
         const res = await api.login(email);
+        persistUserSession(res.user, res.token);
         setUser(res.user);
         setUserProfile({
           uid: res.user.id,
@@ -511,6 +597,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     try {
       const res = await api.login('admin@agrox.org');
+      persistUserSession(res.user, res.token);
       setUser(res.user);
       setUserProfile({
         uid: res.user.id,
@@ -540,6 +627,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         status: 'active',
         createdAt: '2026-01-01T00:00:00Z'
       };
+      persistUserSession(adminFallbackUser, 'token_admin-1');
       setUser(adminFallbackUser);
       setUserProfile({
         uid: 'admin-1',
@@ -559,7 +647,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // 5. Logout
   const logout = async (): Promise<void> => {
-    localStorage.removeItem('agrox_active_uid');
+    clearUserSession();
     try {
       await signOut(auth);
     } catch (err) {
@@ -613,9 +701,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      localStorage.setItem('agrox_active_uid', targetId);
       const res = await api.login(targetEmail).catch(() => null);
       if (res?.user) {
+        persistUserSession(res.user, res.token);
         await syncUserProfile(null, res.user.id);
       } else {
         await syncUserProfile(null, targetId);
@@ -656,9 +744,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } : user.buyerProfile
       };
 
-      // 1. Immediately save to persistent localStorage
-      localStorage.setItem('agrox_active_uid', user.id);
-      localStorage.setItem(`agrox_user_profile_${user.id}`, JSON.stringify(updatedUser));
+      // 1. Immediately save to persistent multi-layer storage (cookies, localStorage, sessionStorage)
+      persistUserSession(updatedUser);
 
       // 2. Prepare comprehensive Firestore document payload
       const firestoreDocPayload: Record<string, any> = {

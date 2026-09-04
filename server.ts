@@ -8,6 +8,21 @@ import { User, Product, Order, Review, Announcement, Report, ProductCategory } f
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function parseCookies(req: Request): Record<string, string> {
+  const list: Record<string, string> = {};
+  const rc = req.headers.cookie;
+  if (rc) {
+    rc.split(';').forEach(cookie => {
+      const parts = cookie.split('=');
+      const key = parts.shift()?.trim();
+      if (key) {
+        list[key] = decodeURIComponent(parts.join('='));
+      }
+    });
+  }
+  return list;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -38,9 +53,15 @@ async function startServer() {
       return res.status(403).json({ error: 'Your account has been suspended by the platform administrator.' });
     }
 
+    const token = `token_${user.id}_${Date.now()}`;
+    res.setHeader('Set-Cookie', [
+      `agrox_uid=${user.id}; Path=/; SameSite=None; Secure; Max-Age=31536000`,
+      `agriconnect_token=${token}; Path=/; SameSite=None; Secure; Max-Age=31536000`
+    ]);
+
     return res.json({
       user,
-      token: `token_${user.id}_${Date.now()}`
+      token
     });
   });
 
@@ -88,10 +109,40 @@ async function startServer() {
 
     store.createUser(newUser);
 
+    const token = `token_${newUser.id}_${Date.now()}`;
+    res.setHeader('Set-Cookie', [
+      `agrox_uid=${newUser.id}; Path=/; SameSite=None; Secure; Max-Age=31536000`,
+      `agriconnect_token=${token}; Path=/; SameSite=None; Secure; Max-Age=31536000`
+    ]);
+
     return res.status(201).json({
       user: newUser,
-      token: `token_${newUser.id}_${Date.now()}`
+      token
     });
+  });
+
+  app.post('/api/auth/session', (req: Request, res: Response) => {
+    const { userId, user, token } = req.body || {};
+    if (userId) {
+      if (user && !store.getUserById(userId)) {
+        store.createUser(user);
+      }
+      const sessionToken = token || `token_${userId}_${Date.now()}`;
+      res.setHeader('Set-Cookie', [
+        `agrox_uid=${userId}; Path=/; SameSite=None; Secure; Max-Age=31536000`,
+        `agriconnect_token=${sessionToken}; Path=/; SameSite=None; Secure; Max-Age=31536000`
+      ]);
+      return res.json({ success: true, userId });
+    }
+    return res.status(400).json({ error: 'userId required' });
+  });
+
+  app.post('/api/auth/logout', (_req: Request, res: Response) => {
+    res.setHeader('Set-Cookie', [
+      `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
+      `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
+    ]);
+    return res.json({ success: true });
   });
 
   app.post('/api/auth/reset-password', (req: Request, res: Response) => {
@@ -105,16 +156,29 @@ async function startServer() {
   });
 
   app.get('/api/auth/me', (req: Request, res: Response) => {
+    const cookies = parseCookies(req);
     const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      // Default to buyer-1 for instant demo comfort if no token
-      return res.json({ user: store.getUserById('buyer-1') });
+    let userId: string | null = null;
+
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '').trim();
+      const parts = token.split('_');
+      userId = parts[1] || token;
+    } else if (cookies.agrox_uid) {
+      userId = cookies.agrox_uid;
+    } else if (cookies.agriconnect_token) {
+      const parts = cookies.agriconnect_token.split('_');
+      userId = parts[1] || cookies.agriconnect_token;
     }
-    const token = authHeader.replace('Bearer ', '');
-    const parts = token.split('_');
-    const userId = parts[1] || 'buyer-1';
-    const user = store.getUserById(userId) || store.getUserById('buyer-1');
-    return res.json({ user });
+
+    if (userId) {
+      const user = store.getUserById(userId);
+      if (user) {
+        return res.json({ user });
+      }
+    }
+
+    return res.json({ user: null });
   });
 
   // --- Categories ---
@@ -640,8 +704,23 @@ async function startServer() {
   });
 
   app.put('/api/users/:id', (req: Request, res: Response) => {
-    const updated = store.updateUser(req.params.id, req.body);
-    if (!updated) return res.status(404).json({ error: 'User not found' });
+    let updated = store.updateUser(req.params.id, req.body);
+    if (!updated) {
+      const fallbackUser: User = {
+        id: req.params.id,
+        name: req.body.name || 'Producer User',
+        email: req.body.email || `${req.params.id}@agrox.org`,
+        role: req.body.role || (req.params.id.startsWith('farmer') ? 'farmer' : 'buyer'),
+        phone: req.body.phone || '',
+        avatar: req.body.avatar || '',
+        location: req.body.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        ...req.body
+      };
+      store.createUser(fallbackUser);
+      updated = fallbackUser;
+    }
     res.json(updated);
   });
 

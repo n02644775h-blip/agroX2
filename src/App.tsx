@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext';
 import { mobileService } from './services/mobileService';
 import { Navbar } from './components/Navbar';
 import { AnnouncementsBanner } from './components/AnnouncementsBanner';
+import { CookieAccessBanner } from './components/CookieAccessBanner';
 import { Marketplace } from './components/Marketplace';
 import { FarmerDashboard } from './components/FarmerDashboard';
 import { BuyerDashboard } from './components/BuyerDashboard';
@@ -19,6 +20,7 @@ import { ReportModal } from './components/ReportModal';
 import { AuthModal } from './components/AuthModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { AdminAccessModal } from './components/AdminAccessModal';
+import { FarmerProfileModal } from './components/FarmerProfileModal';
 import { AndroidBottomNav } from './components/AndroidBottomNav';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { AndroidDeviceShell } from './components/AndroidDeviceShell';
@@ -38,8 +40,14 @@ import {
 export function App() {
   const { user } = useAuth();
 
-  // Navigation State
-  const [currentView, setCurrentView] = useState<string>('marketplace');
+  // Navigation State with persistence across refreshes
+  const [currentView, setCurrentView] = useState<string>(() => {
+    try {
+      return localStorage.getItem('agrox_current_view') || 'marketplace';
+    } catch {
+      return 'marketplace';
+    }
+  });
   const [selectedFarmerId, setSelectedFarmerId] = useState<string | null>(null);
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<Order | null>(null);
   const [chatRecipientId, setChatRecipientId] = useState<string | null>(null);
@@ -58,6 +66,7 @@ export function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isAdminAccessOpen, setIsAdminAccessOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isFarmerProfileOpen, setIsFarmerProfileOpen] = useState(false);
   const [isAndroidView, setIsAndroidView] = useState(false);
 
   // Initialize native Capacitor mobile services (Splash Screen, Status Bar, Back Button)
@@ -107,6 +116,11 @@ export function App() {
   const handleNavigate = (view: string, data?: any) => {
     mobileService.triggerHaptic('light');
     setCurrentView(view);
+    try {
+      localStorage.setItem('agrox_current_view', view);
+    } catch (e) {
+      console.warn('Could not save current view:', e);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (view === 'orders' && data?.selectedOrder) {
@@ -165,6 +179,9 @@ export function App() {
       setIsAndroidView={setIsAndroidView}
     >
       <div className="min-h-screen bg-[#F4F7F5] text-[#1A2E1A] font-sans flex flex-col selection:bg-green-600 selection:text-white pb-20 md:pb-0">
+        {/* Browser Cookie & Storage Access Authorization Banner */}
+        <CookieAccessBanner />
+
         {/* Platform Announcements Banner */}
         <AnnouncementsBanner />
 
@@ -470,6 +487,15 @@ export function App() {
         <NotificationsModal
           onClose={() => setIsNotificationsOpen(false)}
           onSelectNotification={handleSelectNotification}
+        />
+      )}
+
+      {isFarmerProfileOpen && (
+        <FarmerProfileModal
+          onClose={() => setIsFarmerProfileOpen(false)}
+          onSuccess={() => {
+            setFarmerRefreshKey(k => k + 1);
+          }}
         />
       )}
 

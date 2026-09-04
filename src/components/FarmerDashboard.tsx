@@ -843,12 +843,20 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between py-1.5 border-b border-stone-200">
                   <span className="text-stone-500 flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-stone-400" />
-                    Legal Account Name:
+                    <UserIcon className="w-3.5 h-3.5 text-emerald-600" />
+                    Producer Full Name:
                   </span>
-                  <span className="font-bold text-stone-800 bg-stone-200/70 px-2 py-0.5 rounded text-stone-600 select-none">
-                    {user?.name} (Verified / Locked)
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-stone-900">
+                      {user?.name}
+                    </span>
+                    <button
+                      onClick={() => setShowProfileModal(true)}
+                      className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                    >
+                      Edit
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between py-1.5 border-b border-stone-200">

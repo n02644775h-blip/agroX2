@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { User, Product, Review } from '../types';
 import { ProductCard } from './ProductCard';
+import { FarmerProfileModal } from './FarmerProfileModal';
 import {
   MapPin,
   Star,
@@ -14,7 +16,8 @@ import {
   Mail,
   CheckCircle,
   Clock,
-  Sparkles
+  Sparkles,
+  Edit3
 } from 'lucide-react';
 
 interface FarmProfileViewProps {
@@ -30,29 +33,32 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
   onSelectProduct,
   onContactFarmer
 }) => {
+  const { user } = useAuth();
   const [farmer, setFarmer] = useState<User | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
+
+  const loadFarmerStore = async () => {
+    setLoading(true);
+    try {
+      const [userData, prodsData, revsData] = await Promise.all([
+        api.getUserById(farmerId),
+        api.getProducts({ farmerId }),
+        api.getReviews(farmerId)
+      ]);
+      setFarmer(userData);
+      setProducts(prodsData);
+      setReviews(revsData);
+    } catch (err) {
+      console.error('Failed to load farm store:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadFarmerStore = async () => {
-      setLoading(true);
-      try {
-        const [userData, prodsData, revsData] = await Promise.all([
-          api.getUserById(farmerId),
-          api.getProducts({ farmerId }),
-          api.getReviews(farmerId)
-        ]);
-        setFarmer(userData);
-        setProducts(prodsData);
-        setReviews(revsData);
-      } catch (err) {
-        console.error('Failed to load farm store:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadFarmerStore();
   }, [farmerId]);
 
@@ -145,13 +151,26 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={() => onContactFarmer(farmer)}
-              className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all shrink-0"
-            >
-              <MessageSquare className="w-4 h-4" />
-              Contact Farm Directly
-            </button>
+            <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+              {(user?.id === farmer.id || user?.email === farmer.email || user?.role === 'admin') && (
+                <button
+                  id="farm-profile-edit-btn"
+                  onClick={() => setShowEditModal(true)}
+                  className="px-4 py-3 rounded-2xl bg-white hover:bg-stone-50 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-2 shadow-xs transition-all"
+                >
+                  <Edit3 className="w-4 h-4 text-emerald-700" />
+                  Edit Farm Profile
+                </button>
+              )}
+
+              <button
+                onClick={() => onContactFarmer(farmer)}
+                className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Contact Farm Directly
+              </button>
+            </div>
           </div>
 
           {/* Bio & Agricultural Specialties */}
@@ -270,6 +289,15 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
           </div>
         )}
       </div>
+
+      {showEditModal && (
+        <FarmerProfileModal
+          onClose={() => setShowEditModal(false)}
+          onSuccess={() => {
+            loadFarmerStore();
+          }}
+        />
+      )}
     </div>
   );
 };
