@@ -79,6 +79,11 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
 
   const handleSendAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) {
+      setPostErrorMessage('Access denied: Only verified agroX platform administrators can publish platform announcements.');
+      return;
+    }
+
     if (!messageInput.trim() || !titleInput.trim()) {
       setPostErrorMessage('Please enter both a title and message content.');
       return;
@@ -93,9 +98,9 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
         content: messageInput.trim(),
         priority: priorityInput,
         targetAudience: targetAudience,
-        author: user?.name || 'agroX Admin Team',
+        author: (user?.role === 'admin' && user?.name) ? user.name : 'agroX Admin Team',
         authorRole: 'admin',
-        authorAvatar: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+        authorAvatar: user?.avatar || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
         category: categoryInput,
         pinned: pinInput,
         reactions: { '👍': 1 },

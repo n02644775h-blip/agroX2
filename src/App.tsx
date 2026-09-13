@@ -138,6 +138,10 @@ export function App() {
 
   // Direct contact farmer from product
   const handleContactFarmerFromProduct = (prod: Product) => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
     setChatRecipientId(prod.farmerId);
     setChatProductId(prod.id);
     setSelectedProduct(null);
@@ -147,6 +151,10 @@ export function App() {
 
   // Direct contact farmer from user profile
   const handleContactFarmerFromUser = (farmer: User) => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
     setChatRecipientId(farmer.id);
     setChatProductId(null);
     setCurrentView('messages');

@@ -224,11 +224,17 @@ export async function fetchAllFirebaseUsers(): Promise<User[]> {
 export async function updateFirebaseUserStatus(userId: string, status: 'active' | 'suspended'): Promise<void> {
   try {
     const userDocRef = doc(db, 'users', userId);
-    await updateDoc(userDocRef, {
-      status,
-      updatedAt: serverTimestamp()
-    });
+    await setDoc(
+      userDocRef,
+      {
+        id: userId,
+        status,
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
   } catch (error) {
+    console.error(`Failed to update status for user ${userId} in Firestore:`, error);
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
   }
 }

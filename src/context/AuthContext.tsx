@@ -148,9 +148,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return null;
     }
 
+    let localCachedUser: User | null = null;
+
     try {
       // 1. Check local cached user profile first
-      let localCachedUser: User | null = null;
       try {
         const persisted = getPersistedUserSession();
         if (persisted && persisted.id === uid) {
@@ -172,9 +173,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       let profileData: UserProfileData;
+      let userStatus: 'active' | 'suspended' = 'active';
 
       if (userSnap && userSnap.exists()) {
-        const fsData = userSnap.data() as UserProfileData;
+        const fsData = userSnap.data() as any;
+
+        // CRITICAL: Check if user is suspended in Firestore
+        if (fsData.status === 'suspended') {
+          console.warn(`User ${uid} is suspended in Firestore. Denying access.`);
+          clearPersistedUserSession();
+          signOut(auth).catch(() => {});
+          setUser(null);
+          setUserProfile(null);
+          setNotifications([]);
+          setFavorites([]);
+          setUnreadMessagesCount(0);
+          throw new Error('Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.');
+        }
+
+        userStatus = fsData.status || 'active';
+
         // Merge giving local edits priority so recently saved farm profile changes are preserved
         profileData = {
           uid,
@@ -209,6 +227,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
+        if (baseUser.status === 'suspended') {
+          clearPersistedUserSession();
+          signOut(auth).catch(() => {});
+          setUser(null);
+          setUserProfile(null);
+          throw new Error('Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.');
+        }
+
         const role: UserRole = baseUser.role || (uid.startsWith('farmer') ? 'farmer' : uid.startsWith('admin') ? 'admin' : 'buyer');
         const defaultAvatar = role === 'farmer'
           ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
@@ -227,6 +253,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             city: 'Harare',
             community: 'Direct Market'
           },
+          status: 'active',
           createdAt: serverTimestamp()
         };
 
@@ -275,7 +302,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: profileData.role || localCachedUser?.role || 'buyer',
         avatar: profileData.avatar || fbUser?.photoURL || localCachedUser?.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
         location: profileData.location || localCachedUser?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
-        status: 'active',
+        status: userStatus,
         createdAt: (localCachedUser && localCachedUser.createdAt) || (typeof profileData.createdAt === 'string' ? profileData.createdAt : new Date().toISOString()),
         farmerProfile: profileData.farmerProfile || localCachedUser?.farmerProfile,
         buyerProfile: profileData.buyerProfile || localCachedUser?.buyerProfile
@@ -369,6 +396,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
+    // Real-time synchronization of account status (e.g., admin suspension from Firebase)
+    let statusUnsub: (() => void) | null = null;
+    if (initialPersistedUser?.id) {
+      const activeUserDocRef = doc(db, 'users', initialPersistedUser.id);
+      statusUnsub = onSnapshot(activeUserDocRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data?.status === 'suspended') {
+            console.warn('Real-time notice: Account has been suspended by administration.');
+            clearPersistedUserSession();
+            signOut(auth).catch(() => {});
+            setUser(null);
+            setUserProfile(null);
+            setNotifications([]);
+            setFavorites([]);
+            setUnreadMessagesCount(0);
+            alert('Notice: Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for appeal.');
+          }
+        }
+      }, () => {});
+    }
+
     // Listen for storage access granted events from CookieAccessBanner
     const handleStorageAccessGranted = () => {
       const refreshedUser = getPersistedUserSession();
@@ -381,6 +430,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       unsubscribe();
+      if (statusUnsub) statusUnsub();
       window.removeEventListener('agrox_storage_access_granted', handleStorageAccessGranted);
     };
   }, []);
@@ -538,6 +588,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Also check api mock store
             const res = await api.login(email.trim()).catch(() => null);
             if (res?.user) {
+              if (res.user.status === 'suspended') {
+                throw new Error('Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.');
+              }
               persistUserSession(res.user, res.token);
               setUser(res.user);
               setUserProfile({
@@ -562,6 +615,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         // Demo/mock login path
         const res = await api.login(email);
+        if (res?.user?.status === 'suspended') {
+          throw new Error('Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.');
+        }
         persistUserSession(res.user, res.token);
         setUser(res.user);
         setUserProfile({

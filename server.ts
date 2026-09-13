@@ -732,23 +732,37 @@ async function startServer() {
   });
 
   // --- Advertisements, POP & Hot Deals ---
-  app.get('/api/ads', (req: Request, res: Response) => {
+  const handleGetAds = (req: Request, res: Response) => {
     const farmerId = req.query.farmerId as string | undefined;
     const status = req.query.status as string | undefined;
     res.json(store.getAdRequests(farmerId, status));
-  });
+  };
+  app.get('/api/ads', handleGetAds);
+  app.get('/api/ad-requests', handleGetAds);
+  app.get('/api/advertisers', handleGetAds);
+  app.get('/api/advertising', handleGetAds);
+  app.get('/ads', handleGetAds);
+  app.get('/ad-requests', handleGetAds);
 
-  app.get('/api/ads/hot-deals', (_req: Request, res: Response) => {
+  const handleGetHotDeals = (_req: Request, res: Response) => {
     res.json(store.getActiveHotDeals());
-  });
+  };
+  app.get('/api/ads/hot-deals', handleGetHotDeals);
+  app.get('/api/hot-deals', handleGetHotDeals);
+  app.get('/hot-deals', handleGetHotDeals);
 
   app.get('/api/ads/:id', (req: Request, res: Response) => {
     const ad = store.getAdRequestById(req.params.id);
     if (!ad) return res.status(404).json({ error: 'Ad request not found' });
     res.json(ad);
   });
+  app.get('/api/ad-requests/:id', (req: Request, res: Response) => {
+    const ad = store.getAdRequestById(req.params.id);
+    if (!ad) return res.status(404).json({ error: 'Ad request not found' });
+    res.json(ad);
+  });
 
-  app.post('/api/ads', (req: Request, res: Response) => {
+  const handleCreateAd = (req: Request, res: Response) => {
     const {
       farmerId,
       farmerName,
@@ -768,14 +782,17 @@ async function startServer() {
       discountPercentage,
       specialPrice,
       days,
+      durationDays,
       proofOfPaymentUrl,
       proofOfPaymentFileName,
       paymentMethod,
       paymentReference
     } = req.body;
 
-    if (!farmerId || !dealHeadline || !days) {
-      return res.status(400).json({ error: 'Missing required ad request fields' });
+    const finalDays = Number(days) || Number(durationDays) || 7;
+
+    if (!farmerId || !dealHeadline) {
+      return res.status(400).json({ error: 'Missing required ad request fields: farmerId and dealHeadline are required' });
     }
 
     const created = store.createAdRequest({
@@ -796,7 +813,7 @@ async function startServer() {
       dealDescription: dealDescription || '',
       discountPercentage: discountPercentage ? Number(discountPercentage) : undefined,
       specialPrice: specialPrice ? Number(specialPrice) : undefined,
-      days: Number(days),
+      days: finalDays,
       proofOfPaymentUrl,
       proofOfPaymentFileName,
       paymentMethod: paymentMethod || 'ecocash',
@@ -805,9 +822,14 @@ async function startServer() {
     });
 
     res.status(201).json(created);
-  });
+  };
+  app.post('/api/ads', handleCreateAd);
+  app.post('/api/ad-requests', handleCreateAd);
+  app.post('/api/advertising', handleCreateAd);
+  app.post('/ads', handleCreateAd);
+  app.post('/ad-requests', handleCreateAd);
 
-  app.put('/api/ads/:id/status', (req: Request, res: Response) => {
+  const handleUpdateAdStatus = (req: Request, res: Response) => {
     const { status, adminFeedback, reviewedBy } = req.body;
     if (!status) {
       return res.status(400).json({ error: 'Status is required' });
@@ -815,13 +837,17 @@ async function startServer() {
     const updated = store.updateAdRequestStatus(req.params.id, status, adminFeedback, reviewedBy);
     if (!updated) return res.status(404).json({ error: 'Ad request not found' });
     res.json(updated);
-  });
+  };
+  app.put('/api/ads/:id/status', handleUpdateAdStatus);
+  app.put('/api/ad-requests/:id/status', handleUpdateAdStatus);
 
-  app.delete('/api/ads/:id', (req: Request, res: Response) => {
+  const handleDeleteAd = (req: Request, res: Response) => {
     const deleted = store.deleteAdRequest(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Ad request not found' });
     res.json({ success: true });
-  });
+  };
+  app.delete('/api/ads/:id', handleDeleteAd);
+  app.delete('/api/ad-requests/:id', handleDeleteAd);
 
   // --- Statistics ---
   app.get('/api/stats/farmer/:id', (req: Request, res: Response) => {

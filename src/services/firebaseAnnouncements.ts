@@ -15,6 +15,12 @@ import { handleFirestoreError, OperationType } from '../firebase/errorHandler';
 import { sanitizeForFirestore } from '../context/AuthContext';
 import { Announcement } from '../types';
 
+export const BANNED_UNAUTHORIZED_AUTHORS = [
+  'Tatenda Mutasa',
+  'Kudzai Moyo',
+  'Farai Chidzero'
+];
+
 export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [
   {
     id: 'ann-1',
@@ -22,9 +28,9 @@ export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [
     content: 'The Ministry of Agriculture partnership cold-chain trucks will begin bi-weekly pickups every Tuesday and Friday across Marondera, Chinhoyi, and Gweru central aggregation depots. Farmers can schedule collection directly via their dashboard to minimize post-harvest transit losses.',
     priority: 'urgent',
     targetAudience: 'all',
-    author: 'Tatenda Mutasa',
+    author: 'agroX Admin Team',
     authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
     category: 'logistics',
     pinned: true,
     reactions: { '👍': 42, '🚛': 38, '🌱': 19 },
@@ -36,9 +42,9 @@ export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [
     content: 'Applications are now officially open for the 2026 Smallholder Solar Irrigation and Drip Kit subsidy. Verified farmers on agroX with at least 3 completed marketplace orders qualify for 40% co-funding. Submit farm details through the Subsidies portal.',
     priority: 'normal',
     targetAudience: 'farmers',
-    author: 'Kudzai Moyo',
+    author: 'agroX Admin Team',
     authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
+    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
     category: 'subsidy',
     pinned: false,
     reactions: { '❤️': 61, '🌱': 45, '👍': 34 },
@@ -50,9 +56,9 @@ export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [
     content: 'Meteorological services forecast favorable early convective rains across Manicaland and Masvingo starting this weekend. Horticultural producers are advised to inspect greenhouse drainage and protect seedbed nurseries against runoff.',
     priority: 'normal',
     targetAudience: 'all',
-    author: 'Farai Chidzero',
+    author: 'agroX Admin Team',
     authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400',
+    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
     category: 'weather',
     pinned: false,
     reactions: { '🌧️': 28, '🌱': 17 },
@@ -64,9 +70,9 @@ export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [
     content: 'Wholesale demand for cured Red Creole onions has risen by +18% week-over-week in Mbare and Bulawayo fresh markets. Premium Kuroiler and indigenous roadrunner breeding stock are seeing record inquiries from commercial buyers.',
     priority: 'normal',
     targetAudience: 'all',
-    author: 'agroX Market Intelligence',
+    author: 'agroX Admin Team',
     authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=400',
+    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
     category: 'market_update',
     pinned: false,
     reactions: { '📊': 53, '👍': 41 },
@@ -78,9 +84,9 @@ export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [
     content: 'Farmers can now snap and compress high-resolution harvest photos directly from their smartphone cameras and receive live direct inquiries from verified restaurant and bulk buyers with instant notification bells.',
     priority: 'normal',
     targetAudience: 'all',
-    author: 'agroX Tech Team',
+    author: 'agroX Admin Team',
     authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
     category: 'platform',
     pinned: false,
     reactions: { '🌱': 39, '❤️': 27, '👍': 31 },
@@ -149,7 +155,14 @@ export function subscribeToFirebaseAnnouncements(
 
         const list: Announcement[] = [];
         snapshot.forEach((docSnap) => {
-          list.push(parseFirestoreAnnouncement(docSnap.id, docSnap.data()));
+          const ann = parseFirestoreAnnouncement(docSnap.id, docSnap.data());
+          // Auto-purge any unauthorized/banned fake authors from Firestore
+          if (BANNED_UNAUTHORIZED_AUTHORS.includes(ann.author)) {
+            // Delete rogue document from Firestore
+            deleteDoc(doc(db, 'announcements', docSnap.id)).catch(() => {});
+            return;
+          }
+          list.push(ann);
         });
 
         // Sort pinned first, then newest first
