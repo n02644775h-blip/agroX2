@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { isSellerRole } from '../types';
 
 interface AndroidBottomNavProps {
   currentView: string;
@@ -31,7 +32,7 @@ export const AndroidBottomNav: React.FC<AndroidBottomNavProps> = ({
   const { user, unreadNotifsCount, unreadMessagesCount } = useAuth();
   const { totalItems } = useCart();
 
-  const isFarmer = user?.role === 'farmer';
+  const isFarmer = isSellerRole(user?.role);
   const isAdmin = user?.role === 'admin';
 
   const getPortalView = () => {
@@ -189,7 +190,7 @@ export const AndroidBottomNav: React.FC<AndroidBottomNavProps> = ({
               )}
             </div>
             <span className={`text-[10px] tracking-tight leading-none ${isPortalActive ? 'font-bold' : 'font-medium'}`}>
-              {isFarmer ? 'Farm Hub' : isAdmin ? 'Admin' : 'Buyer Hub'}
+              {user?.role === 'fodder_supplier' ? 'Fodder Hub' : isFarmer ? 'Farm Hub' : isAdmin ? 'Admin' : 'Buyer Hub'}
             </span>
           </button>
         </div>

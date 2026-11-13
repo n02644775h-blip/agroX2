@@ -13,9 +13,15 @@ import {
   createFirebaseAnnouncement,
   deleteFirebaseAnnouncement
 } from '../services/firebaseAnnouncements';
+import {
+  subscribeToFirebaseAdRequests,
+  updateFirebaseAdRequestStatus,
+  deleteFirebaseAdRequest
+} from '../services/firebaseAdRequests';
 import { db } from '../firebase/config';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { sanitizeForFirestore } from '../context/AuthContext';
+import { sanitizeForFirestore, useAuth } from '../context/AuthContext';
+import { compressImage } from '../utils/imageCompressor';
 import {
   ShieldCheck,
   Users,
@@ -54,7 +60,10 @@ import {
   Sparkles,
   ArrowUpRight,
   Wifi,
-  Database
+  Database,
+  Camera,
+  Upload,
+  Wheat
 } from 'lucide-react';
 import {
   BarChart,
@@ -68,7 +77,15 @@ import {
   Line
 } from 'recharts';
 
+const ADMIN_PRESET_AVATARS = [
+  { label: 'Executive Shield', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400' },
+  { label: 'Agronomy Director', url: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400' },
+  { label: 'Operations Lead', url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400' },
+  { label: 'Governance Lead', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400' }
+];
+
 export const AdminDashboard: React.FC = () => {
+  const { user: adminUser, updateUserProfile } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [signupStats, setSignupStats] = useState<FirebaseSignupStats | null>(null);
@@ -79,6 +96,14 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'products' | 'reports' | 'announcements' | 'categories' | 'advertisers'>('overview');
   const [loading, setLoading] = useState(true);
 
+  // Admin Profile Picture Edit Modal
+  const [showAdminAvatarModal, setShowAdminAvatarModal] = useState(false);
+  const [adminAvatarDraft, setAdminAvatarDraft] = useState(
+    adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'
+  );
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+
   // Real-time Firebase Sync Status
   const [isLiveConnected, setIsLiveConnected] = useState(true);
   const [lastSyncTime, setLastSyncTime] = useState<string>('');
@@ -88,7 +113,7 @@ export const AdminDashboard: React.FC = () => {
 
   // User Filtering & Search
   const [userSearch, setUserSearch] = useState('');
-  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'farmer' | 'buyer' | 'admin'>('all');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'farmer' | 'fodder_supplier' | 'buyer' | 'admin'>('all');
   const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [userTimeFilter, setUserTimeFilter] = useState<'all' | 'today' | 'week'>('all');
 
@@ -168,9 +193,23 @@ export const AdminDashboard: React.FC = () => {
       setAnnouncementsList(anns);
     });
 
+    // Attach real-time snapshot listener for ad requests
+    const unsubscribeAds = subscribeToFirebaseAdRequests(
+      undefined,
+      (fbAds) => {
+        if (fbAds && fbAds.length > 0) {
+          setAdRequests(fbAds);
+        }
+      },
+      (err) => {
+        console.warn('Real-time Firestore ad requests listener issue:', err);
+      }
+    );
+
     return () => {
       unsubscribeUsers();
       unsubscribeAnnouncements();
+      unsubscribeAds();
     };
   }, []);
 
@@ -270,15 +309,21 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
+  const handleToggleUserStatus = async (userId: string, currentStatus: string, userEmail?: string) => {
     const next = currentStatus === 'active' ? 'suspended' : 'active';
     try {
-      // 1. Update in Firebase Firestore for instant real-time sync
-      await updateFirebaseUserStatus(userId, next as any).catch(() => {});
-      // 2. Also update in backend store
-      await api.toggleUserStatus(userId, next).catch(() => {});
+      // 1. Update in Firebase Firestore (by ID and matching email) for instant real-time sync
+      await updateFirebaseUserStatus(userId, next as any, userEmail).catch((err) => {
+        console.warn('Firestore status update warning:', err);
+      });
+      // 2. Also update in backend store (by ID and matching email)
+      await api.toggleUserStatus(userId, next, userEmail).catch((err) => {
+        console.warn('API status update warning:', err);
+      });
       // 3. Optimistic local update
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, status: next as any } : u));
+      setUsers(prev => prev.map(u => (u.id === userId || (userEmail && u.email?.toLowerCase() === userEmail.toLowerCase())) ? { ...u, status: next as any } : u));
+      setSyncToast(`Account ${next === 'suspended' ? 'suspended — login access revoked' : 'reactivated'}.`);
+      setTimeout(() => setSyncToast(null), 3500);
     } catch (err) {
       console.error('Failed to toggle status:', err);
     }
@@ -319,9 +364,9 @@ export const AdminDashboard: React.FC = () => {
         content: annContent.trim(),
         priority: annPriority,
         targetAudience: annTarget,
-        author: 'agroX Admin Team',
+        author: adminUser?.name || 'agroX Admin Team',
         authorRole: 'admin',
-        authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+        authorAvatar: adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
         category: annCategory,
         pinned: annPinned,
         reactions: { '👍': 1 },
@@ -369,6 +414,11 @@ export const AdminDashboard: React.FC = () => {
     setUpdatingAdId(adId);
     try {
       const notes = adminNotesInput[adId] || '';
+      try {
+        await updateFirebaseAdRequestStatus(adId, status, notes);
+      } catch (fbErr) {
+        console.warn('Firebase ad status update warning:', fbErr);
+      }
       await api.updateAdRequestStatus(adId, status, notes);
       await loadAdminData();
       if (viewingPopAd && viewingPopAd.id === adId) {
@@ -384,6 +434,11 @@ export const AdminDashboard: React.FC = () => {
   const handleDeleteAd = async (adId: string) => {
     if (!confirm('Permanently delete this advertisement request?')) return;
     try {
+      try {
+        await deleteFirebaseAdRequest(adId);
+      } catch (fbErr) {
+        console.warn('Firebase delete ad request warning:', fbErr);
+      }
       await api.deleteAdRequest(adId);
       await loadAdminData();
       if (viewingPopAd && viewingPopAd.id === adId) {
@@ -394,7 +449,7 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  const pendingAdsCount = adRequests.filter(a => a.status === 'submitted' || a.status === 'under_review').length;
+  const pendingAdsCount = adRequests.filter(a => a.status === 'submitted' || a.status === 'sent' || a.status === 'under_review').length;
   const filteredAds = adRequests.filter(a => {
     if (adStatusFilter === 'all') return true;
     return a.status === adStatusFilter;
@@ -443,10 +498,58 @@ export const AdminDashboard: React.FC = () => {
   });
 
   const totalSignups = users.length;
-  const farmersCount = signupStats ? signupStats.farmersCount : users.filter(u => u.role === 'farmer').length;
+  const farmersCount = signupStats ? signupStats.farmersCount : users.filter(u => u.role === 'farmer' || u.role === 'fodder_supplier').length;
   const buyersCount = signupStats ? signupStats.buyersCount : users.filter(u => u.role === 'buyer').length;
   const signupsToday = signupStats ? signupStats.signupsToday : 0;
   const signupsThisWeek = signupStats ? signupStats.signupsThisWeek : 0;
+
+  const handleOpenAdminAvatarModal = () => {
+    setAdminAvatarDraft(
+      adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'
+    );
+    setAvatarError('');
+    setShowAdminAvatarModal(true);
+  };
+
+  const handleAdminAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Image must be under 5MB.');
+      return;
+    }
+    setAvatarError('');
+    try {
+      const compressed = await compressImage(file, 400, 400, 0.85);
+      setAdminAvatarDraft(compressed);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') setAdminAvatarDraft(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveAdminAvatar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminAvatarDraft.trim()) {
+      setAvatarError('Please select or enter an image URL.');
+      return;
+    }
+    setIsSavingAvatar(true);
+    setAvatarError('');
+    try {
+      await updateUserProfile({ avatar: adminAvatarDraft.trim() });
+      setShowAdminAvatarModal(false);
+      setSyncToast('Admin profile picture updated!');
+      setTimeout(() => setSyncToast(null), 3500);
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Failed to update profile picture.');
+    } finally {
+      setIsSavingAvatar(false);
+    }
+  };
 
   return (
     <div className="space-y-8 pb-16">
@@ -460,20 +563,47 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Header */}
       <div className="bg-purple-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/30 text-purple-200 text-xs font-semibold backdrop-blur-xs">
-            <ShieldCheck className="w-4 h-4 text-purple-300" />
-            Platform Administration & Governance
+        <div className="flex items-start gap-4">
+          <div className="relative group shrink-0">
+            <img
+              src={adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'}
+              alt={adminUser?.name || 'Admin'}
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-300 shadow-lg bg-purple-800"
+            />
+            <button
+              id="admin-avatar-overlay-btn"
+              type="button"
+              onClick={handleOpenAdminAvatarModal}
+              className="absolute inset-0 bg-black/45 rounded-2xl flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              title="Edit Admin Profile Picture"
+            >
+              <Camera className="w-5 h-5" />
+            </button>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            agroX Executive Controls
-          </h1>
-          <p className="text-purple-200 text-xs sm:text-sm">
-            Live Firebase user registration analytics, farmer ad requests, catalog moderation, and platform broadcasts.
-          </p>
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/30 text-purple-200 text-xs font-semibold backdrop-blur-xs">
+              <ShieldCheck className="w-4 h-4 text-purple-300" />
+              Platform Administration & Governance
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              agroX Executive Controls
+            </h1>
+            <p className="text-purple-200 text-xs sm:text-sm">
+              Signed in as <strong>{adminUser?.name || 'Administrator'}</strong> • Live Firebase analytics, ad requests, and platform broadcasts.
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            id="admin-edit-avatar-btn"
+            type="button"
+            onClick={handleOpenAdminAvatarModal}
+            className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs flex items-center gap-2 border border-white/20 shrink-0 transition-colors cursor-pointer"
+          >
+            <Camera className="w-3.5 h-3.5 text-purple-200" />
+            Edit Profile Picture
+          </button>
           <button
             id="admin-nav-advertisers-btn"
             onClick={() => setActiveTab('advertisers')}
@@ -737,9 +867,15 @@ export const AdminDashboard: React.FC = () => {
                       <div className="flex items-center justify-between gap-1">
                         <div className="font-bold text-stone-900 text-xs truncate">{u.name}</div>
                         <span className={`px-2 py-0.5 rounded-full font-extrabold text-[9px] uppercase ${
-                          u.role === 'farmer' ? 'bg-emerald-100 text-emerald-900' : u.role === 'buyer' ? 'bg-blue-100 text-blue-900' : 'bg-purple-100 text-purple-900'
+                          u.role === 'farmer'
+                            ? 'bg-emerald-100 text-emerald-900'
+                            : u.role === 'fodder_supplier'
+                            ? 'bg-amber-100 text-amber-900'
+                            : u.role === 'buyer'
+                            ? 'bg-blue-100 text-blue-900'
+                            : 'bg-purple-100 text-purple-900'
                         }`}>
-                          {u.role}
+                          {u.role === 'fodder_supplier' ? 'Fodder Supplier' : u.role}
                         </span>
                       </div>
                       <div className="text-[11px] text-stone-500 truncate">{u.email}</div>
@@ -781,18 +917,18 @@ export const AdminDashboard: React.FC = () => {
 
             <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
               {/* Role filter */}
-              <div className="flex items-center bg-stone-100 p-1 rounded-xl text-xs">
-                {(['all', 'farmer', 'buyer', 'admin'] as const).map(role => (
+              <div className="flex items-center bg-stone-100 p-1 rounded-xl text-xs overflow-x-auto">
+                {(['all', 'farmer', 'fodder_supplier', 'buyer', 'admin'] as const).map(role => (
                   <button
                     key={role}
                     onClick={() => setUserRoleFilter(role)}
-                    className={`px-3 py-1 rounded-lg font-bold capitalize transition-colors cursor-pointer ${
+                    className={`px-3 py-1 rounded-lg font-bold capitalize transition-colors cursor-pointer whitespace-nowrap ${
                       userRoleFilter === role
                         ? 'bg-white text-purple-900 shadow-xs'
                         : 'text-stone-600 hover:text-stone-900'
                     }`}
                   >
-                    {role === 'all' ? 'All Roles' : role}
+                    {role === 'all' ? 'All Roles' : role === 'fodder_supplier' ? 'Fodder Supplier' : role}
                   </button>
                 ))}
               </div>
@@ -880,9 +1016,15 @@ export const AdminDashboard: React.FC = () => {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] uppercase ${
-                            u.role === 'farmer' ? 'bg-emerald-100 text-emerald-900' : u.role === 'buyer' ? 'bg-blue-100 text-blue-900' : 'bg-purple-100 text-purple-900'
+                            u.role === 'farmer'
+                              ? 'bg-emerald-100 text-emerald-900'
+                              : u.role === 'fodder_supplier'
+                              ? 'bg-amber-100 text-amber-900'
+                              : u.role === 'buyer'
+                              ? 'bg-blue-100 text-blue-900'
+                              : 'bg-purple-100 text-purple-900'
                           }`}>
-                            {u.role}
+                            {u.role === 'fodder_supplier' ? 'Fodder Supplier' : u.role}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-stone-600">
@@ -910,7 +1052,7 @@ export const AdminDashboard: React.FC = () => {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button
-                            onClick={() => handleToggleUserStatus(u.id, u.status)}
+                            onClick={() => handleToggleUserStatus(u.id, u.status, u.email)}
                             className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
                               u.status === 'active' ? 'bg-stone-100 hover:bg-stone-200 text-stone-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                             }`}
@@ -979,10 +1121,12 @@ export const AdminDashboard: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 gap-4">
               {filteredAds.map(ad => {
-                const isSent = ad.status === 'submitted';
+                const isSent = ad.status === 'submitted' || ad.status === 'sent';
                 const isUnderReview = ad.status === 'under_review';
                 const isApproved = ad.status === 'approved';
                 const isRejected = ad.status === 'rejected';
+                const feeVal = Number(ad.totalFee ?? ad.totalAmount ?? (Number(ad.days || ad.durationDays || 7) * 1.00));
+                const daysVal = Number(ad.durationDays ?? ad.days ?? 7);
 
                 return (
                   <div
@@ -1029,11 +1173,11 @@ export const AdminDashboard: React.FC = () => {
                       <div className="flex items-center gap-4 text-right">
                         <div>
                           <div className="text-xs text-stone-400">Campaign Fee</div>
-                          <div className="text-base font-black text-emerald-800">${ad.totalFee.toFixed(2)}</div>
+                          <div className="text-base font-black text-emerald-800">${feeVal.toFixed(2)}</div>
                         </div>
                         <div className="text-xs text-stone-400">
                           <div>Duration</div>
-                          <div className="font-bold text-stone-800">{ad.durationDays} Days ($1/day)</div>
+                          <div className="font-bold text-stone-800">{daysVal} Days ($1/day)</div>
                         </div>
                       </div>
                     </div>
@@ -1146,19 +1290,27 @@ export const AdminDashboard: React.FC = () => {
             <div className="grid grid-cols-2 gap-3 text-xs bg-stone-50 p-3 rounded-2xl border border-stone-200">
               <div><strong>Deal Headline:</strong> {viewingPopAd.dealHeadline}</div>
               <div><strong>Method:</strong> {viewingPopAd.paymentMethod.toUpperCase()}</div>
-              <div><strong>Duration:</strong> {viewingPopAd.durationDays} Days @ $1/day</div>
-              <div><strong>Amount Due:</strong> <span className="font-bold text-emerald-800">${viewingPopAd.totalFee.toFixed(2)}</span></div>
+              <div><strong>Duration:</strong> {viewingPopAd.durationDays ?? viewingPopAd.days ?? 7} Days @ $1/day</div>
+              <div><strong>Amount Due:</strong> <span className="font-bold text-emerald-800">${Number(viewingPopAd.totalFee ?? viewingPopAd.totalAmount ?? 7).toFixed(2)}</span></div>
               <div><strong>Ref ID:</strong> {viewingPopAd.paymentReference || 'N/A'}</div>
               <div><strong>Status:</strong> <span className="uppercase font-bold text-orange-600">{viewingPopAd.status}</span></div>
             </div>
 
-            {/* Image Preview Container */}
+            {/* Image / PDF Preview Container */}
             <div className="max-h-96 overflow-auto rounded-2xl border border-stone-200 bg-stone-900 flex items-center justify-center p-2">
-              <img
-                src={viewingPopAd.proofOfPaymentUrl}
-                alt="Proof of Payment"
-                className="max-h-80 w-auto rounded-xl object-contain"
-              />
+              {viewingPopAd.proofOfPaymentUrl?.startsWith('data:application/pdf') ? (
+                <iframe
+                  src={viewingPopAd.proofOfPaymentUrl}
+                  title="Proof of Payment PDF"
+                  className="w-full h-80 rounded-xl bg-white"
+                />
+              ) : (
+                <img
+                  src={viewingPopAd.proofOfPaymentUrl}
+                  alt="Proof of Payment"
+                  className="max-h-80 w-auto rounded-xl object-contain"
+                />
+              )}
             </div>
 
             {/* Decision Bar */}
@@ -1407,6 +1559,124 @@ export const AdminDashboard: React.FC = () => {
                 <Tag className="w-4 h-4 text-purple-700" />
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Admin Profile Picture Edit Modal */}
+      {showAdminAvatarModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowAdminAvatarModal(false)}
+        >
+          <div
+            id="admin-avatar-modal-dialog"
+            className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-stone-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-purple-100 text-purple-700">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-stone-900 text-base">Edit Admin Profile Picture</h3>
+                  <p className="text-[11px] text-stone-500">Shown on navbar and official broadcasts</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminAvatarModal(false)}
+                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {avatarError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{avatarError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveAdminAvatar} className="space-y-4 text-xs">
+              <div className="flex items-center gap-4 bg-stone-50 p-4 rounded-2xl border border-stone-200">
+                <img
+                  src={adminAvatarDraft}
+                  alt="Admin Avatar Preview"
+                  className="w-20 h-20 rounded-2xl object-cover border-2 border-purple-600 shadow-sm bg-white shrink-0"
+                />
+                <div className="flex-1 space-y-2">
+                  <label className="font-bold text-stone-700 block">Upload Photo (400×400px)</label>
+                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-stone-100 border border-stone-300 rounded-xl font-bold text-stone-800 cursor-pointer transition-colors">
+                    <Upload className="w-3.5 h-3.5 text-purple-700" />
+                    <span>Choose Image File</span>
+                    <input
+                      id="admin-avatar-file-input"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAdminAvatarFileChange}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">Or Paste Image URL</label>
+                <input
+                  id="admin-avatar-url-input"
+                  type="text"
+                  value={adminAvatarDraft}
+                  onChange={e => setAdminAvatarDraft(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-500 uppercase text-[10px] tracking-wider block mb-1.5">
+                  Executive Presets
+                </label>
+                <div className="flex items-center gap-2">
+                  {ADMIN_PRESET_AVATARS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setAdminAvatarDraft(preset.url)}
+                      className={`w-10 h-10 rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                        adminAvatarDraft === preset.url
+                          ? 'border-purple-600 scale-105 shadow-xs'
+                          : 'border-stone-200 opacity-75 hover:opacity-100'
+                      }`}
+                      title={preset.label}
+                    >
+                      <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminAvatarModal(false)}
+                  className="px-4 py-2 rounded-xl border border-stone-300 text-stone-700 hover:bg-stone-50 font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="save-admin-avatar-btn"
+                  type="submit"
+                  disabled={isSavingAvatar}
+                  className="px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:bg-stone-300 text-white font-bold flex items-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  {isSavingAvatar ? 'Saving...' : 'Save Picture'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

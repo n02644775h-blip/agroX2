@@ -127,16 +127,20 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900 tracking-tight">
-                    {profile?.farmName || `${farmer.name}'s Farm`}
+                    {profile?.farmName || (farmer.role === 'fodder_supplier' ? `${farmer.name}'s Fodder Supply` : `${farmer.name}'s Farm`)}
                   </h1>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    Verified Farm
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                    farmer.role === 'fodder_supplier'
+                      ? 'bg-amber-100 text-amber-900 border-amber-200'
+                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                  }`}>
+                    <ShieldCheck className={`w-3.5 h-3.5 ${farmer.role === 'fodder_supplier' ? 'text-amber-700' : 'text-emerald-600'}`} />
+                    {farmer.role === 'fodder_supplier' ? 'Verified Fodder Supplier' : 'Verified Farm'}
                   </span>
                 </div>
 
                 <div className="text-xs text-stone-600 font-medium flex flex-wrap items-center gap-3">
-                  <span>Producer: <strong>{farmer.name}</strong></span>
+                  <span>{farmer.role === 'fodder_supplier' ? 'Supplier:' : 'Producer:'} <strong>{farmer.name}</strong></span>
                   <span>•</span>
                   <span className="flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-stone-400" />
@@ -168,7 +172,7 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
                 className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all"
               >
                 <MessageSquare className="w-4 h-4" />
-                Contact Farm Directly
+                {farmer.role === 'fodder_supplier' ? 'Contact Supplier Directly' : 'Contact Farm Directly'}
               </button>
             </div>
           </div>
@@ -239,6 +243,7 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
                 key={product.id}
                 product={product}
                 onSelectProduct={onSelectProduct}
+                onContactFarmer={() => onContactFarmer(farmer)}
               />
             ))}
           </div>

@@ -44,9 +44,15 @@ export function parseFirestoreAdRequest(docId: string, data: any): AdRequest {
     }
   }
 
-  const days = Number(data?.days) || Number(data?.durationDays) || 7;
-  const dailyRate = Number(data?.dailyRate) || 1.00;
-  const totalAmount = Number(data?.totalAmount) || Number(data?.totalFee) || (days * dailyRate);
+  const safeNum = (val: any): number | undefined => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const n = Number(val);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  const days = safeNum(data?.days) || safeNum(data?.durationDays) || 7;
+  const dailyRate = safeNum(data?.dailyRate) || 1.00;
+  const totalAmount = safeNum(data?.totalAmount) || safeNum(data?.totalFee) || (days * dailyRate);
 
   return {
     id: data?.id || docId,
@@ -59,14 +65,15 @@ export function parseFirestoreAdRequest(docId: string, data: any): AdRequest {
     productId: data?.productId || '',
     productName: data?.productName || 'Harvest Produce',
     productImage: data?.productImage || '',
-    productPrice: Number(data?.productPrice) || undefined,
+    productPrice: safeNum(data?.productPrice),
     productUnit: data?.productUnit || 'kg',
     category: data?.category || '',
     categoryName: data?.categoryName || '',
     dealHeadline: data?.dealHeadline || 'Special Fresh Harvest Offer',
     dealDescription: data?.dealDescription || '',
-    discountPercentage: data?.discountPercentage ? Number(data.discountPercentage) : undefined,
-    specialPrice: data?.specialPrice ? Number(data.specialPrice) : undefined,
+    discountPercentage: safeNum(data?.discountPercentage),
+    specialPrice: safeNum(data?.specialPrice),
+    discountText: data?.discountText || (safeNum(data?.discountPercentage) ? `${safeNum(data?.discountPercentage)}% OFF` : undefined),
     days: days,
     durationDays: days,
     dailyRate: dailyRate,
@@ -144,9 +151,18 @@ export async function createFirebaseAdRequest(data: Partial<AdRequest>): Promise
   const adId = data.id || `ad-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const docRef = doc(db, 'adRequests', adId);
 
-  const days = Number(data.days) || Number(data.durationDays) || 7;
+  const safeNum = (val: any): number | null => {
+    if (val === undefined || val === null || val === '') return null;
+    const n = Number(val);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const days = Math.min(Math.max(safeNum(data.days) || safeNum(data.durationDays) || 7, 1), 30);
   const dailyRate = 1.00;
   const totalAmount = days * dailyRate;
+  const discountPct = safeNum(data.discountPercentage);
+  const specialPrice = safeNum(data.specialPrice);
+  const productPrice = safeNum(data.productPrice);
 
   const payload: Record<string, any> = {
     id: adId,
@@ -159,14 +175,15 @@ export async function createFirebaseAdRequest(data: Partial<AdRequest>): Promise
     productId: data.productId || '',
     productName: data.productName || '',
     productImage: data.productImage || '',
-    productPrice: data.productPrice !== undefined ? Number(data.productPrice) : null,
+    productPrice: productPrice,
     productUnit: data.productUnit || 'kg',
     category: data.category || '',
     categoryName: data.categoryName || '',
     dealHeadline: data.dealHeadline || '',
     dealDescription: data.dealDescription || '',
-    discountPercentage: data.discountPercentage ? Number(data.discountPercentage) : null,
-    specialPrice: data.specialPrice ? Number(data.specialPrice) : null,
+    discountPercentage: discountPct,
+    specialPrice: specialPrice,
+    discountText: data.discountText || (discountPct ? `${discountPct}% OFF` : (specialPrice !== null ? `Special: $${specialPrice.toFixed(2)}` : 'PROMO DEAL')),
     days: days,
     durationDays: days,
     dailyRate: dailyRate,

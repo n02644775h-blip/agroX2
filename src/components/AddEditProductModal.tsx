@@ -39,12 +39,14 @@ const DEFAULT_CATEGORIES: ProductCategory[] = [
   { id: 'cat-livestock', name: 'Livestock & Small Ruminants', slug: 'livestock', icon: 'Beef', description: 'Cattle, goats, sheep, and pigs' },
   { id: 'cat-dairy', name: 'Dairy & Farm Eggs', slug: 'dairy-eggs', icon: 'Egg', description: 'Fresh milk, artisanal cheeses, and farm eggs' },
   { id: 'cat-grains', name: 'Grains, Cereals & Legumes', slug: 'grains', icon: 'Wheat', description: 'Maize, sorghum, millet, and dry beans' },
+  { id: 'cat-fodder', name: 'Fodder & Animal Feed', slug: 'fodder', icon: 'Wheat', description: 'Lucerne hay bales, maize silage, Rhodes grass, stockfeed concentrates & forage' },
   { id: 'cat-tubers', name: 'Tubers & Root Crops', slug: 'tubers', icon: 'Sprout', description: 'Potatoes, sweet potatoes, and cassava' },
   { id: 'cat-honey', name: 'Honey & Natural Specialties', slug: 'honey', icon: 'Sparkles', description: 'Pure raw honey and bee products' }
 ];
 
 const SAMPLE_AGRI_IMAGES = [
   { url: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&q=80&w=800', label: 'Roma Tomatoes' },
+  { url: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&q=80&w=800', label: 'Lucerne Hay & Forage' },
   { url: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?auto=format&fit=crop&q=80&w=800', label: 'Hybrid Maize' },
   { url: 'https://images.unsplash.com/photo-1548550023-2bdb3c5beed7?auto=format&fit=crop&q=80&w=800', label: 'Breeding Roadrunner' },
   { url: 'https://images.unsplash.com/photo-1524024973431-2ad916746881?auto=format&fit=crop&q=80&w=800', label: 'Boer Goat Buck' },
@@ -66,10 +68,11 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [successNotice, setSuccessNotice] = useState(false);
 
+  const isFodderSupplier = user?.role === 'fodder_supplier';
   const [name, setName] = useState(product?.name || '');
-  const [category, setCategory] = useState(product?.category || 'cat-veg');
+  const [category, setCategory] = useState(product?.category || (isFodderSupplier ? 'cat-fodder' : 'cat-veg'));
   const [price, setPrice] = useState<string>(product?.price !== undefined ? product.price.toString() : '');
-  const [unit, setUnit] = useState<ProductUnit>(product?.unit || 'kg');
+  const [unit, setUnit] = useState<ProductUnit>(product?.unit || (isFodderSupplier ? 'bale' : 'kg'));
   const [quantityAvailable, setQuantityAvailable] = useState<string>(
     product?.quantityAvailable !== undefined ? product.quantityAvailable.toString() : '50'
   );
@@ -85,7 +88,9 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
     product?.expiryDate ? product.expiryDate.split('T')[0] : ''
   );
   const [additionalNotes, setAdditionalNotes] = useState(product?.additionalNotes || '');
-  const [imageUrl, setImageUrl] = useState(product?.images?.[0] || SAMPLE_AGRI_IMAGES[0].url);
+  const [imageUrl, setImageUrl] = useState(
+    product?.images?.[0] || (isFodderSupplier ? SAMPLE_AGRI_IMAGES[1].url : SAMPLE_AGRI_IMAGES[0].url)
+  );
   const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -211,6 +216,7 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
         farmerName,
         farmName,
         farmerAvatar,
+        sellerRole: user?.role || (category === 'cat-fodder' ? 'fodder_supplier' : 'farmer'),
         location,
         availability: numQty <= 0 ? 'out_of_stock' : numQty <= 10 ? 'low_stock' : 'available'
       };
@@ -258,10 +264,14 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
             </div>
             <div>
               <h2 className="font-extrabold text-white text-base sm:text-lg">
-                {product ? 'Edit Agricultural Listing' : 'List New Farm Produce / Livestock'}
+                {product
+                  ? 'Edit Agricultural Listing'
+                  : isFodderSupplier
+                  ? 'List Fodder, Hay Bales & Animal Feed'
+                  : 'List New Farm Produce / Livestock'}
               </h2>
               <p className="text-[11px] text-emerald-200/90">
-                Direct farm gate listing with instant photo upload & real-time buyer visibility
+                Direct farm gate listing with instant photo upload &amp; real-time buyer visibility
               </p>
             </div>
           </div>
@@ -348,6 +358,9 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
                 className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 bg-white font-medium"
               >
                 <option value="kg">Kilogram (kg)</option>
+                <option value="bale">Bale (Hay / Lucerne / Straw)</option>
+                <option value="ton">Metric Ton (t)</option>
+                <option value="bundle">Fodder Bundle</option>
                 <option value="head">Head (Livestock / Sires)</option>
                 <option value="animal">Animal (Individual)</option>
                 <option value="pair">Breeding Pair (Male & Female)</option>

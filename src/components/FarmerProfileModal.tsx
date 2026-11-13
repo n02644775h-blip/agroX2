@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   CreditCard,
   Layers,
-  Sprout
+  Sprout,
+  Wheat
 } from 'lucide-react';
 
 interface FarmerProfileModalProps {
@@ -55,17 +56,23 @@ const PRACTICE_TAGS = [
   'Regenerative Soil',
   'Chemical-Free',
   'Hydroponic',
-  'Same-Day Harvest'
+  'Same-Day Harvest',
+  'Sun-Cured Hay',
+  'High-Protein Forage',
+  'Silage & Concentrates'
 ];
 
 export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose, onSuccess }) => {
   const { user, updateUserProfile } = useAuth();
+  const isFodderSupplier = user?.role === 'fodder_supplier';
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(user?.name || '');
   const [avatar, setAvatar] = useState(user?.avatar || PRESET_AVATARS[0].url);
   const [phone, setPhone] = useState(user?.phone || '');
-  const [farmName, setFarmName] = useState(user?.farmerProfile?.farmName || `${user?.name || 'Farmer'}'s Farm`);
+  const [farmName, setFarmName] = useState(
+    user?.farmerProfile?.farmName || `${user?.name || (isFodderSupplier ? 'Supplier' : 'Farmer')}'s ${isFodderSupplier ? 'Fodder Supply' : 'Farm'}`
+  );
   const [bio, setBio] = useState(user?.farmerProfile?.bio || '');
   const [farmSize, setFarmSize] = useState(user?.farmerProfile?.farmSize || '15 Hectares');
   const [address, setAddress] = useState(user?.farmerProfile?.address || '');
@@ -173,14 +180,18 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
         <div className="px-6 py-4 bg-emerald-900 text-white flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-emerald-800 rounded-xl">
-              <Sprout className="w-5 h-5 text-emerald-300" />
+              {isFodderSupplier ? (
+                <Wheat className="w-5 h-5 text-amber-300" />
+              ) : (
+                <Sprout className="w-5 h-5 text-emerald-300" />
+              )}
             </div>
             <div>
               <h2 className="font-bold text-white text-base sm:text-lg">
-                Edit Farmer & Farm Profile
+                {isFodderSupplier ? 'Edit Fodder Supplier & Store Profile' : 'Edit Farmer & Farm Profile'}
               </h2>
               <p className="text-xs text-emerald-200/80">
-                Update your public produce store, contact numbers, and verified farm details
+                Update your public {isFodderSupplier ? 'fodder depot' : 'produce store'}, contact numbers, and verified details
               </p>
             </div>
           </div>

@@ -7,9 +7,11 @@ import {
   setDoc,
   updateDoc,
   query,
+  where,
   orderBy,
   serverTimestamp,
-  getDocFromServer
+  getDocFromServer,
+  getDocsFromServer
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { handleFirestoreError, OperationType } from '../firebase/errorHandler';
@@ -45,11 +47,17 @@ export function parseFirestoreUser(docId: string, data: any): User {
     }
   }
 
-  const role: UserRole = (data?.role === 'farmer' || data?.role === 'admin' || data?.role === 'buyer')
+  const role: UserRole = (
+    data?.role === 'farmer' ||
+    data?.role === 'fodder_supplier' ||
+    data?.role === 'admin' ||
+    data?.role === 'buyer'
+  )
     ? data.role
     : (data?.farmerProfile ? 'farmer' : 'buyer');
 
-  const defaultAvatar = role === 'farmer'
+  const isSeller = role === 'farmer' || role === 'fodder_supplier';
+  const defaultAvatar = isSeller
     ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
     : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
 
@@ -66,6 +74,9 @@ export function parseFirestoreUser(docId: string, data: any): User {
       city: 'Harare'
     },
     status: (data?.status === 'suspended' || data?.status === 'pending_verification') ? data.status : 'active',
+    emailVerified: Boolean(data?.emailVerified),
+    phoneVerified: Boolean(data?.phoneVerified),
+    verificationMethod: data?.verificationMethod,
     createdAt: createdAtStr,
     farmerProfile: data?.farmerProfile,
     buyerProfile: data?.buyerProfile
@@ -105,7 +116,7 @@ export function calculateSignupStats(usersList: User[], isConnected: boolean = t
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   usersList.forEach(u => {
-    if (u.role === 'farmer') farmersCount++;
+    if (u.role === 'farmer' || u.role === 'fodder_supplier') farmersCount++;
     else if (u.role === 'admin') adminsCount++;
     else buyersCount++;
 
@@ -120,7 +131,7 @@ export function calculateSignupStats(usersList: User[], isConnected: boolean = t
       const monthName = monthNames[created.getMonth()];
       if (monthName && monthMap[monthName]) {
         monthMap[monthName].signups++;
-        if (u.role === 'farmer') monthMap[monthName].farmers++;
+        if (u.role === 'farmer' || u.role === 'fodder_supplier') monthMap[monthName].farmers++;
         else monthMap[monthName].buyers++;
       }
     }
@@ -219,20 +230,91 @@ export async function fetchAllFirebaseUsers(): Promise<User[]> {
 }
 
 /**
- * Toggle user status directly in Firestore for immediate sync
+ * Check directly against Firestore whether a user is suspended by UID or email.
  */
-export async function updateFirebaseUserStatus(userId: string, status: 'active' | 'suspended'): Promise<void> {
+export async function checkFirestoreUserSuspended(uid?: string | null, email?: string | null): Promise<boolean> {
+  try {
+    if (uid) {
+      const userDocRef = doc(db, 'users', uid);
+      const snap = await getDocFromServer(userDocRef).catch(() => getDoc(userDocRef).catch(() => null));
+      if (snap && snap.exists() && snap.data()?.status === 'suspended') {
+        return true;
+      }
+
+      // Also check any doc whose `uid` field matches
+      const byUidQuery = query(collection(db, 'users'), where('uid', '==', uid));
+      const byUidSnap = await getDocsFromServer(byUidQuery).catch(() => getDocs(byUidQuery).catch(() => null));
+      if (byUidSnap && !byUidSnap.empty) {
+        for (const d of byUidSnap.docs) {
+          if (d.data()?.status === 'suspended') return true;
+        }
+      }
+    }
+
+    if (email && email.trim()) {
+      const cleanEmail = email.trim();
+      const emailCandidates = Array.from(new Set([cleanEmail, cleanEmail.toLowerCase()]));
+      for (const candidate of emailCandidates) {
+        const emailQuery = query(collection(db, 'users'), where('email', '==', candidate));
+        const emailSnap = await getDocsFromServer(emailQuery).catch(() => getDocs(emailQuery).catch(() => null));
+        if (emailSnap && !emailSnap.empty) {
+          for (const d of emailSnap.docs) {
+            if (d.data()?.status === 'suspended') return true;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not verify suspension status in Firestore:', err);
+  }
+  return false;
+}
+
+/**
+ * Toggle user status directly in Firestore for immediate sync across all matching docs
+ */
+export async function updateFirebaseUserStatus(userId: string, status: 'active' | 'suspended', email?: string): Promise<void> {
   try {
     const userDocRef = doc(db, 'users', userId);
     await setDoc(
       userDocRef,
       {
+        uid: userId,
         id: userId,
+        ...(email ? { email: email.trim() } : {}),
         status,
         updatedAt: serverTimestamp()
       },
       { merge: true }
     );
+
+    // Also update any Firestore docs with matching uid field (in case docId !== uid)
+    const uidQuery = query(collection(db, 'users'), where('uid', '==', userId));
+    const uidSnap = await getDocs(uidQuery).catch(() => null);
+    if (uidSnap && !uidSnap.empty) {
+      for (const d of uidSnap.docs) {
+        if (d.id !== userId) {
+          await setDoc(d.ref, { status, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+        }
+      }
+    }
+
+    // Also update any Firestore docs with matching email (prevents demo/legacy vs Firebase Auth UID split)
+    if (email && email.trim()) {
+      const cleanEmail = email.trim();
+      const emailCandidates = Array.from(new Set([cleanEmail, cleanEmail.toLowerCase()]));
+      for (const candidate of emailCandidates) {
+        const emailQuery = query(collection(db, 'users'), where('email', '==', candidate));
+        const emailSnap = await getDocs(emailQuery).catch(() => null);
+        if (emailSnap && !emailSnap.empty) {
+          for (const d of emailSnap.docs) {
+            if (d.id !== userId) {
+              await setDoc(d.ref, { status, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+            }
+          }
+        }
+      }
+    }
   } catch (error) {
     console.error(`Failed to update status for user ${userId} in Firestore:`, error);
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);

@@ -176,9 +176,10 @@ export function subscribeToFirebaseAnnouncements(
         const filtered = list.filter(a => {
           if (a.targetAudience === 'all') return true;
           if (role && a.targetAudience === `${role}s`) return true;
+          if (role === 'fodder_supplier' && a.targetAudience === 'farmers') return true;
           if (role && a.targetAudience === role) return true;
           if (role === 'admin') return true;
-          return true;
+          return false;
         });
 
         callback(filtered);

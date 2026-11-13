@@ -98,8 +98,40 @@ class ApiService {
     });
   }
 
-  async getMe(): Promise<{ user: User }> {
-    return this.request<{ user: User }>('/auth/me');
+  async sendVerificationCode(payload: { channel: 'email' | 'phone'; target: string; name?: string }): Promise<{
+    success: boolean;
+    channel: 'email' | 'phone';
+    target: string;
+    expiresInSeconds: number;
+    sandboxCode?: string;
+    message: string;
+  }> {
+    return this.request('/auth/send-verification', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async verifyCode(payload: { channel: 'email' | 'phone'; target: string; code: string }): Promise<{
+    verified: boolean;
+    channel: 'email' | 'phone';
+    target: string;
+  }> {
+    return this.request('/auth/verify-code', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async getMe(): Promise<{ user: User | null; suspended?: boolean }> {
+    return this.request<{ user: User | null; suspended?: boolean }>('/auth/me');
+  }
+
+  async checkUserStatus(params: { uid?: string | null; email?: string | null }): Promise<{ suspended: boolean; status: string }> {
+    const query = new URLSearchParams();
+    if (params.uid) query.append('uid', params.uid);
+    if (params.email) query.append('email', params.email);
+    return this.request<{ suspended: boolean; status: string }>(`/auth/status?${query.toString()}`);
   }
 
   // --- Categories ---
@@ -333,6 +365,13 @@ class ApiService {
     productId?: string;
     productSnippet?: any;
     orderId?: string;
+    senderName?: string;
+    senderAvatar?: string;
+    senderRole?: string;
+    recipientName?: string;
+    recipientAvatar?: string;
+    recipientRole?: string;
+    recipientFarmName?: string;
   }): Promise<{ message: Message; conversation: Conversation }> {
     return this.request<{ message: Message; conversation: Conversation }>('/messages', {
       method: 'POST',
@@ -499,10 +538,10 @@ class ApiService {
     });
   }
 
-  async toggleUserStatus(id: string, status: 'active' | 'suspended' | 'pending_verification'): Promise<User> {
+  async toggleUserStatus(id: string, status: 'active' | 'suspended' | 'pending_verification', email?: string): Promise<User> {
     return this.request<User>(`/users/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ status, email })
     });
   }
 

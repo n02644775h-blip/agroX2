@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
@@ -30,6 +31,20 @@ async function startServer() {
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+  // --- Verification OTP Store (10-min TTL) ---
+  const verificationCodes = new Map<string, {
+    code: string;
+    channel: 'email' | 'phone';
+    target: string;
+    expiresAt: number;
+    verified: boolean;
+  }>();
+
+  const normalizeVerificationTarget = (channel: 'email' | 'phone', target: string): string => {
+    const trimmed = target.trim();
+    return channel === 'email' ? trimmed.toLowerCase() : trimmed.replace(/[\s()-]/g, '');
+  };
+
   // --- API Routes ---
 
   // Health check
@@ -50,7 +65,11 @@ async function startServer() {
     }
 
     if (user.status === 'suspended') {
-      return res.status(403).json({ error: 'Your account has been suspended by the platform administrator.' });
+      res.setHeader('Set-Cookie', [
+        `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
+        `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
+      ]);
+      return res.status(403).json({ error: 'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.' });
     }
 
     const token = `token_${user.id}_${Date.now()}`;
@@ -65,8 +84,107 @@ async function startServer() {
     });
   });
 
+  app.post('/api/auth/send-verification', (req: Request, res: Response) => {
+    try {
+      const { channel, target, name } = req.body || {};
+      if (channel !== 'email' && channel !== 'phone') {
+        return res.status(400).json({ error: 'Verification channel must be email or phone.' });
+      }
+      if (!target || typeof target !== 'string' || !target.trim()) {
+        return res.status(400).json({ error: channel === 'email' ? 'Please enter your email address first.' : 'Please enter your phone number first.' });
+      }
+
+      const normalized = normalizeVerificationTarget(channel, target);
+      if (channel === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+        return res.status(400).json({ error: 'Please enter a valid email address.' });
+      }
+      if (channel === 'phone' && normalized.replace(/^\+/, '').length < 7) {
+        return res.status(400).json({ error: 'Please enter a valid phone number (e.g. +263 77 123 4567).' });
+      }
+
+      const code = String(crypto.randomInt(100000, 999999));
+      const key = `${channel}:${normalized}`;
+      const expiresAt = Date.now() + 10 * 60 * 1000;
+
+      verificationCodes.set(key, {
+        code,
+        channel,
+        target: normalized,
+        expiresAt,
+        verified: false
+      });
+
+      console.log(`[agroX Verification] ${channel.toUpperCase()} OTP for ${normalized}${name ? ` (${name})` : ''}: ${code}`);
+
+      return res.json({
+        success: true,
+        channel,
+        target: target.trim(),
+        expiresInSeconds: 600,
+        sandboxCode: code,
+        message: channel === 'email'
+          ? `6-digit verification code dispatched to ${target.trim()}.`
+          : `6-digit SMS verification code dispatched to ${target.trim()}.`
+      });
+    } catch (err: any) {
+      console.error('Error sending verification code:', err);
+      return res.status(500).json({ error: 'Failed to send verification code.' });
+    }
+  });
+
+  app.post('/api/auth/verify-code', (req: Request, res: Response) => {
+    try {
+      const { channel, target, code } = req.body || {};
+      if (channel !== 'email' && channel !== 'phone') {
+        return res.status(400).json({ error: 'Invalid verification channel.' });
+      }
+      if (!target || !code) {
+        return res.status(400).json({ error: 'Target and 6-digit verification code are required.' });
+      }
+
+      const normalized = normalizeVerificationTarget(channel, String(target));
+      const key = `${channel}:${normalized}`;
+      const entry = verificationCodes.get(key);
+
+      if (!entry) {
+        return res.status(400).json({ error: 'No verification code found. Please request a new code.' });
+      }
+      if (Date.now() > entry.expiresAt) {
+        verificationCodes.delete(key);
+        return res.status(400).json({ error: 'Verification code expired. Please request a new code.' });
+      }
+      if (entry.code !== String(code).trim()) {
+        return res.status(400).json({ error: 'Invalid verification code. Please check the 6-digit code and try again.' });
+      }
+
+      entry.verified = true;
+      verificationCodes.set(key, entry);
+
+      return res.json({
+        verified: true,
+        channel,
+        target: target.trim()
+      });
+    } catch (err: any) {
+      console.error('Error verifying code:', err);
+      return res.status(500).json({ error: 'Failed to verify code.' });
+    }
+  });
+
   app.post('/api/auth/register', (req: Request, res: Response) => {
-    const { name, email, phone, role, location, farmerProfile, buyerProfile, avatar } = req.body;
+    const {
+      name,
+      email,
+      phone,
+      role,
+      location,
+      farmerProfile,
+      buyerProfile,
+      avatar,
+      emailVerified,
+      phoneVerified,
+      verificationMethod
+    } = req.body;
 
     if (!name || !email || !role) {
       return res.status(400).json({ error: 'Name, email, and role are required' });
@@ -74,11 +192,16 @@ async function startServer() {
 
     const existing = store.getUserByEmail(email);
     if (existing) {
+      if (existing.status === 'suspended') {
+        return res.status(403).json({ error: 'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.' });
+      }
       return res.status(409).json({ error: 'An account with this email already exists' });
     }
 
-    const id = `${role}-${Date.now()}`;
-    const defaultAvatar = role === 'farmer'
+    const isSeller = role === 'farmer' || role === 'fodder_supplier';
+    const idPrefix = role === 'fodder_supplier' ? 'supplier' : role;
+    const id = `${idPrefix}-${Date.now()}`;
+    const defaultAvatar = isSeller
       ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
       : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
 
@@ -91,10 +214,15 @@ async function startServer() {
       avatar: avatar || defaultAvatar,
       location: location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
       status: 'active',
+      emailVerified: Boolean(emailVerified),
+      phoneVerified: Boolean(phoneVerified),
+      verificationMethod,
       createdAt: new Date().toISOString(),
-      farmerProfile: role === 'farmer' ? (farmerProfile || {
-        farmName: `${name}'s Farm`,
-        farmDescription: 'Local agricultural producer offering fresh, high quality farm goods.',
+      farmerProfile: isSeller ? (farmerProfile || {
+        farmName: role === 'fodder_supplier' ? `${name}'s Fodder Supply` : `${name}'s Farm`,
+        farmDescription: role === 'fodder_supplier'
+          ? 'Certified livestock fodder, hay bale, and animal feed supplier.'
+          : 'Local agricultural producer offering fresh, high quality farm goods.',
         farmingPractices: ['traditional'],
         rating: 5.0,
         totalReviews: 0,
@@ -124,7 +252,20 @@ async function startServer() {
   app.post('/api/auth/session', (req: Request, res: Response) => {
     const { userId, user, token } = req.body || {};
     if (userId) {
-      if (user && !store.getUserById(userId)) {
+      const existingById = store.getUserById(userId);
+      const existingByEmail = user?.email ? store.getUserByEmail(user.email) : undefined;
+      if (
+        existingById?.status === 'suspended' ||
+        existingByEmail?.status === 'suspended' ||
+        user?.status === 'suspended'
+      ) {
+        res.setHeader('Set-Cookie', [
+          `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
+          `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
+        ]);
+        return res.status(403).json({ error: 'Your account has been suspended by the agroX administration.' });
+      }
+      if (user && !existingById) {
         store.createUser(user);
       }
       const sessionToken = token || `token_${userId}_${Date.now()}`;
@@ -155,6 +296,18 @@ async function startServer() {
     return res.json({ message: `Password reset instructions sent to ${email}. Check your inbox.` });
   });
 
+  app.get('/api/auth/status', (req: Request, res: Response) => {
+    const email = (req.query.email as string | undefined)?.trim();
+    const uid = (req.query.uid as string | undefined)?.trim();
+    const byId = uid ? store.getUserById(uid) : undefined;
+    const byEmail = email ? store.getUserByEmail(email) : undefined;
+    const suspended = byId?.status === 'suspended' || byEmail?.status === 'suspended';
+    return res.json({
+      suspended,
+      status: suspended ? 'suspended' : (byId?.status || byEmail?.status || 'unknown')
+    });
+  });
+
   app.get('/api/auth/me', (req: Request, res: Response) => {
     const cookies = parseCookies(req);
     const authHeader = req.headers.authorization;
@@ -174,6 +327,13 @@ async function startServer() {
     if (userId) {
       const user = store.getUserById(userId);
       if (user) {
+        if (user.status === 'suspended') {
+          res.setHeader('Set-Cookie', [
+            `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
+            `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
+          ]);
+          return res.json({ user: null, suspended: true });
+        }
         return res.json({ user });
       }
     }
@@ -247,6 +407,7 @@ async function startServer() {
         farmerName,
         farmerAvatar,
         farmName,
+        sellerRole,
         name,
         category,
         categoryName,
@@ -282,6 +443,7 @@ async function startServer() {
       const finalFarmerName = (farmerName || existingFarmer?.name || 'Local Producer').toString().trim();
       const finalFarmerAvatar = farmerAvatar || existingFarmer?.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400';
       const finalFarmName = (farmName || existingFarmer?.farmerProfile?.farmName || `${finalFarmerName}'s Farm`).toString().trim();
+      const finalSellerRole = sellerRole || existingFarmer?.role || (category === 'cat-fodder' ? 'fodder_supplier' : 'farmer');
 
       const finalLocation = location || (existingFarmer?.location ? {
         province: existingFarmer.location?.province || 'Harare',
@@ -305,6 +467,7 @@ async function startServer() {
         farmerName: finalFarmerName,
         farmerAvatar: finalFarmerAvatar,
         farmName: finalFarmName,
+        sellerRole: finalSellerRole,
         name: name.toString().trim(),
         category: category || 'cat-veg',
         categoryName: categoryName || 'Vegetables',
@@ -531,22 +694,49 @@ async function startServer() {
   });
 
   app.post('/api/messages', (req: Request, res: Response) => {
-    const { conversationId, senderId, recipientId, text, productId, productSnippet, orderId } = req.body;
-    if (!senderId || !recipientId || !text) {
-      return res.status(400).json({ error: 'Sender, recipient and message text are required' });
+    try {
+      const {
+        conversationId,
+        senderId,
+        recipientId,
+        text,
+        productId,
+        productSnippet,
+        orderId,
+        senderName,
+        senderAvatar,
+        senderRole,
+        recipientName,
+        recipientAvatar,
+        recipientRole,
+        recipientFarmName
+      } = req.body || {};
+      if (!senderId || !recipientId || !text) {
+        return res.status(400).json({ error: 'Sender, recipient and message text are required' });
+      }
+
+      const result = store.sendMessage({
+        conversationId,
+        senderId,
+        recipientId,
+        text,
+        productId,
+        productSnippet,
+        orderId,
+        senderName,
+        senderAvatar,
+        senderRole,
+        recipientName,
+        recipientAvatar,
+        recipientRole,
+        recipientFarmName
+      });
+
+      return res.status(201).json(result);
+    } catch (err: any) {
+      console.error('Error sending message:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to send message' });
     }
-
-    const result = store.sendMessage({
-      conversationId,
-      senderId,
-      recipientId,
-      text,
-      productId,
-      productSnippet,
-      orderId
-    });
-
-    res.status(201).json(result);
   });
 
   app.put('/api/conversations/:id/read', (req: Request, res: Response) => {
@@ -691,8 +881,8 @@ async function startServer() {
 
   app.get('/api/farmers/:id', (req: Request, res: Response) => {
     const farmer = store.getUserById(req.params.id);
-    if (!farmer || farmer.role !== 'farmer') {
-      return res.status(404).json({ error: 'Farmer not found' });
+    if (!farmer || (farmer.role !== 'farmer' && farmer.role !== 'fodder_supplier')) {
+      return res.status(404).json({ error: 'Producer not found' });
     }
     const products = store.getProducts({ farmerId: farmer.id });
     const reviews = store.getReviews(farmer.id);
@@ -725,8 +915,8 @@ async function startServer() {
   });
 
   app.put('/api/users/:id/status', (req: Request, res: Response) => {
-    const { status } = req.body;
-    const updated = store.toggleUserStatus(req.params.id, status);
+    const { status, email } = req.body;
+    const updated = store.toggleUserStatus(req.params.id, status, email);
     if (!updated) return res.status(404).json({ error: 'User not found' });
     res.json(updated);
   });
@@ -763,65 +953,84 @@ async function startServer() {
   });
 
   const handleCreateAd = (req: Request, res: Response) => {
-    const {
-      farmerId,
-      farmerName,
-      farmerAvatar,
-      farmName,
-      farmerEmail,
-      farmerPhone,
-      productId,
-      productName,
-      productImage,
-      productPrice,
-      productUnit,
-      category,
-      categoryName,
-      dealHeadline,
-      dealDescription,
-      discountPercentage,
-      specialPrice,
-      days,
-      durationDays,
-      proofOfPaymentUrl,
-      proofOfPaymentFileName,
-      paymentMethod,
-      paymentReference
-    } = req.body;
+    try {
+      const {
+        id,
+        farmerId,
+        farmerName,
+        farmerAvatar,
+        farmName,
+        farmerEmail,
+        farmerPhone,
+        productId,
+        productName,
+        productImage,
+        productPrice,
+        productUnit,
+        category,
+        categoryName,
+        dealHeadline,
+        dealDescription,
+        discountPercentage,
+        specialPrice,
+        discountText,
+        days,
+        durationDays,
+        totalAmount,
+        totalFee,
+        proofOfPaymentUrl,
+        proofOfPaymentFileName,
+        paymentMethod,
+        paymentReference,
+        status
+      } = req.body || {};
 
-    const finalDays = Number(days) || Number(durationDays) || 7;
+      const toFiniteNum = (val: unknown): number | undefined => {
+        if (val === undefined || val === null || val === '') return undefined;
+        const n = Number(val);
+        return Number.isFinite(n) ? n : undefined;
+      };
 
-    if (!farmerId || !dealHeadline) {
-      return res.status(400).json({ error: 'Missing required ad request fields: farmerId and dealHeadline are required' });
+      const finalFarmerId = farmerId || (req as any).user?.id || 'farmer-1';
+      const finalHeadline = (dealHeadline || '').trim() || (productName ? `Special Harvest Deal: ${productName}` : 'Fresh Harvest Special Promotion');
+      const finalDays = toFiniteNum(days) || toFiniteNum(durationDays) || 7;
+
+      const created = store.createAdRequest({
+        id,
+        farmerId: finalFarmerId,
+        farmerName: farmerName || 'Farmer',
+        farmerAvatar,
+        farmName: farmName || 'Local Farm',
+        farmerEmail,
+        farmerPhone,
+        productId,
+        productName: productName || 'Harvest Produce',
+        productImage,
+        productPrice: toFiniteNum(productPrice),
+        productUnit: productUnit || 'kg',
+        category,
+        categoryName,
+        dealHeadline: finalHeadline,
+        dealDescription: dealDescription || '',
+        discountPercentage: toFiniteNum(discountPercentage),
+        specialPrice: toFiniteNum(specialPrice),
+        discountText,
+        days: finalDays,
+        durationDays: finalDays,
+        totalAmount: toFiniteNum(totalAmount),
+        totalFee: toFiniteNum(totalFee),
+        proofOfPaymentUrl,
+        proofOfPaymentFileName,
+        paymentMethod: paymentMethod || 'ecocash',
+        paymentReference: paymentReference || '',
+        status: status || 'sent'
+      });
+
+      return res.status(201).json(created);
+    } catch (err: any) {
+      console.error('Error creating ad request:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to submit advertising request.' });
     }
-
-    const created = store.createAdRequest({
-      farmerId,
-      farmerName: farmerName || 'Farmer',
-      farmerAvatar,
-      farmName: farmName || 'Local Farm',
-      farmerEmail,
-      farmerPhone,
-      productId,
-      productName,
-      productImage,
-      productPrice,
-      productUnit,
-      category,
-      categoryName,
-      dealHeadline,
-      dealDescription: dealDescription || '',
-      discountPercentage: discountPercentage ? Number(discountPercentage) : undefined,
-      specialPrice: specialPrice ? Number(specialPrice) : undefined,
-      days: finalDays,
-      proofOfPaymentUrl,
-      proofOfPaymentFileName,
-      paymentMethod: paymentMethod || 'ecocash',
-      paymentReference: paymentReference || '',
-      status: 'sent'
-    });
-
-    res.status(201).json(created);
   };
   app.post('/api/ads', handleCreateAd);
   app.post('/api/ad-requests', handleCreateAd);

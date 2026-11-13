@@ -22,6 +22,8 @@ export function getFriendlyAuthErrorMessage(error: any): string {
       return 'No account was found with this email.';
     case 'auth/user-disabled':
       return 'This user account has been disabled. Please contact support.';
+    case 'auth/account-suspended':
+      return message || 'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a moment and try again later.';
     case 'auth/network-request-failed':
@@ -31,6 +33,9 @@ export function getFriendlyAuthErrorMessage(error: any): string {
     case 'auth/requires-recent-login':
       return 'Please sign out and sign back in to perform this sensitive action.';
     default:
+      if (message.toLowerCase().includes('suspended')) {
+        return message;
+      }
       if (message.includes('auth/invalid-credential') || message.includes('INVALID_LOGIN_CREDENTIALS')) {
         return 'Incorrect email or password.';
       }

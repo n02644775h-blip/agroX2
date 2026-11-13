@@ -112,9 +112,29 @@ class MarketplaceStore {
     return this.users[index];
   }
 
-  toggleUserStatus(id: string, status: 'active' | 'suspended' | 'pending_verification'): User | undefined {
-    const user = this.updateUser(id, { status });
-    return user;
+  toggleUserStatus(id: string, status: 'active' | 'suspended' | 'pending_verification', email?: string): User | undefined {
+    let matchedUser: User | undefined;
+
+    for (let i = 0; i < this.users.length; i++) {
+      const u = this.users[i];
+      const idMatches = u.id === id;
+      const emailMatches = Boolean(email && u.email && u.email.toLowerCase() === email.trim().toLowerCase());
+      if (idMatches || emailMatches) {
+        this.users[i] = { ...u, status };
+        if (idMatches || !matchedUser) {
+          matchedUser = this.users[i];
+        }
+      }
+    }
+
+    if (!matchedUser) {
+      matchedUser = this.updateUser(id, {
+        status,
+        ...(email ? { email: email.trim() } : {})
+      });
+    }
+
+    return matchedUser;
   }
 
   // --- Categories ---
@@ -235,7 +255,10 @@ class MarketplaceStore {
     let list = [...this.orders];
     if (params?.userId && params?.role === 'buyer') {
       list = list.filter(o => o.buyerId === params.userId);
-    } else if (params?.farmerId || (params?.userId && params?.role === 'farmer')) {
+    } else if (
+      params?.farmerId ||
+      (params?.userId && (params?.role === 'farmer' || params?.role === 'fodder_supplier'))
+    ) {
       const fId = params.farmerId || params.userId;
       list = list.filter(o => o.farmerId === fId);
     }
@@ -442,6 +465,13 @@ class MarketplaceStore {
     productId?: string;
     productSnippet?: any;
     orderId?: string;
+    senderName?: string;
+    senderAvatar?: string;
+    senderRole?: string;
+    recipientName?: string;
+    recipientAvatar?: string;
+    recipientRole?: string;
+    recipientFarmName?: string;
   }): { message: Message; conversation: Conversation } {
     let conversation: Conversation | undefined;
     const now = new Date().toISOString();
@@ -461,50 +491,55 @@ class MarketplaceStore {
     const sender = this.getUserById(params.senderId);
     const recipient = this.getUserById(params.recipientId);
 
-    if (!conversation && sender && recipient) {
-      const convId = `conv-${Date.now()}`;
+    const senderParticipant = {
+      id: params.senderId,
+      name: sender?.name || params.senderName || 'agroX User',
+      role: (sender?.role || params.senderRole || 'buyer') as any,
+      avatar: sender?.avatar || params.senderAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+      farmName: sender?.farmerProfile?.farmName
+    };
+
+    const recipientParticipant = {
+      id: params.recipientId,
+      name: recipient?.name || params.recipientName || 'Producer',
+      role: (recipient?.role || params.recipientRole || 'farmer') as any,
+      avatar: recipient?.avatar || params.recipientAvatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+      farmName: recipient?.farmerProfile?.farmName || params.recipientFarmName
+    };
+
+    if (!conversation) {
+      const sortedIds = [params.senderId, params.recipientId].sort();
+      const convId = params.conversationId || `conv_${sortedIds[0]}__${sortedIds[1]}`;
       conversation = {
         id: convId,
-        participants: [
-          {
-            id: sender.id,
-            name: sender.name,
-            role: sender.role,
-            avatar: sender.avatar,
-            farmName: sender.farmerProfile?.farmName
-          },
-          {
-            id: recipient.id,
-            name: recipient.name,
-            role: recipient.role,
-            avatar: recipient.avatar,
-            farmName: recipient.farmerProfile?.farmName
-          }
-        ],
+        participants: [senderParticipant, recipientParticipant],
         lastMessage: params.text,
         lastMessageTime: now,
         unreadCountFor: {
-          [recipient.id]: 1,
-          [sender.id]: 0
+          [params.recipientId]: 1,
+          [params.senderId]: 0
         },
         productId: params.productId,
+        productName: params.productSnippet?.name,
         orderId: params.orderId
       };
       this.conversations.unshift(conversation);
-    } else if (conversation) {
+    } else {
       conversation.lastMessage = params.text;
       conversation.lastMessageTime = now;
+      if (!conversation.unreadCountFor) conversation.unreadCountFor = {};
       conversation.unreadCountFor[params.recipientId] = (conversation.unreadCountFor[params.recipientId] || 0) + 1;
       if (params.productId && !conversation.productId) conversation.productId = params.productId;
+      if (params.productSnippet?.name && !conversation.productName) conversation.productName = params.productSnippet.name;
       if (params.orderId && !conversation.orderId) conversation.orderId = params.orderId;
     }
 
     const message: Message = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      conversationId: conversation!.id,
+      conversationId: conversation.id,
       senderId: params.senderId,
-      senderName: sender?.name || 'User',
-      senderRole: sender?.role || 'buyer',
+      senderName: senderParticipant.name,
+      senderRole: senderParticipant.role,
       text: params.text,
       createdAt: now,
       read: false,
@@ -517,16 +552,16 @@ class MarketplaceStore {
     // Notify recipient
     this.createNotification({
       userId: params.recipientId,
-      title: `New Message from ${sender?.name || 'User'}`,
+      title: `New Message from ${senderParticipant.name}`,
       message: params.text.length > 80 ? params.text.substring(0, 80) + '...' : params.text,
       type: 'message',
-      link: `/messages/${conversation!.id}`,
+      link: `/messages/${conversation.id}`,
       read: false,
       createdAt: now,
-      metadata: { conversationId: conversation!.id }
+      metadata: { conversationId: conversation.id }
     });
 
-    return { message, conversation: conversation! };
+    return { message, conversation };
   }
 
   markConversationRead(conversationId: string, userId: string): void {
@@ -649,7 +684,7 @@ class MarketplaceStore {
         this.users.forEach(u => {
           if (
             targetAudience === 'all' ||
-            (targetAudience === 'farmers' && u.role === 'farmer') ||
+            (targetAudience === 'farmers' && (u.role === 'farmer' || u.role === 'fodder_supplier')) ||
             (targetAudience === 'buyers' && u.role === 'buyer')
           ) {
             this.createNotification({
@@ -738,24 +773,49 @@ class MarketplaceStore {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  createAdRequest(data: Omit<AdRequest, 'id' | 'createdAt' | 'updatedAt' | 'totalAmount' | 'dailyRate'> & { days: number }): AdRequest {
-    const id = `ad-${Date.now()}`;
-    const days = Math.min(Math.max(Number(data.days) || 1, 1), 30);
+  createAdRequest(data: Omit<AdRequest, 'id' | 'createdAt' | 'updatedAt' | 'dailyRate'> & { id?: string; days: number; durationDays?: number; totalFee?: number; totalAmount?: number; discountText?: string }): AdRequest {
+    const id = data.id || `ad-${Date.now()}`;
+    const rawDays = Number(data.days) || Number(data.durationDays) || 7;
+    const days = Number.isFinite(rawDays) ? Math.min(Math.max(rawDays, 1), 30) : 7;
     const dailyRate = 1.00;
-    const totalAmount = days * dailyRate;
+    const rawTotal = Number(data.totalAmount) || Number(data.totalFee);
+    const totalAmount = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : (days * dailyRate);
+    const safeSpecialPrice = data.specialPrice !== undefined && Number.isFinite(Number(data.specialPrice))
+      ? Number(data.specialPrice)
+      : undefined;
+    const safeDiscountPct = data.discountPercentage !== undefined && Number.isFinite(Number(data.discountPercentage))
+      ? Number(data.discountPercentage)
+      : undefined;
+    const safeProductPrice = data.productPrice !== undefined && Number.isFinite(Number(data.productPrice))
+      ? Number(data.productPrice)
+      : undefined;
+    const discountText = data.discountText || (safeDiscountPct ? `${safeDiscountPct}% OFF` : (safeSpecialPrice !== undefined ? `Special: $${safeSpecialPrice.toFixed(2)}` : 'PROMO DEAL'));
+
+    // Check if ad with this ID already exists (upsert)
+    const existingIndex = this.adRequests.findIndex(a => a.id === id);
 
     const newAd: AdRequest = {
       ...data,
       id,
+      productPrice: safeProductPrice,
+      discountPercentage: safeDiscountPct,
+      specialPrice: safeSpecialPrice,
       days,
+      durationDays: days,
       dailyRate,
       totalAmount,
+      totalFee: totalAmount,
+      discountText,
       status: data.status || 'sent',
-      createdAt: new Date().toISOString(),
+      createdAt: (existingIndex >= 0 ? this.adRequests[existingIndex].createdAt : undefined) || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    this.adRequests.unshift(newAd);
+    if (existingIndex >= 0) {
+      this.adRequests[existingIndex] = newAd;
+    } else {
+      this.adRequests.unshift(newAd);
+    }
 
     // Send notification to Admin
     const admins = this.users.filter(u => u.role === 'admin');
@@ -771,13 +831,15 @@ class MarketplaceStore {
     });
 
     // Send confirmation to Farmer
-    this.createNotification({
-      userId: newAd.farmerId,
-      title: 'Advertisement Request Received (State: Sent)',
-      message: `Your ${newAd.days}-day promotion request for "${newAd.dealHeadline}" has been received and queued for administrative POP review.`,
-      type: 'order',
-      metadata: { adRequestId: newAd.id }
-    });
+    if (newAd.farmerId) {
+      this.createNotification({
+        userId: newAd.farmerId,
+        title: 'Advertisement Request Received (State: Sent)',
+        message: `Your ${newAd.days}-day promotion request for "${newAd.dealHeadline}" has been received and queued for administrative POP review.`,
+        type: 'order',
+        metadata: { adRequestId: newAd.id }
+      });
+    }
 
     return newAd;
   }
@@ -880,7 +942,7 @@ class MarketplaceStore {
 
   getAdminStats() {
     const totalUsers = this.users.length;
-    const farmersCount = this.users.filter(u => u.role === 'farmer').length;
+    const farmersCount = this.users.filter(u => u.role === 'farmer' || u.role === 'fodder_supplier').length;
     const buyersCount = this.users.filter(u => u.role === 'buyer').length;
     const totalProducts = this.products.length;
     const totalOrders = this.orders.length;

@@ -12,6 +12,7 @@ export const INITIAL_CATEGORIES: ProductCategory[] = [
   { id: 'cat-honey', name: 'Honey & Bee Products', slug: 'honey', icon: 'Hexagon', description: '100% pure raw unprocessed forest honey and beeswax' },
   { id: 'cat-herbs', name: 'Herbs & Spices', slug: 'herbs', icon: 'Sprout', description: 'Culinary herbs, mint, rosemary, coriander & dried spices' },
   { id: 'cat-seeds', name: 'Seeds & Seedlings', slug: 'seeds', icon: 'Flower2', description: 'Certified planting seeds, fruit tree saplings & nursery seedlings' },
+  { id: 'cat-fodder', name: 'Fodder & Animal Feed', slug: 'fodder', icon: 'Wheat', description: 'Lucerne hay bales, maize silage, Rhodes grass, stockfeed concentrates & forage' },
   { id: 'cat-other', name: 'Other Farm Produce', slug: 'other', icon: 'Package', description: 'Compost, organic fertilizer, animal feed, dried goods' }
 ];
 
@@ -145,6 +146,35 @@ export const INITIAL_USERS: User[] = [
       preferredDeliveryAddress: 'Shop 12 Borrowdale Village, Harare',
       favoriteCategories: ['cat-veg', 'cat-grains', 'cat-dairy'],
       totalOrdersPlaced: 14
+    }
+  },
+  {
+    id: 'supplier-1',
+    name: 'Tawanda Gumbo',
+    email: 'tawanda@greenbale.co.zw',
+    phone: '+263 77 321 9876',
+    role: 'fodder_supplier',
+    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400',
+    location: {
+      country: 'Zimbabwe',
+      province: 'Mashonaland West',
+      city: 'Chinhoyi',
+      community: 'Lomagundi Valley',
+      address: 'Plot 8 GreenBale Forage Works'
+    },
+    status: 'active',
+    createdAt: '2026-02-10T08:00:00Z',
+    farmerProfile: {
+      farmName: 'GreenBale Fodder & Forage Supply',
+      farmDescription: 'Dedicated livestock nutrition and fodder producer supplying sun-cured lucerne hay bales, nutrient-dense maize silage, Katambora Rhodes grass, and dairy/beef ration concentrates.',
+      farmSize: '65 Hectares',
+      establishedYear: 2019,
+      farmingPractices: ['irrigated', 'sustainable_forage'],
+      rating: 4.9,
+      totalReviews: 17,
+      verified: true,
+      coverImage: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&q=80&w=1200',
+      contactPreferences: ['phone', 'chat', 'whatsapp']
     }
   },
   {
@@ -680,6 +710,72 @@ export const INITIAL_PRODUCTS: Product[] = [
     additionalNotes: 'Pre-treated with fungicide and insecticide seed coating for superior germination vigor.',
     createdAt: '2026-08-22T11:00:00Z',
     updatedAt: '2026-08-29T10:00:00Z'
+  },
+  {
+    id: 'prod-fodder-1',
+    farmerId: 'supplier-1',
+    farmerName: 'Tawanda Gumbo',
+    farmerAvatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400',
+    farmName: 'GreenBale Fodder & Forage Supply',
+    sellerRole: 'fodder_supplier',
+    name: 'Prime Sun-Cured Lucerne (Alfalfa) Hay Bales (18kg–20kg)',
+    category: 'cat-fodder',
+    categoryName: 'Fodder & Animal Feed',
+    description: 'High-protein (18%+ crude protein) leaf-rich lucerne hay bales, cleanly baled and shed-stored free from mold or weeds. Ideal for dairy cows, lactating goats, horses, and finishing beef cattle.',
+    price: 9.50,
+    unit: 'bale',
+    quantityAvailable: 320,
+    minOrderQuantity: 5,
+    images: [
+      'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&q=80&w=800'
+    ],
+    location: {
+      province: 'Mashonaland West',
+      city: 'Chinhoyi',
+      community: 'Lomagundi Valley'
+    },
+    harvestDate: '2026-08-20',
+    availability: 'available',
+    isOrganic: true,
+    featured: true,
+    rating: 4.9,
+    reviewsCount: 12,
+    additionalNotes: 'Bulk flatbed truck delivery available for 100+ bales across Zimbabwe.',
+    createdAt: '2026-08-21T08:00:00Z',
+    updatedAt: '2026-08-28T09:00:00Z'
+  },
+  {
+    id: 'prod-fodder-2',
+    farmerId: 'supplier-1',
+    farmerName: 'Tawanda Gumbo',
+    farmerAvatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400',
+    farmName: 'GreenBale Fodder & Forage Supply',
+    sellerRole: 'fodder_supplier',
+    name: 'Katambora Rhodes Grass & Maize Stover Silage (50kg Compaction Bag)',
+    category: 'cat-fodder',
+    categoryName: 'Fodder & Animal Feed',
+    description: 'Anaerobically fermented high-energy maize silage blended with Katambora Rhodes grass fiber in airtight 50kg bags for dry-season livestock maintenance and rapid weight gain.',
+    price: 7.00,
+    unit: 'bag',
+    quantityAvailable: 180,
+    minOrderQuantity: 4,
+    images: [
+      'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&q=80&w=800'
+    ],
+    location: {
+      province: 'Mashonaland West',
+      city: 'Chinhoyi',
+      community: 'Lomagundi Valley'
+    },
+    harvestDate: '2026-08-18',
+    availability: 'available',
+    isOrganic: false,
+    featured: false,
+    rating: 4.8,
+    reviewsCount: 5,
+    additionalNotes: 'Vacuum-sealed UV-stabilized bags keep silage fresh for up to 12 months.',
+    createdAt: '2026-08-23T10:00:00Z',
+    updatedAt: '2026-08-28T11:00:00Z'
   }
 ];
 

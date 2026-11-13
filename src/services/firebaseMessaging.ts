@@ -150,15 +150,15 @@ export function subscribeToFirebaseMessages(
 ): () => void {
   try {
     const msgsColRef = collection(db, 'conversations', conversationId, 'messages');
-    const q = query(msgsColRef, orderBy('createdAt', 'asc'));
 
     const unsubscribe = onSnapshot(
-      q,
+      msgsColRef,
       (snapshot) => {
         const list: Message[] = [];
         snapshot.forEach((d) => {
           list.push(parseFirestoreMessage(d.id, d.data()));
         });
+        list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         onUpdate(list);
       },
       (error) => {
@@ -173,6 +173,23 @@ export function subscribeToFirebaseMessages(
     console.error('Failed to subscribe to messages:', err);
     if (onError) onError(err);
     return () => {};
+  }
+}
+
+export async function markFirebaseConversationRead(conversationId: string, userId: string): Promise<void> {
+  try {
+    const convDocRef = doc(db, 'conversations', conversationId);
+    await setDoc(
+      convDocRef,
+      {
+        unreadCountFor: {
+          [userId]: 0
+        }
+      },
+      { merge: true }
+    );
+  } catch {
+    // Non-critical if conversation doesn't exist in Firestore yet
   }
 }
 
@@ -222,6 +239,11 @@ export async function sendFirebaseMessage(
   await setDoc(msgDocRef, sanitizeForFirestore(rawMsg));
 
   // 2. Ensure parent conversation document is created or updated
+  const existingConvSnap = await getDoc(convDocRef).catch(() => null);
+  const existingUnread = existingConvSnap?.exists()
+    ? Number((existingConvSnap.data() as any)?.unreadCountFor?.[messageData.recipient.id] || 0)
+    : 0;
+
   const convPayload = {
     id: conversationId,
     participantIds: [messageData.sender.id, messageData.recipient.id],
@@ -231,16 +253,20 @@ export async function sendFirebaseMessage(
         name: messageData.sender.name,
         role: messageData.sender.role,
         avatar: messageData.sender.avatar || '',
-        farmName: messageData.sender.farmerProfile?.farmName
+        farmName: messageData.sender.farmerProfile?.farmName || ''
       },
       {
         id: messageData.recipient.id,
         name: messageData.recipient.name,
         role: messageData.recipient.role,
         avatar: messageData.recipient.avatar || '',
-        farmName: messageData.recipient.farmerProfile?.farmName
+        farmName: messageData.recipient.farmerProfile?.farmName || ''
       }
     ],
+    unreadCountFor: {
+      [messageData.recipient.id]: existingUnread + 1,
+      [messageData.sender.id]: 0
+    },
     lastMessage: cleanText,
     lastMessageTime: serverTimestamp(),
     productId: messageData.productId || null,

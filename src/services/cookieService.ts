@@ -129,6 +129,10 @@ export async function requestStorageAccessPermission(): Promise<boolean> {
 // Multi-layer session persistence
 export function persistUserSession(user: User, token?: string): void {
   if (!user || !user.id) return;
+  if (user.status === 'suspended') {
+    clearUserSession(user.id);
+    return;
+  }
 
   const userJson = JSON.stringify(user);
   const activeToken = token || `token_${user.id}`;
@@ -176,7 +180,7 @@ export function getPersistedUserSession(): User | null {
     const rawLocal = localStorage.getItem('agrox_current_user');
     if (rawLocal) {
       const parsed = JSON.parse(rawLocal);
-      if (parsed && parsed.id && parsed.name) return parsed;
+      if (parsed && parsed.id && parsed.name && parsed.status !== 'suspended') return parsed;
     }
   } catch {}
 
@@ -185,7 +189,7 @@ export function getPersistedUserSession(): User | null {
     const rawSession = sessionStorage.getItem('agrox_current_user');
     if (rawSession) {
       const parsed = JSON.parse(rawSession);
-      if (parsed && parsed.id && parsed.name) return parsed;
+      if (parsed && parsed.id && parsed.name && parsed.status !== 'suspended') return parsed;
     }
   } catch {}
 
@@ -194,7 +198,7 @@ export function getPersistedUserSession(): User | null {
     const rawCookie = getCookie('agrox_user');
     if (rawCookie) {
       const parsed = JSON.parse(rawCookie);
-      if (parsed && parsed.id && parsed.name) return parsed;
+      if (parsed && parsed.id && parsed.name && parsed.status !== 'suspended') return parsed;
     }
   } catch {}
 
@@ -205,7 +209,7 @@ export function getPersistedUserSession(): User | null {
       const rawUser = localStorage.getItem(`agrox_user_profile_${activeUid}`);
       if (rawUser) {
         const parsed = JSON.parse(rawUser);
-        if (parsed && parsed.id && parsed.name) return parsed;
+        if (parsed && parsed.id && parsed.name && parsed.status !== 'suspended') return parsed;
       }
     }
   } catch {}
@@ -213,8 +217,22 @@ export function getPersistedUserSession(): User | null {
   return null;
 }
 
-export function clearUserSession(): void {
+export function clearUserSession(uid?: string): void {
   try {
+    const activeUid = uid || localStorage.getItem('agrox_active_uid') || getCookie('agrox_uid');
+    if (activeUid) {
+      localStorage.removeItem(`agrox_user_profile_${activeUid}`);
+    }
+    // Remove any cached user profile keys
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('agrox_user_profile_')) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+
     localStorage.removeItem('agrox_current_user');
     localStorage.removeItem('agrox_active_uid');
     localStorage.removeItem('agriconnect_token');

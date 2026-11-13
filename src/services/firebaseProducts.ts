@@ -47,6 +47,7 @@ export function parseFirestoreProduct(docId: string, data: any): Product {
     farmerName: data?.farmerName || 'Local Producer',
     farmerAvatar: data?.farmerAvatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
     farmName: data?.farmName || `${data?.farmerName || 'Local'}'s Farm`,
+    sellerRole: data?.sellerRole,
     name: data?.name || 'Fresh Produce',
     category: data?.category || 'cat-veg',
     categoryName: data?.categoryName || 'Vegetables',

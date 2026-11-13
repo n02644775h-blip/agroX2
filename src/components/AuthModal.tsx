@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { UserRole } from '../types';
+import { api } from '../services/api';
+import { UserRole, isSellerRole } from '../types';
 import {
   X,
   Lock,
@@ -14,7 +15,11 @@ import {
   KeyRound,
   ArrowLeft,
   Eye,
-  EyeOff
+  EyeOff,
+  Wheat,
+  ShieldCheck,
+  Send,
+  Loader2
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -36,11 +41,108 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
   const [farmName, setFarmName] = useState('');
   const [bio, setBio] = useState('');
 
+  // Signup verification state (Email or Phone OTP)
+  const [verificationMethod, setVerificationMethod] = useState<'email' | 'phone'>('email');
+  const [verificationCodeInput, setVerificationCodeInput] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [sandboxOtpNotice, setSandboxOtpNotice] = useState<string | null>(null);
+  const [verifiedTarget, setVerifiedTarget] = useState<{ channel: 'email' | 'phone'; target: string } | null>(null);
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const currentTarget = (verificationMethod === 'email' ? email : phone).trim();
+  const normalizedCurrentTarget = verificationMethod === 'email'
+    ? currentTarget.toLowerCase()
+    : currentTarget.replace(/[\s()-]/g, '');
+
+  const isTargetVerified = Boolean(
+    verifiedTarget &&
+    verifiedTarget.channel === verificationMethod &&
+    verifiedTarget.target === normalizedCurrentTarget
+  );
+
+  const handleVerificationChannelChange = (channel: 'email' | 'phone') => {
+    setVerificationMethod(channel);
+    setCodeSent(false);
+    setVerificationCodeInput('');
+    setSandboxOtpNotice(null);
+    setVerifiedTarget(null);
+    setErrorMsg('');
+    setSuccessMsg('');
+  };
+
+  const handleSendVerificationCode = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const target = verificationMethod === 'email' ? email.trim() : phone.trim();
+
+    if (verificationMethod === 'email') {
+      if (!target || !/\S+@\S+\.\S+/.test(target)) {
+        setErrorMsg('Please enter a valid email address before sending a verification code.');
+        return;
+      }
+    } else {
+      if (!target || target.replace(/[\s()-]/g, '').length < 7) {
+        setErrorMsg('Please enter a valid phone number (e.g. +263 77 123 4567) before sending an SMS code.');
+        return;
+      }
+    }
+
+    setIsSendingCode(true);
+    try {
+      const res = await api.sendVerificationCode({
+        channel: verificationMethod,
+        target,
+        name: fullName.trim() || undefined
+      });
+      setCodeSent(true);
+      setSandboxOtpNotice(res.sandboxCode || null);
+      setSuccessMsg(res.message);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Could not dispatch verification code. Please check your details.');
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const handleVerifyOtpCode = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    const target = verificationMethod === 'email' ? email.trim() : phone.trim();
+    if (!verificationCodeInput.trim()) {
+      setErrorMsg('Please enter the 6-digit verification code.');
+      return;
+    }
+
+    setIsVerifyingCode(true);
+    try {
+      await api.verifyCode({
+        channel: verificationMethod,
+        target,
+        code: verificationCodeInput.trim()
+      });
+      setVerifiedTarget({
+        channel: verificationMethod,
+        target: normalizedCurrentTarget
+      });
+      setSuccessMsg(
+        verificationMethod === 'email'
+          ? `Email verified (${target})! You can now complete registration.`
+          : `Phone number verified (${target})! You can now complete registration.`
+      );
+      setSandboxOtpNotice(null);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Verification failed. Check your 6-digit code and try again.');
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
 
   const validateForm = (): boolean => {
     setErrorMsg('');
@@ -88,6 +190,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
         setErrorMsg('Please enter a valid email address.');
         return false;
       }
+      if (verificationMethod === 'phone' && (!phone.trim() || phone.replace(/[\s()-]/g, '').length < 7)) {
+        setErrorMsg('Please enter a valid phone number to verify via SMS.');
+        return false;
+      }
       if (!password) {
         setErrorMsg('Password cannot be empty.');
         return false;
@@ -100,8 +206,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
         setErrorMsg('Passwords do not match. Please ensure both passwords are identical.');
         return false;
       }
-      if (role === 'farmer' && !farmName.trim()) {
-        setErrorMsg('Please enter your farm or estate name.');
+      if (isSellerRole(role) && !farmName.trim()) {
+        setErrorMsg(
+          role === 'fodder_supplier'
+            ? 'Please enter your fodder supply business or company name.'
+            : 'Please enter your farm or estate name.'
+        );
+        return false;
+      }
+      if (!isTargetVerified) {
+        setErrorMsg(
+          verificationMethod === 'email'
+            ? 'Please verify your email address with the 6-digit code before creating your account.'
+            : 'Please verify your phone number with the 6-digit SMS code before creating your account.'
+        );
         return false;
       }
       return true;
@@ -130,7 +248,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
         }
         onClose();
       } else {
-        // Register user via Firebase Auth and create Firestore doc at users/{uid}
+        const isSeller = isSellerRole(role);
         await signup(
           fullName.trim(),
           email.trim(),
@@ -138,17 +256,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
           {
             role,
             phone: phone.trim() || undefined,
+            emailVerified: verificationMethod === 'email' && isTargetVerified,
+            phoneVerified: verificationMethod === 'phone' && isTargetVerified,
+            verificationMethod,
             location: {
               country: 'Zimbabwe',
               province,
               city: city.trim() || province
             },
-            farmerProfile: role === 'farmer' ? {
-              farmName: farmName.trim() || `${fullName}'s Farm`,
-              bio: bio.trim() || 'Local agricultural producer dedicated to fresh produce.',
-              farmingMethods: ['Organic Compost', 'Drip Irrigation'],
+            farmerProfile: isSeller ? {
+              farmName: farmName.trim() || (role === 'fodder_supplier' ? `${fullName}'s Fodder Supply` : `${fullName}'s Farm`),
+              bio: bio.trim() || (
+                role === 'fodder_supplier'
+                  ? 'Verified livestock fodder, lucerne hay, silage, and animal feed supplier.'
+                  : 'Local agricultural producer dedicated to fresh produce.'
+              ),
+              farmingMethods: role === 'fodder_supplier' ? ['Sun-Cured Baling', 'Silage Formulation'] : ['Organic Compost', 'Drip Irrigation'],
               establishedYear: new Date().getFullYear(),
-              isVerified: true
+              isVerified: true,
+              verified: true
             } : undefined
           }
         );
@@ -163,15 +289,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
   };
 
   const handleDemoSelect = async (demoRole: UserRole) => {
-    demoLogin(demoRole);
-    onClose();
+    setErrorMsg('');
+    setSuccessMsg('');
+    setIsSubmitting(true);
+    try {
+      await demoLogin(demoRole);
+      onClose();
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Unable to sign in with this account.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
       <div
         id="auth-dialog"
-        className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden my-6 border border-stone-200 flex flex-col max-h-[90vh]"
+        className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden my-6 border border-stone-200 flex flex-col max-h-[92vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* Top Header */}
@@ -193,7 +328,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                   ? 'Receive a secure reset link to your email'
                   : mode === 'login'
                   ? 'Sign in to access your farm products, orders & messaging'
-                  : 'Join our trusted agricultural marketplace ecosystem'}
+                  : 'Join our verified agricultural & fodder marketplace'}
               </p>
             </div>
           </div>
@@ -206,33 +341,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
           </button>
         </div>
 
-        {/* Demo Fast Login Ribbon (Only on login or register) */}
+        {/* Demo Fast Login Ribbon */}
         {mode !== 'forgot_password' && (
           <div className="bg-stone-50 p-3.5 border-b border-stone-200/80 space-y-2">
             <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
               ⚡ Quick Demo Credentials (1-Click Switch)
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => handleDemoSelect('farmer')}
                 className="p-2 rounded-xl bg-white hover:bg-emerald-50 border border-stone-200 hover:border-emerald-300 font-semibold text-emerald-800 transition-colors text-center shadow-2xs"
               >
-                🌱 Farmer Tendai
+                🌱 Farmer
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDemoSelect('fodder_supplier')}
+                className="p-2 rounded-xl bg-white hover:bg-amber-50 border border-stone-200 hover:border-amber-300 font-semibold text-amber-800 transition-colors text-center shadow-2xs"
+              >
+                🌾 Fodder
               </button>
               <button
                 type="button"
                 onClick={() => handleDemoSelect('buyer')}
-                className="p-2 rounded-xl bg-white hover:bg-amber-50 border border-stone-200 hover:border-amber-300 font-semibold text-amber-800 transition-colors text-center shadow-2xs"
+                className="p-2 rounded-xl bg-white hover:bg-sky-50 border border-stone-200 hover:border-sky-300 font-semibold text-sky-800 transition-colors text-center shadow-2xs"
               >
-                🛒 Buyer Grace
+                🛒 Buyer
               </button>
               <button
                 type="button"
                 onClick={() => handleDemoSelect('admin')}
                 className="p-2 rounded-xl bg-white hover:bg-purple-50 border border-stone-200 hover:border-purple-300 font-semibold text-purple-800 transition-colors text-center shadow-2xs"
               >
-                🛡️ Admin Sarah
+                🛡️ Admin
               </button>
             </div>
           </div>
@@ -254,7 +396,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             </div>
           )}
 
-          {/* Mode Tabs (Sign In vs Register) */}
+          {/* Mode Tabs */}
           {mode !== 'forgot_password' ? (
             <div className="flex rounded-xl bg-stone-100 p-1">
               <button
@@ -287,13 +429,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             </button>
           )}
 
-          {/* REGISTER: Initial Role Selection */}
+          {/* REGISTER: Role Selection (Buyer, Farmer Producer, Fodder Supplier) */}
           {mode === 'register' && (
             <div className="space-y-1.5">
               <label className="font-bold text-stone-700 block">I am creating an account as:</label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <label
-                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2.5 ${
+                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2 ${
                     role === 'buyer'
                       ? 'border-emerald-600 bg-emerald-50/70 font-bold text-emerald-900 shadow-2xs'
                       : 'border-stone-200 text-stone-600 hover:bg-stone-50'
@@ -304,14 +446,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                     name="authRegRole"
                     checked={role === 'buyer'}
                     onChange={() => setRole('buyer')}
-                    className="text-emerald-600 focus:ring-emerald-500"
+                    className="text-emerald-600 focus:ring-emerald-500 shrink-0"
                   />
-                  <ShoppingBag className="w-4 h-4 text-emerald-600" />
-                  <span>Household Buyer</span>
+                  <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="leading-tight">Household Buyer</span>
                 </label>
 
                 <label
-                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2.5 ${
+                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2 ${
                     role === 'farmer'
                       ? 'border-emerald-600 bg-emerald-50/70 font-bold text-emerald-900 shadow-2xs'
                       : 'border-stone-200 text-stone-600 hover:bg-stone-50'
@@ -322,12 +464,35 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                     name="authRegRole"
                     checked={role === 'farmer'}
                     onChange={() => setRole('farmer')}
-                    className="text-emerald-600 focus:ring-emerald-500"
+                    className="text-emerald-600 focus:ring-emerald-500 shrink-0"
                   />
-                  <Sprout className="w-4 h-4 text-emerald-600" />
-                  <span>Farmer Producer</span>
+                  <Sprout className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="leading-tight">Farmer Producer</span>
+                </label>
+
+                <label
+                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2 ${
+                    role === 'fodder_supplier'
+                      ? 'border-amber-600 bg-amber-50/80 font-bold text-amber-950 shadow-2xs'
+                      : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="authRegRole"
+                    checked={role === 'fodder_supplier'}
+                    onChange={() => setRole('fodder_supplier')}
+                    className="text-amber-600 focus:ring-amber-500 shrink-0"
+                  />
+                  <Wheat className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="leading-tight">Fodder Supplier</span>
                 </label>
               </div>
+              {role === 'fodder_supplier' && (
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 font-medium">
+                  List lucerne hay bales, maize silage, Rhodes grass &amp; livestock feed directly on the agroX marketplace.
+                </p>
+              )}
             </div>
           )}
 
@@ -351,19 +516,151 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
 
           {/* ALL MODES: Email */}
           <div>
-            <label className="font-bold text-stone-700 block mb-1">Email Address *</label>
+            <label className="font-bold text-stone-700 block mb-1">
+              {mode === 'login' ? 'Email Address or Admin ID *' : 'Email Address *'}
+            </label>
             <div className="relative">
               <Mail className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                type="email"
+                type={mode === 'login' ? 'text' : 'email'}
                 value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="name@example.com"
+                onChange={e => {
+                  setEmail(e.target.value);
+                  if (verifiedTarget?.channel === 'email') setVerifiedTarget(null);
+                }}
+                placeholder={mode === 'login' ? 'name@example.com' : 'name@example.com'}
                 className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 required
               />
             </div>
           </div>
+
+          {/* REGISTER: Phone */}
+          {mode === 'register' && (
+            <div>
+              <label className="font-bold text-stone-700 block mb-1">
+                Phone Number {verificationMethod === 'phone' ? '*' : '(For Order SMS Alerts)'}
+              </label>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={e => {
+                    setPhone(e.target.value);
+                    if (verifiedTarget?.channel === 'phone') setVerifiedTarget(null);
+                  }}
+                  placeholder="+263 77 123 4567"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                  required={verificationMethod === 'phone'}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* REGISTER: Email or Phone OTP Verification */}
+          {mode === 'register' && (
+            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-stone-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                  Account Verification Method *
+                </span>
+                {isTargetVerified && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Verified
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleVerificationChannelChange('email')}
+                  className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                    verificationMethod === 'email'
+                      ? 'bg-white border-emerald-600 text-emerald-900 shadow-2xs'
+                      : 'bg-transparent border-stone-200 text-stone-600 hover:bg-white/60'
+                  }`}
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Verify via Email</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleVerificationChannelChange('phone')}
+                  className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                    verificationMethod === 'phone'
+                      ? 'bg-white border-emerald-600 text-emerald-900 shadow-2xs'
+                      : 'bg-transparent border-stone-200 text-stone-600 hover:bg-white/60'
+                  }`}
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                  <span>Verify via Phone</span>
+                </button>
+              </div>
+
+              {!isTargetVerified && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSendVerificationCode}
+                      disabled={isSendingCode}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-stone-300 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shrink-0"
+                    >
+                      {isSendingCode ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Send className="w-3.5 h-3.5" />
+                      )}
+                      <span>{codeSent ? 'Resend Code' : `Send ${verificationMethod === 'email' ? 'Email' : 'SMS'} Code`}</span>
+                    </button>
+                    <span className="text-[11px] text-stone-500 truncate">
+                      {currentTarget ? `Target: ${currentTarget}` : `Enter your ${verificationMethod} above`}
+                    </span>
+                  </div>
+
+                  {sandboxOtpNotice && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center justify-between gap-2">
+                      <span>
+                        Sandbox verification code: <strong className="font-mono text-sm tracking-widest">{sandboxOtpNotice}</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setVerificationCodeInput(sandboxOtpNotice)}
+                        className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] shrink-0"
+                      >
+                        Auto-fill
+                      </button>
+                    </div>
+                  )}
+
+                  {codeSent && (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={verificationCodeInput}
+                        onChange={e => setVerificationCodeInput(e.target.value.replace(/\D/g, ''))}
+                        placeholder="Enter 6-digit OTP code"
+                        className="flex-1 px-3 py-2 rounded-xl border border-stone-300 bg-white text-stone-900 font-mono font-bold tracking-widest focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleVerifyOtpCode}
+                        disabled={isVerifyingCode || verificationCodeInput.length < 6}
+                        className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-black disabled:bg-stone-300 text-white font-bold text-xs transition-colors shrink-0"
+                      >
+                        {isVerifyingCode ? 'Checking...' : 'Verify Code'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* LOGIN & REGISTER: Password */}
           {mode !== 'forgot_password' && (
@@ -429,19 +726,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             </div>
           )}
 
-          {/* REGISTER: Farmer Specific Fields */}
-          {mode === 'register' && role === 'farmer' && (
+          {/* REGISTER: Farmer / Fodder Supplier Specific Fields */}
+          {mode === 'register' && isSellerRole(role) && (
             <div className="space-y-3 pt-2 border-t border-stone-100">
-              <div className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Farm Information</div>
+              <div className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
+                {role === 'fodder_supplier' ? 'Fodder Supply Business Details' : 'Farm Information'}
+              </div>
               <div>
-                <label className="font-bold text-stone-700 block mb-1">Farm / Estate Name *</label>
+                <label className="font-bold text-stone-700 block mb-1">
+                  {role === 'fodder_supplier' ? 'Supply Company / Business Name *' : 'Farm / Estate Name *'}
+                </label>
                 <input
                   type="text"
                   value={farmName}
                   onChange={e => setFarmName(e.target.value)}
-                  placeholder="e.g. Green Hills Organic Orchards"
+                  placeholder={role === 'fodder_supplier' ? 'e.g. GreenBale Forage & Hay Supply' : 'e.g. Green Hills Organic Orchards'}
                   className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   required
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  {role === 'fodder_supplier' ? 'Fodder & Animal Feed Specialties (Optional)' : 'Farm Bio (Optional)'}
+                </label>
+                <input
+                  type="text"
+                  value={bio}
+                  onChange={e => setBio(e.target.value)}
+                  placeholder={role === 'fodder_supplier' ? 'e.g. Lucerne hay bales, maize silage, Rhodes grass' : 'e.g. Organic tomatoes, leafy greens & pasture eggs'}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                 />
               </div>
 
@@ -473,23 +787,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             </div>
           )}
 
-          {/* REGISTER: Phone for SMS notifications */}
-          {mode === 'register' && (
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Phone Number (For Order SMS Alerts)</label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                  placeholder="+263 77 123 4567"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-            </div>
-          )}
-
           {/* Submit Button */}
           <button
             type="submit"
@@ -512,7 +809,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             ) : mode === 'login' ? (
               <span>Sign In</span>
             ) : (
-              <span>Create Account</span>
+              <span>{isTargetVerified ? 'Complete Verified Registration' : 'Verify Contact & Create Account'}</span>
             )}
           </button>
 

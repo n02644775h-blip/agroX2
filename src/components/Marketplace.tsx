@@ -35,6 +35,7 @@ import {
 interface MarketplaceProps {
   onSelectProduct: (product: Product) => void;
   onSelectFarmer: (farmerId: string) => void;
+  onContactFarmer?: (product: Product) => void;
 }
 
 const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
@@ -42,6 +43,7 @@ const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
   'cat-veg': <Carrot className="w-4 h-4" />,
   'cat-fruits': <Apple className="w-4 h-4" />,
   'cat-grains': <Wheat className="w-4 h-4" />,
+  'cat-fodder': <Wheat className="w-4 h-4" />,
   'cat-poultry': <Egg className="w-4 h-4" />,
   'cat-dairy': <Milk className="w-4 h-4" />,
   'cat-livestock': <Beef className="w-4 h-4" />,
@@ -66,7 +68,7 @@ const PROVINCES = [
   'Masvingo'
 ];
 
-export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSelectFarmer }) => {
+export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSelectFarmer, onContactFarmer }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [hotDeals, setHotDeals] = useState<AdRequest[]>([]);
@@ -113,20 +115,46 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
     }
   };
 
+  const applyClientFilters = (list: Product[]): Product[] => {
+    let filtered = list.filter(p => {
+      if (filters.category !== 'all' && p.category !== filters.category) return false;
+      if (filters.province && filters.province !== 'All Regions' && p.location?.province !== filters.province) return false;
+      if (filters.city && filters.city.trim()) {
+        const cityMatch = (p.location?.city || '').toLowerCase().includes(filters.city.trim().toLowerCase());
+        if (!cityMatch) return false;
+      }
+      if (filters.minPrice !== undefined && p.price < filters.minPrice) return false;
+      if (filters.maxPrice !== undefined && p.price > filters.maxPrice) return false;
+      if (filters.availability !== 'all' && p.availability !== filters.availability) return false;
+      if (filters.isOrganic && !p.isOrganic) return false;
+      if (filters.searchQuery && filters.searchQuery.trim()) {
+        const q = filters.searchQuery.trim().toLowerCase();
+        const hay = `${p.name} ${p.description} ${p.categoryName} ${p.farmName} ${p.farmerName} ${p.location?.city || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (filters.sortBy === 'price_asc') filtered.sort((a, b) => a.price - b.price);
+    else if (filters.sortBy === 'price_desc') filtered.sort((a, b) => b.price - a.price);
+    else if (filters.sortBy === 'rating') filtered.sort((a, b) => b.rating - a.rating);
+    else if (filters.sortBy === 'popular') filtered.sort((a, b) => b.reviewsCount - a.reviewsCount);
+    else filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return filtered;
+  };
+
   useEffect(() => {
     loadData();
 
-    // Attach real-time product updates from Firestore
+    // Attach real-time product updates from Firestore while honoring active marketplace filters
     const unsubscribe = subscribeToFirebaseProducts(undefined, (fbProducts) => {
       if (fbProducts && fbProducts.length > 0) {
         setProducts(prev => {
-          const combined = [...fbProducts];
-          prev.forEach(p => {
-            if (!combined.some(c => c.id === p.id)) {
-              combined.push(p);
-            }
-          });
-          return combined;
+          const map = new Map<string, Product>();
+          prev.forEach(p => map.set(p.id, p));
+          fbProducts.forEach(p => map.set(p.id, p));
+          return applyClientFilters(Array.from(map.values()));
         });
       }
     });
@@ -231,10 +259,10 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
           {/* Quick Suggestions Chips */}
           <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-stone-300">
             <span className="font-medium opacity-80">Popular:</span>
-            {['Breeding Crossbreeds', 'Hybrids', 'Tomatoes', 'Maize', 'Chicken', 'Eggs', 'Honey', 'Avocados'].map(tag => (
+            {['Fodder & Hay', 'Breeding Crossbreeds', 'Tomatoes', 'Maize', 'Chicken', 'Eggs', 'Honey', 'Avocados'].map(tag => (
               <button
                 key={tag}
-                onClick={() => handleQuickTagClick(tag)}
+                onClick={() => handleQuickTagClick(tag === 'Fodder & Hay' ? 'Lucerne' : tag)}
                 className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-stone-200 hover:text-white transition-colors"
               >
                 {tag}
@@ -635,6 +663,28 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
             </div>
           )}
 
+          {/* Fodder & Animal Feed Spotlight Banner */}
+          {filters.category === 'cat-fodder' && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-linear-to-r from-amber-900 via-orange-900 to-stone-900 text-white shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-amber-700/50">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center shrink-0">
+                  <Wheat className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white flex items-center gap-2">
+                    <span>Fodder, Hay Bales &amp; Animal Feed Supply</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-200 text-[10px] font-bold">
+                      Direct From Fodder Suppliers
+                    </span>
+                  </h4>
+                  <p className="text-xs text-amber-100/90 mt-0.5 leading-relaxed">
+                    Source high-protein lucerne hay bales, maize silage, Katambora Rhodes grass, and livestock feed concentrates directly from verified regional suppliers.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Product Grid */}
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -674,6 +724,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
                   key={product.id}
                   product={product}
                   onSelectProduct={onSelectProduct}
+                  onContactFarmer={onContactFarmer}
                 />
               ))}
 

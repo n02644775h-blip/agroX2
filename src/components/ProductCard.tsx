@@ -132,7 +132,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {/* Producer / Farm Origin */}
           <div className="flex items-center gap-1.5 mb-2">
             <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center text-[10px] text-amber-800 shrink-0 font-bold">
-              👨‍🌾
+              {product.sellerRole === 'fodder_supplier' || product.category === 'cat-fodder' ? '🌾' : '👨‍🌾'}
             </div>
             <span className="text-[11px] text-gray-500 truncate">
               <span className="text-gray-800 font-semibold">{product.farmName}</span> ·{' '}
@@ -142,9 +142,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
           {/* Category & Rating */}
           <div className="flex items-center justify-between text-xs text-gray-500 mb-3">
-            <span className="text-[10px] font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded">
-              {product.categoryName}
-            </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded truncate ${
+                product.sellerRole === 'fodder_supplier' || product.category === 'cat-fodder'
+                  ? 'text-amber-800 bg-amber-50'
+                  : 'text-green-700 bg-green-50'
+              }`}>
+                {product.categoryName}
+              </span>
+            </div>
             <div className="flex items-center gap-1 text-gray-700 text-xs">
               <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
               <span className="font-bold text-[11px]">{product.rating.toFixed(1)}</span>
@@ -171,19 +177,31 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </button>
               <button
                 onClick={handleChatClick}
-                className="w-10 flex items-center justify-center border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 transition-colors shrink-0"
-                title="Message Farmer"
+                className="w-10 flex items-center justify-center border border-gray-200 rounded-lg hover:bg-emerald-50 hover:border-emerald-300 text-emerald-700 transition-colors shrink-0"
+                title={product.sellerRole === 'fodder_supplier' ? 'Contact Supplier' : 'Contact Farmer'}
               >
                 <MessageSquare className="w-4 h-4" />
               </button>
             </>
           ) : (
-            <button
-              onClick={() => onSelectProduct(product)}
-              className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold transition-colors"
-            >
-              View Produce Details
-            </button>
+            <>
+              <button
+                onClick={() => onSelectProduct(product)}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold transition-colors"
+              >
+                View Details
+              </button>
+              {user?.id !== product.farmerId && (
+                <button
+                  onClick={handleChatClick}
+                  className="px-3 py-2 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors shrink-0"
+                  title={product.sellerRole === 'fodder_supplier' ? 'Contact Supplier' : 'Contact Farmer'}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Chat</span>
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

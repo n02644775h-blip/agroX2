@@ -1,4 +1,7 @@
-export type UserRole = 'farmer' | 'buyer' | 'admin';
+export type UserRole = 'farmer' | 'fodder_supplier' | 'buyer' | 'admin';
+
+export const isSellerRole = (role?: UserRole | string): boolean =>
+  role === 'farmer' || role === 'fodder_supplier';
 
 export type ProductAvailability = 'available' | 'low_stock' | 'out_of_stock' | 'temporarily_unavailable';
 
@@ -10,6 +13,9 @@ export type ProductUnit =
   | 'tray'
   | 'bag'
   | 'bag_50kg'
+  | 'bale'
+  | 'ton'
+  | 'bundle'
   | 'piece'
   | 'liter'
   | 'litre'
@@ -47,6 +53,9 @@ export interface User {
     address?: string;
   };
   status: 'active' | 'suspended' | 'pending_verification';
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  verificationMethod?: 'email' | 'phone';
   createdAt: string;
   farmerProfile?: FarmerProfile;
   buyerProfile?: BuyerProfile;
@@ -63,6 +72,13 @@ export interface FarmerProfile {
   establishedYear?: number;
   farmingPractices?: string[];
   farmingMethods?: string[];
+  practices?: string[];
+  whatsapp?: string;
+  paymentInfo?: {
+    ecocash?: string;
+    innbucks?: string;
+    bankAccount?: string;
+  };
   rating?: number;
   totalReviews?: number;
   verified?: boolean;
@@ -91,6 +107,7 @@ export interface Product {
   farmerName: string;
   farmerAvatar: string;
   farmName: string;
+  sellerRole?: UserRole;
   name: string;
   category: string;
   categoryName: string;
@@ -307,6 +324,7 @@ export interface AdRequest {
   dealDescription: string;
   discountPercentage?: number;
   specialPrice?: number;
+  discountText?: string;
   durationDays?: number; // 1 to 30 days
   days?: number; // 1 to 30 days
   dailyRate?: number; // $1 / day

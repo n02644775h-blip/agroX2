@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { isSellerRole } from '../types';
 import {
   Sprout,
   ShoppingBag,
@@ -20,7 +21,8 @@ import {
   MapPin,
   Smartphone,
   Download,
-  Megaphone
+  Megaphone,
+  Wheat
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -55,6 +57,14 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const getRoleBadge = () => {
     if (!user) return null;
+    if (user.role === 'fodder_supplier') {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
+          <Wheat className="w-3 h-3 text-amber-700" />
+          Fodder Supplier
+        </span>
+      );
+    }
     if (user.role === 'farmer') {
       return (
         <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
@@ -117,7 +127,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               Marketplace
             </button>
 
-            {user?.role === 'farmer' && (
+            {isSellerRole(user?.role) && (
               <button
                 id="nav-farmer-portal-btn"
                 onClick={() => handleNav('farmer_dashboard')}
@@ -128,7 +138,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <LayoutDashboard className="w-3.5 h-3.5" />
-                Farmer Portal
+                {user?.role === 'fodder_supplier' ? 'Fodder Portal' : 'Farmer Portal'}
               </button>
             )}
 
@@ -150,7 +160,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {user && (
               <button
                 id="nav-announcements-chat-btn"
-                onClick={() => handleNav('messages')}
+                onClick={() => handleNav('messages', { channel: 'announcements' })}
                 className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
                   currentView === 'messages'
                     ? 'bg-green-50 text-green-700 font-bold'
@@ -196,15 +206,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action Icons & Controls */}
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            {/* Farmer Add Product Button */}
-            {user?.role === 'farmer' && (
+            {/* Farmer / Fodder Supplier Add Product Button */}
+            {isSellerRole(user?.role) && (
               <button
                 id="navbar-add-product-btn"
                 onClick={onOpenAddProduct}
                 className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
               >
                 <PlusCircle className="w-4 h-4" />
-                <span>Add Produce</span>
+                <span>{user?.role === 'fodder_supplier' ? 'Add Fodder' : 'Add Produce'}</span>
               </button>
             )}
 
@@ -212,7 +222,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {user && (
               <button
                 id="navbar-messages-btn"
-                onClick={() => handleNav('messages')}
+                onClick={() => handleNav('messages', { channel: 'direct' })}
                 className={`relative p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors ${
                   currentView === 'messages' ? 'bg-gray-100 text-green-700' : ''
                 }`}
@@ -301,7 +311,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="text-right hidden sm:block">
                     <p className="text-xs font-bold leading-none text-gray-900">{user.name}</p>
                     <p className="text-[10px] text-gray-500 mt-1 capitalize font-medium">
-                      {user.role === 'farmer' ? 'Verified Producer' : user.role === 'admin' ? 'Platform Admin' : 'Active Buyer'}
+                      {user.role === 'fodder_supplier'
+                        ? 'Verified Fodder Supplier'
+                        : user.role === 'farmer'
+                        ? 'Verified Producer'
+                        : user.role === 'admin'
+                        ? 'Platform Admin'
+                        : 'Active Buyer'}
                     </p>
                   </div>
                   <div className="w-9 h-9 rounded-full bg-green-100 border-2 border-green-500 overflow-hidden flex items-center justify-center shrink-0">
@@ -334,13 +350,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                       </div>
                     </div>
 
-                    {user.role === 'farmer' && (
+                    {isSellerRole(user.role) && (
                       <button
                         onClick={() => handleNav('farmer_dashboard')}
                         className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 font-medium"
                       >
                         <LayoutDashboard className="w-4 h-4 text-green-600" />
-                        Farmer Portal
+                        {user.role === 'fodder_supplier' ? 'Fodder Supplier Portal' : 'Farmer Portal'}
                       </button>
                     )}
 
@@ -437,13 +453,13 @@ export const Navbar: React.FC<NavbarProps> = ({
               Marketplace
             </button>
 
-            {user?.role === 'farmer' ? (
+            {isSellerRole(user?.role) ? (
               <button
                 onClick={() => handleNav('farmer_dashboard')}
                 className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-green-50 hover:text-green-700 font-semibold"
               >
                 <LayoutDashboard className="w-4 h-4 text-green-600" />
-                Farmer Portal
+                {user?.role === 'fodder_supplier' ? 'Fodder Portal' : 'Farmer Portal'}
               </button>
             ) : user?.role === 'admin' ? (
               <button
@@ -472,7 +488,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             <button
-              onClick={() => handleNav('messages')}
+              onClick={() => handleNav('messages', { channel: 'direct' })}
               className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-gray-100 font-semibold"
             >
               <MessageSquare className="w-4 h-4 text-gray-500" />

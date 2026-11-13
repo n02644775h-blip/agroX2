@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { Order, OrderStatus } from '../types';
+import { Order, OrderStatus, isSellerRole } from '../types';
 import {
   FileText,
   Clock,
@@ -96,7 +96,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
         <div>
           <h1 className="text-2xl font-bold text-stone-900 tracking-tight">Farm Orders & Tracking</h1>
           <p className="text-xs text-stone-500 mt-0.5">
-            {user?.role === 'farmer'
+            {isSellerRole(user?.role)
               ? 'Fulfill orders, coordinate collections, and update harvest statuses.'
               : 'Track your deliveries from harvest to doorstep and leave reviews.'}
           </p>
@@ -127,9 +127,9 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
           <FileText className="w-12 h-12 text-stone-400 mx-auto" />
           <h3 className="font-bold text-stone-900 text-base">No orders found</h3>
           <p className="text-xs text-stone-500 max-w-sm mx-auto">
-            {user?.role === 'farmer'
+            {isSellerRole(user?.role)
               ? 'You have not received any orders yet in this filter.'
-              : 'Browse our fresh farm produce on the marketplace to place your first order!'}
+              : 'Browse our fresh farm produce and fodder on the marketplace to place your first order!'}
           </p>
         </div>
       ) : (
@@ -158,7 +158,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                     </div>
 
                     <div className="text-xs text-stone-600 truncate">
-                      {user?.role === 'farmer' ? `Buyer: ${order.buyerName}` : `Farm: ${order.farmName}`}
+                      {isSellerRole(user?.role) ? `Buyer: ${order.buyerName}` : `Seller: ${order.farmName}`}
                     </div>
 
                     <div className="flex items-center justify-between pt-1">
@@ -193,11 +193,16 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
 
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => onContactFarmer(selectedOrder.farmerId, selectedOrder.id)}
+                    onClick={() =>
+                      onContactFarmer(
+                        isSellerRole(user?.role) ? selectedOrder.buyerId : selectedOrder.farmerId,
+                        selectedOrder.id
+                      )
+                    }
                     className="px-3.5 py-2 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 font-semibold text-xs flex items-center gap-1.5"
                   >
                     <MessageSquare className="w-4 h-4 text-emerald-600" />
-                    Chat with {user?.role === 'farmer' ? 'Buyer' : 'Farmer'}
+                    Chat with {isSellerRole(user?.role) ? 'Buyer' : 'Seller'}
                   </button>
 
                   {user?.role === 'buyer' && selectedOrder.status === 'completed' && !selectedOrder.isReviewed && (

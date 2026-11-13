@@ -24,7 +24,7 @@ import { FarmerProfileModal } from './components/FarmerProfileModal';
 import { AndroidBottomNav } from './components/AndroidBottomNav';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { AndroidDeviceShell } from './components/AndroidDeviceShell';
-import { Product, Order, User, AppNotification } from './types';
+import { Product, Order, User, AppNotification, isSellerRole } from './types';
 import {
   Sprout,
   ShieldCheck,
@@ -34,11 +34,13 @@ import {
   Phone,
   Mail,
   MapPin,
-  Lock
+  Lock,
+  AlertTriangle,
+  X
 } from 'lucide-react';
 
 export function App() {
-  const { user } = useAuth();
+  const { user, suspensionNotice, clearSuspensionNotice } = useAuth();
 
   // Navigation State with persistence across refreshes
   const [currentView, setCurrentView] = useState<string>(() => {
@@ -51,7 +53,12 @@ export function App() {
   const [selectedFarmerId, setSelectedFarmerId] = useState<string | null>(null);
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<Order | null>(null);
   const [chatRecipientId, setChatRecipientId] = useState<string | null>(null);
+  const [chatRecipientUser, setChatRecipientUser] = useState<User | null>(null);
   const [chatProductId, setChatProductId] = useState<string | null>(null);
+  const [chatProduct, setChatProduct] = useState<Product | null>(null);
+  const [messagesChannel, setMessagesChannel] = useState<'direct' | 'announcements'>('direct');
+  const [pendingChatProduct, setPendingChatProduct] = useState<Product | null>(null);
+  const [pendingChatUser, setPendingChatUser] = useState<User | null>(null);
 
   // Modal States
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -112,9 +119,68 @@ export function App() {
     currentView
   ]);
 
+  const openChatWithProduct = (prod: Product) => {
+    const sellerFallback: User = {
+      id: prod.farmerId,
+      name: prod.farmerName || 'Farm Seller',
+      email: '',
+      phone: '',
+      role: prod.sellerRole || (prod.category === 'cat-fodder' ? 'fodder_supplier' : 'farmer'),
+      avatar: prod.farmerAvatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+      location: {
+        country: 'Zimbabwe',
+        province: prod.location?.province || 'Harare',
+        city: prod.location?.city || 'Harare',
+        community: prod.location?.community
+      },
+      status: 'active',
+      createdAt: prod.createdAt || new Date().toISOString(),
+      farmerProfile: {
+        farmName: prod.farmName || `${prod.farmerName}'s Farm`,
+        isVerified: true
+      }
+    };
+    setChatRecipientId(prod.farmerId);
+    setChatRecipientUser(sellerFallback);
+    setChatProductId(prod.id);
+    setChatProduct(prod);
+    setMessagesChannel('direct');
+    setSelectedProduct(null);
+    setCurrentView('messages');
+    try {
+      localStorage.setItem('agrox_current_view', 'messages');
+    } catch {}
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Automatically open pending 1-on-1 chat once user completes login
+  useEffect(() => {
+    if (!user) return;
+    if (pendingChatProduct) {
+      const targetProd = pendingChatProduct;
+      setPendingChatProduct(null);
+      setIsAuthOpen(false);
+      openChatWithProduct(targetProd);
+    } else if (pendingChatUser) {
+      const targetUser = pendingChatUser;
+      setPendingChatUser(null);
+      setIsAuthOpen(false);
+      setChatRecipientId(targetUser.id);
+      setChatRecipientUser(targetUser);
+      setChatProductId(null);
+      setChatProduct(null);
+      setMessagesChannel('direct');
+      setCurrentView('messages');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [user, pendingChatProduct, pendingChatUser]);
+
   // Handle navigation
   const handleNavigate = (view: string, data?: any) => {
     mobileService.triggerHaptic('light');
+    if (view === 'messages' && data?.channel) {
+      setMessagesChannel(data.channel);
+    }
     setCurrentView(view);
     try {
       localStorage.setItem('agrox_current_view', view);
@@ -139,31 +205,44 @@ export function App() {
   // Direct contact farmer from product
   const handleContactFarmerFromProduct = (prod: Product) => {
     if (!user) {
-      setAuthModalOpen(true);
+      setPendingChatProduct(prod);
+      setSelectedProduct(null);
+      setAuthMode('login');
+      setIsAuthOpen(true);
       return;
     }
-    setChatRecipientId(prod.farmerId);
-    setChatProductId(prod.id);
-    setSelectedProduct(null);
-    setCurrentView('messages');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    openChatWithProduct(prod);
   };
 
   // Direct contact farmer from user profile
   const handleContactFarmerFromUser = (farmer: User) => {
     if (!user) {
-      setAuthModalOpen(true);
+      setPendingChatUser(farmer);
+      setAuthMode('login');
+      setIsAuthOpen(true);
       return;
     }
     setChatRecipientId(farmer.id);
+    setChatRecipientUser(farmer);
     setChatProductId(null);
+    setChatProduct(null);
+    setMessagesChannel('direct');
     setCurrentView('messages');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Contact farmer/buyer from order
-  const handleContactFromOrder = (farmerId: string, orderId?: string) => {
-    setChatRecipientId(farmerId);
+  const handleContactFromOrder = (recipientId: string, _orderId?: string) => {
+    if (!user) {
+      setAuthMode('login');
+      setIsAuthOpen(true);
+      return;
+    }
+    setChatRecipientId(recipientId);
+    setChatRecipientUser(null);
+    setChatProductId(null);
+    setChatProduct(null);
+    setMessagesChannel('direct');
     setCurrentView('messages');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -174,8 +253,9 @@ export function App() {
     if (notif.type === 'order') {
       setCurrentView('orders');
     } else if (notif.type === 'message') {
+      setMessagesChannel('direct');
       setCurrentView('messages');
-    } else if (notif.type === 'inventory' && user?.role === 'farmer') {
+    } else if (notif.type === 'inventory' && isSellerRole(user?.role)) {
       setCurrentView('farmer_dashboard');
     }
   };
@@ -212,10 +292,30 @@ export function App() {
 
       {/* Main Application Canvas */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12">
+        {suspensionNotice && (
+          <div
+            role="alert"
+            className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 flex items-start justify-between gap-3 shadow-xs"
+          >
+            <div className="flex items-start gap-3 text-xs sm:text-sm font-semibold">
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <span>{suspensionNotice}</span>
+            </div>
+            <button
+              onClick={clearSuspensionNotice}
+              className="p-1 rounded-lg hover:bg-red-100 text-red-600 transition-colors shrink-0"
+              aria-label="Dismiss suspension notice"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {currentView === 'marketplace' && (
           <Marketplace
             onSelectProduct={setSelectedProduct}
             onSelectFarmer={handleSelectFarmer}
+            onContactFarmer={handleContactFarmerFromProduct}
           />
         )}
 
@@ -260,7 +360,10 @@ export function App() {
         {currentView === 'messages' && (
           <MessagingHub
             initialRecipientId={chatRecipientId}
+            initialRecipientUser={chatRecipientUser}
             initialProductId={chatProductId}
+            initialProduct={chatProduct}
+            defaultChannel={messagesChannel}
           />
         )}
 
@@ -487,7 +590,11 @@ export function App() {
       {isAuthOpen && (
         <AuthModal
           initialMode={authMode}
-          onClose={() => setIsAuthOpen(false)}
+          onClose={() => {
+            setIsAuthOpen(false);
+            setPendingChatProduct(null);
+            setPendingChatUser(null);
+          }}
         />
       )}
 

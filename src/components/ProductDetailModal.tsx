@@ -225,7 +225,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       <span className="text-sm font-semibold text-stone-600 ml-1">/ {product.unit}</span>
                     </div>
                     <div className="text-xs text-emerald-800 font-medium mt-0.5">
-                      Direct from farmer • No middleman surcharge
+                      Direct from {product.sellerRole === 'fodder_supplier' || product.category === 'cat-fodder' ? 'fodder supplier' : 'farmer'} • No middleman surcharge
                     </div>
                   </div>
 
@@ -315,14 +315,29 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
                 {/* Primary Action Buttons */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <button
-                    id="product-contact-farmer-btn"
-                    onClick={() => onContactFarmer(product)}
-                    className="w-full py-3 px-4 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-800 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <MessageSquare className="w-4 h-4 text-emerald-600" />
-                    Contact Farmer
-                  </button>
+                  {user?.id === product.farmerId ? (
+                    <button
+                      id="product-contact-farmer-btn"
+                      type="button"
+                      onClick={() => onSelectFarmer(product.farmerId)}
+                      className="w-full py-3 px-4 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      Your Listing • View Store
+                    </button>
+                  ) : (
+                    <button
+                      id="product-contact-farmer-btn"
+                      type="button"
+                      onClick={() => onContactFarmer(product)}
+                      className="w-full py-3 px-4 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-800 font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <MessageSquare className="w-4 h-4 text-emerald-600" />
+                      {product.sellerRole === 'fodder_supplier' || product.category === 'cat-fodder'
+                        ? 'Contact Fodder Supplier'
+                        : 'Contact Farmer'}
+                    </button>
+                  )}
 
                   <button
                     id="product-add-to-cart-btn"
@@ -352,9 +367,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div>
                 <div className="flex items-center gap-1.5 font-bold text-stone-900 text-base">
                   <span>{product.farmName}</span>
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" title="Verified Producer" />
+                  <ShieldCheck
+                    className="w-4 h-4 text-emerald-600"
+                    title={product.sellerRole === 'fodder_supplier' ? 'Verified Fodder Supplier' : 'Verified Producer'}
+                  />
                 </div>
-                <div className="text-xs text-stone-600">Produced by {product.farmerName}</div>
+                <div className="text-xs text-stone-600">
+                  {product.sellerRole === 'fodder_supplier' || product.category === 'cat-fodder' ? 'Supplied by' : 'Produced by'} {product.farmerName}
+                </div>
                 <div className="text-xs text-stone-500 flex items-center gap-1 mt-1">
                   <MapPin className="w-3 h-3 text-stone-400" />
                   {product.location.community ? `${product.location.community}, ` : ''}{product.location.city}, {product.location.province}

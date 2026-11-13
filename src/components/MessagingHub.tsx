@@ -1,7 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { Message, User, Product, Conversation } from '../types';
+import { fetchAllFirebaseUsers } from '../services/firebaseUsers';
+import {
+  get1on1ConversationId,
+  fetchUserFromFirestore,
+  subscribeToFirebaseConversations,
+  subscribeToFirebaseMessages,
+  sendFirebaseMessage,
+  markFirebaseConversationRead
+} from '../services/firebaseMessaging';
+import { Message, User, Product, Conversation, isSellerRole } from '../types';
 import { PublicAnnouncementsChat } from './PublicAnnouncementsChat';
 import {
   Send,
@@ -9,174 +18,483 @@ import {
   Search,
   CheckCheck,
   MapPin,
-  Clock,
   ShieldCheck,
   Package,
   Megaphone,
-  Users,
-  Sparkles,
   ChevronRight,
-  Pin
+  ChevronLeft,
+  UserPlus,
+  X,
+  AlertCircle,
+  Sprout,
+  Wheat,
+  ShoppingBag,
+  Loader2
 } from 'lucide-react';
 
 interface MessagingHubProps {
   initialRecipientId?: string | null;
+  initialRecipientUser?: User | null;
   initialProductId?: string | null;
+  initialProduct?: Product | null;
   defaultChannel?: 'direct' | 'announcements';
+}
+
+function mergeUsersLists(fbUsers: User[], apiUsers: User[]): User[] {
+  const map = new Map<string, User>();
+  apiUsers.forEach(u => {
+    if (u?.id) map.set(u.id, u);
+  });
+  fbUsers.forEach(u => {
+    if (u?.id) {
+      const existing = map.get(u.id);
+      map.set(u.id, existing ? { ...existing, ...u } : u);
+    }
+  });
+  return Array.from(map.values());
+}
+
+function mergeConversationsLists(fbConvs: Conversation[], apiConvs: Conversation[]): Conversation[] {
+  const map = new Map<string, Conversation>();
+  apiConvs.forEach(c => {
+    if (c?.id) map.set(c.id, c);
+  });
+  fbConvs.forEach(c => {
+    if (c?.id) {
+      const existing = map.get(c.id);
+      if (!existing) {
+        map.set(c.id, c);
+      } else {
+        const fbTime = new Date(c.lastMessageTime).getTime() || 0;
+        const apiTime = new Date(existing.lastMessageTime).getTime() || 0;
+        map.set(c.id, fbTime >= apiTime ? c : existing);
+      }
+    }
+  });
+  return Array.from(map.values()).sort(
+    (a, b) => (new Date(b.lastMessageTime).getTime() || 0) - (new Date(a.lastMessageTime).getTime() || 0)
+  );
+}
+
+function mergeMessagesLists(primary: Message[], secondary: Message[]): Message[] {
+  const result: Message[] = [...primary];
+  for (const candidate of secondary) {
+    const candText = (candidate.text || candidate.content || '').trim();
+    const candTime = new Date(candidate.createdAt).getTime() || 0;
+    const isDuplicate = result.some(existing => {
+      if (existing.id && candidate.id && existing.id === candidate.id) return true;
+      const existText = (existing.text || existing.content || '').trim();
+      const existTime = new Date(existing.createdAt).getTime() || 0;
+      return (
+        existing.senderId === candidate.senderId &&
+        existText === candText &&
+        Math.abs(existTime - candTime) < 15000
+      );
+    });
+    if (!isDuplicate) {
+      result.push(candidate);
+    }
+  }
+  return result.sort(
+    (a, b) => (new Date(a.createdAt).getTime() || 0) - (new Date(b.createdAt).getTime() || 0)
+  );
 }
 
 export const MessagingHub: React.FC<MessagingHubProps> = ({
   initialRecipientId,
+  initialRecipientUser,
   initialProductId,
+  initialProduct,
   defaultChannel = 'direct'
 }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'direct' | 'announcements'>(defaultChannel);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeTab, setActiveTab] = useState<'direct' | 'announcements'>(
+    initialRecipientId ? 'direct' : defaultChannel
+  );
+  const [fbConversations, setFbConversations] = useState<Conversation[]>([]);
+  const [apiConversations, setApiConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [activeRecipient, setActiveRecipient] = useState<User | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [fbMessages, setFbMessages] = useState<Message[]>([]);
+  const [apiMessages, setApiMessages] = useState<Message[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [newMessageText, setNewMessageText] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
-  const [attachedProduct, setAttachedProduct] = useState<Product | null>(null);
+  const [attachedProduct, setAttachedProduct] = useState<Product | null>(initialProduct || null);
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [announcementsCount, setAnnouncementsCount] = useState<number>(0);
+
+  // New Chat Directory Modal
+  const [showNewChatPicker, setShowNewChatPicker] = useState(false);
+  const [directorySearch, setDirectorySearch] = useState('');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const loadData = async () => {
+  const conversations = useMemo(
+    () => mergeConversationsLists(fbConversations, apiConversations),
+    [fbConversations, apiConversations]
+  );
+
+  const messages = useMemo(
+    () => mergeMessagesLists(fbMessages, apiMessages),
+    [fbMessages, apiMessages]
+  );
+
+  // Sync defaultChannel changes when navigating via navbar
+  useEffect(() => {
+    if (initialRecipientId) {
+      setActiveTab('direct');
+    } else {
+      setActiveTab(defaultChannel);
+    }
+  }, [defaultChannel, initialRecipientId]);
+
+  // Attach initial product immediately when passed
+  useEffect(() => {
+    if (initialProduct) {
+      setAttachedProduct(initialProduct);
+    } else if (initialProductId) {
+      api.getProduct(initialProductId).then(p => setAttachedProduct(p)).catch(() => {});
+    }
+  }, [initialProduct, initialProductId]);
+
+  // Real-time conversations subscription + initial users/API load
+  useEffect(() => {
     if (!user) return;
-    try {
-      const [convs, usersList, anns] = await Promise.all([
-        api.getConversations(user.id).catch(() => []),
-        api.getUsers().catch(() => []),
-        api.getAnnouncements(user.role).catch(() => [])
-      ]);
-      setConversations(convs);
-      setAllUsers(usersList);
-      setAnnouncementsCount(anns.length);
+    let isMounted = true;
+    setLoading(true);
 
-      if (initialProductId) {
-        api.getProduct(initialProductId).then(p => setAttachedProduct(p)).catch(() => {});
+    const unsubConvs = subscribeToFirebaseConversations(
+      user.id,
+      (convs) => {
+        if (isMounted) {
+          setFbConversations(convs);
+          setLoading(false);
+        }
+      },
+      () => {
+        if (isMounted) setLoading(false);
       }
+    );
 
+    Promise.all([
+      api.getConversations(user.id).catch(() => []),
+      api.getUsers().catch(() => []),
+      fetchAllFirebaseUsers().catch(() => []),
+      api.getAnnouncements(user.role).catch(() => [])
+    ]).then(([apiConvs, apiUsers, fbUsers, anns]) => {
+      if (!isMounted) return;
+      setApiConversations(apiConvs);
+      setAllUsers(mergeUsersLists(fbUsers, apiUsers));
+      setAnnouncementsCount(anns.length);
+      setLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubConvs();
+    };
+  }, [user?.id, user?.role]);
+
+  // Resolve recipient & conversation whenever initialRecipientId or conversations update
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const resolveInitialTarget = async () => {
       if (initialRecipientId) {
         setActiveTab('direct');
-        const foundUser = usersList.find(u => u.id === initialRecipientId);
-        if (foundUser) setActiveRecipient(foundUser);
+        setSendError(null);
 
-        const foundConv = convs.find(c =>
-          c.participants.some(p => p.id === initialRecipientId)
+        // Find existing conversation either via participant match or deterministic ID
+        const deterministicId = get1on1ConversationId(user.id, initialRecipientId);
+        const existingConv = conversations.find(
+          c => c.id === deterministicId || c.participants.some(p => p.id === initialRecipientId)
         );
-        if (foundConv) {
-          setActiveConvId(foundConv.id);
-          const msgs = await api.getMessages(foundConv.id).catch(() => []);
-          setMessages(msgs);
+
+        const targetConvId = existingConv ? existingConv.id : deterministicId;
+        setActiveConvId(targetConvId);
+
+        // Hydrate recipient cleanly from multiple sources
+        const knownUser =
+          allUsers.find(u => u.id === initialRecipientId) ||
+          initialRecipientUser ||
+          null;
+
+        if (knownUser) {
+          setActiveRecipient(knownUser);
+        } else {
+          // Construct immediate fallback while fetching full profile
+          const partnerFromConv = existingConv?.participants.find(p => p.id === initialRecipientId);
+          setActiveRecipient({
+            id: initialRecipientId,
+            name: partnerFromConv?.name || 'Farm Seller',
+            email: '',
+            phone: '',
+            role: partnerFromConv?.role || 'farmer',
+            avatar:
+              partnerFromConv?.avatar ||
+              'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+            location: { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+            status: 'active',
+            createdAt: '',
+            farmerProfile: partnerFromConv?.farmName
+              ? { farmName: partnerFromConv.farmName, isVerified: true }
+              : undefined
+          } as User);
+
+          const fetched =
+            (await fetchUserFromFirestore(initialRecipientId).catch(() => null)) ||
+            (await api.getUserById(initialRecipientId).catch(() => null));
+          if (!cancelled && fetched) {
+            setActiveRecipient(fetched);
+          }
         }
-      } else if (convs.length > 0 && !activeConvId) {
-        const firstConv = convs[0];
+
+        markFirebaseConversationRead(targetConvId, user.id);
+        api.markConversationRead(targetConvId, user.id).catch(() => {});
+      } else if (!activeRecipient && conversations.length > 0 && !activeConvId) {
+        const firstConv = conversations[0];
         setActiveConvId(firstConv.id);
         const partner = firstConv.participants.find(p => p.id !== user.id);
         if (partner) {
-          const partnerUser = usersList.find(u => u.id === partner.id) || null;
+          const partnerUser =
+            allUsers.find(u => u.id === partner.id) ||
+            ({
+              id: partner.id,
+              name: partner.name,
+              role: partner.role,
+              avatar: partner.avatar,
+              email: '',
+              phone: '',
+              status: 'active',
+              location: { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+              createdAt: '',
+              farmerProfile: partner.farmName ? { farmName: partner.farmName } : undefined
+            } as User);
           setActiveRecipient(partnerUser);
         }
-        const msgs = await api.getMessages(firstConv.id).catch(() => []);
-        setMessages(msgs);
       }
-    } catch (err) {
-      console.error('Messaging load failed:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
+    resolveInitialTarget();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, initialRecipientId, initialRecipientUser, conversations.length, allUsers.length]);
+
+  // Real-time messages listener for the active conversation
   useEffect(() => {
-    loadData();
-  }, [user, initialRecipientId, initialProductId]);
+    if (!activeConvId || !user) {
+      setFbMessages([]);
+      setApiMessages([]);
+      return;
+    }
+
+    let isMounted = true;
+    setFbMessages([]);
+    setApiMessages([]);
+
+    const unsubMsgs = subscribeToFirebaseMessages(
+      activeConvId,
+      (msgs) => {
+        if (isMounted) setFbMessages(msgs);
+      },
+      () => {}
+    );
+
+    api.getMessages(activeConvId).then(msgs => {
+      if (isMounted) setApiMessages(msgs);
+    }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+      unsubMsgs();
+    };
+  }, [activeConvId, user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages.length, activeConvId]);
+
+  const startChatWithUser = async (targetUser: User) => {
+    if (!user) return;
+    setSendError(null);
+    setActiveTab('direct');
+    setShowNewChatPicker(false);
+
+    const deterministicId = get1on1ConversationId(user.id, targetUser.id);
+    const existingConv = conversations.find(
+      c => c.id === deterministicId || c.participants.some(p => p.id === targetUser.id)
+    );
+    const convId = existingConv ? existingConv.id : deterministicId;
+
+    setActiveRecipient(targetUser);
+    setActiveConvId(convId);
+
+    markFirebaseConversationRead(convId, user.id);
+    api.markConversationRead(convId, user.id).catch(() => {});
+  };
 
   const selectConversation = async (conv: Conversation) => {
+    setSendError(null);
     setActiveConvId(conv.id);
     const partner = conv.participants.find(p => p.id !== user?.id);
     if (partner) {
-      const partnerUser = allUsers.find(u => u.id === partner.id) || ({
-        id: partner.id,
-        name: partner.name,
-        role: partner.role,
-        avatar: partner.avatar,
-        email: '',
-        phone: '',
-        status: 'active',
-        location: { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
-        createdAt: ''
-      } as User);
+      const partnerUser =
+        allUsers.find(u => u.id === partner.id) ||
+        ({
+          id: partner.id,
+          name: partner.name,
+          role: partner.role,
+          avatar: partner.avatar,
+          email: '',
+          phone: '',
+          status: 'active',
+          location: { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+          createdAt: '',
+          farmerProfile: partner.farmName ? { farmName: partner.farmName } : undefined
+        } as User);
       setActiveRecipient(partnerUser);
     }
 
-    try {
-      const msgs = await api.getMessages(conv.id);
-      setMessages(msgs);
-      if (user) {
-        await api.markConversationRead(conv.id, user.id);
-      }
-    } catch (err) {
-      console.error('Failed to load messages for conversation:', err);
+    if (user) {
+      markFirebaseConversationRead(conv.id, user.id);
+      api.markConversationRead(conv.id, user.id).catch(() => {});
     }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessageText.trim() || !user || !activeRecipient) return;
+    const cleanText = newMessageText.trim();
+    if (!cleanText || !user || !activeRecipient || sending) return;
+
+    const convId = activeConvId || get1on1ConversationId(user.id, activeRecipient.id);
+    const productSnippet = attachedProduct
+      ? {
+          name: attachedProduct.name,
+          price: attachedProduct.price,
+          unit: attachedProduct.unit,
+          image: attachedProduct.images?.[0] || ''
+        }
+      : undefined;
+
+    setSending(true);
+    setSendError(null);
 
     try {
-      const res = await api.sendMessage({
-        conversationId: activeConvId || undefined,
-        senderId: user.id,
-        recipientId: activeRecipient.id,
-        text: newMessageText,
-        productId: attachedProduct?.id,
-        productSnippet: attachedProduct
-          ? {
-              name: attachedProduct.name,
-              price: attachedProduct.price,
-              unit: attachedProduct.unit,
-              image: attachedProduct.images[0]
-            }
-          : undefined
-      });
+      if (!activeConvId) {
+        setActiveConvId(convId);
+      }
 
-      setMessages(prev => [...prev, res.message]);
-      if (res.conversation) {
-        if (!activeConvId) {
-          setActiveConvId(res.conversation.id);
+      let fbSavedMsg: Message | null = null;
+      let apiSavedMsg: Message | null = null;
+
+      const [fbResult, apiResult] = await Promise.allSettled([
+        sendFirebaseMessage(convId, {
+          sender: user,
+          recipient: activeRecipient,
+          text: cleanText,
+          productId: attachedProduct?.id,
+          productSnippet
+        }),
+        api.sendMessage({
+          conversationId: convId,
+          senderId: user.id,
+          recipientId: activeRecipient.id,
+          text: cleanText,
+          productId: attachedProduct?.id,
+          productSnippet,
+          senderName: user.name,
+          senderAvatar: user.avatar,
+          senderRole: user.role,
+          recipientName: activeRecipient.name,
+          recipientAvatar: activeRecipient.avatar,
+          recipientRole: activeRecipient.role,
+          recipientFarmName: activeRecipient.farmerProfile?.farmName || ''
+        })
+      ]);
+
+      if (fbResult.status === 'fulfilled') {
+        fbSavedMsg = fbResult.value;
+      }
+      if (apiResult.status === 'fulfilled') {
+        apiSavedMsg = apiResult.value.message;
+        if (apiResult.value.conversation) {
+          setApiConversations(prev => {
+            const others = prev.filter(c => c.id !== apiResult.value.conversation.id);
+            return [apiResult.value.conversation, ...others];
+          });
         }
       }
+
+      if (!fbSavedMsg && !apiSavedMsg) {
+        throw new Error('Could not send message. Please check your connection and try again.');
+      }
+
+      if (apiSavedMsg) {
+        setApiMessages(prev => mergeMessagesLists(prev, [apiSavedMsg!]));
+      } else if (fbSavedMsg) {
+        setFbMessages(prev => mergeMessagesLists(prev, [fbSavedMsg!]));
+      }
+
       setNewMessageText('');
       setAttachedProduct(null);
-
-      // Refresh conversations list
-      const updatedConvs = await api.getConversations(user.id).catch(() => []);
-      setConversations(updatedConvs);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to send message:', err);
+      setSendError(err?.message || 'Failed to send message. Please try again.');
+    } finally {
+      setSending(false);
     }
   };
 
   const filteredConversations = conversations.filter(c => {
     const partner = c.participants.find(p => p.id !== user?.id);
-    return partner?.name.toLowerCase().includes(searchFilter.toLowerCase());
+    if (!partner) return false;
+    return (
+      partner.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+      (partner.farmName || '').toLowerCase().includes(searchFilter.toLowerCase())
+    );
   });
 
-  const quickTemplates = [
-    'Is this produce available for pickup today?',
-    'Do you offer bulk delivery for larger orders?',
-    'When was this batch harvested?',
-    'Could you confirm your exact farm gate location?'
-  ];
+  const directoryUsers = useMemo(() => {
+    return allUsers.filter(u => {
+      if (!u || u.id === user?.id) return false;
+      if (u.status === 'suspended') return false;
+      const q = directorySearch.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        u.name.toLowerCase().includes(q) ||
+        (u.farmerProfile?.farmName || '').toLowerCase().includes(q) ||
+        u.role.toLowerCase().includes(q) ||
+        (u.location?.city || '').toLowerCase().includes(q)
+      );
+    });
+  }, [allUsers, user?.id, directorySearch]);
+
+  const quickTemplates = isSellerRole(user?.role)
+    ? [
+        'Yes, fresh stock is available today!',
+        'We can prepare your order for farm pickup or delivery.',
+        'Bulk pricing is available — how many units do you need?',
+        'Let me know your preferred delivery address.'
+      ]
+    : [
+        'Is this listing available for pickup today?',
+        'Do you offer bulk delivery for larger orders?',
+        'When was this batch harvested?',
+        'Could you confirm your exact farm gate location?'
+      ];
+
+  const getRoleBadgeLabel = (role?: string) => {
+    if (role === 'fodder_supplier') return 'Fodder Supplier';
+    if (role === 'farmer') return 'Farmer';
+    if (role === 'admin') return 'Admin';
+    return 'Buyer';
+  };
 
   return (
     <div className="space-y-4">
@@ -186,7 +504,7 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
           <button
             id="tab-public-announcements-chat"
             onClick={() => setActiveTab('announcements')}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'announcements'
                 ? 'bg-emerald-800 text-white shadow-sm'
                 : 'text-stone-700 hover:bg-stone-100'
@@ -195,11 +513,13 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
             <Megaphone className="w-4 h-4 text-emerald-400" />
             <span>Public Admin Announcements</span>
             {announcementsCount > 0 && (
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                activeTab === 'announcements'
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-emerald-100 text-emerald-800'
-              }`}>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  activeTab === 'announcements'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
                 {announcementsCount}
               </span>
             )}
@@ -208,23 +528,21 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
           <button
             id="tab-direct-p2p-messages"
             onClick={() => setActiveTab('direct')}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
               activeTab === 'direct'
                 ? 'bg-emerald-800 text-white shadow-sm'
                 : 'text-stone-700 hover:bg-stone-100'
             }`}
           >
             <MessageSquare className="w-4 h-4 text-emerald-400" />
-            <span>Direct Messages (P2P)</span>
-            <span className="text-[10px] text-stone-400 font-normal">
-              ({conversations.length})
-            </span>
+            <span>Direct Messages (1-on-1)</span>
+            <span className="text-[10px] text-stone-400 font-normal">({conversations.length})</span>
           </button>
         </div>
 
         <div className="text-[11px] text-stone-500 hidden md:flex items-center gap-2 px-3">
           <ShieldCheck className="w-4 h-4 text-emerald-700" />
-          <span>Encrypted Direct Peer-to-Peer & Broadcast Channel</span>
+          <span>Real-Time Buyer, Farmer & Fodder Supplier Messaging</span>
         </div>
       </div>
 
@@ -233,15 +551,25 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
         <PublicAnnouncementsChat />
       ) : (
         /* Direct Messages Interface */
-        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden min-h-[600px] flex flex-col md:flex-row">
-          {/* Left Sidebar: Conversations */}
-          <div className="w-full md:w-80 border-r border-stone-200 flex flex-col bg-stone-50/50">
+        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden min-h-[620px] flex flex-col md:flex-row">
+          {/* Left Sidebar: Conversations (hidden on mobile when a thread is open) */}
+          <div
+            className={`w-full md:w-80 border-r border-stone-200 flex-col bg-stone-50/50 ${
+              activeRecipient ? 'hidden md:flex' : 'flex'
+            }`}
+          >
             <div className="p-4 border-b border-stone-200 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="font-bold text-stone-900 text-base">Direct Messages</h2>
-                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  {conversations.length} Active
-                </span>
+                <button
+                  id="new-direct-chat-btn"
+                  type="button"
+                  onClick={() => setShowNewChatPicker(true)}
+                  className="px-2.5 py-1 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>New Chat</span>
+                </button>
               </div>
 
               {/* Quick switch to Announcements inside list */}
@@ -274,12 +602,22 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-stone-100">
-              {filteredConversations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-stone-400 space-y-2">
+              {loading && filteredConversations.length === 0 ? (
+                <div className="p-8 text-center text-xs text-stone-400">Loading chats...</div>
+              ) : filteredConversations.length === 0 ? (
+                <div className="p-8 text-center text-xs text-stone-400 space-y-3">
                   <p>No 1-on-1 conversations yet.</p>
                   <p className="text-[11px] text-emerald-700 font-medium">
-                    Inquire directly on any product page to chat with growers!
+                    Click <strong>Contact Farmer</strong> on any product or start a new chat below!
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewChatPicker(true)}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Browse Farmers & Buyers
+                  </button>
                 </div>
               ) : (
                 filteredConversations.map(conv => {
@@ -298,7 +636,10 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                     >
                       <div className="relative">
                         <img
-                          src={partner.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'}
+                          src={
+                            partner.avatar ||
+                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
+                          }
                           alt=""
                           className="w-11 h-11 rounded-2xl object-cover border border-stone-200"
                         />
@@ -310,14 +651,19 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                           <h4 className="font-bold text-stone-900 text-xs truncate">{partner.name}</h4>
                           <span className="text-[10px] text-stone-400">
                             {conv.lastMessageTime
-                              ? new Date(conv.lastMessageTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                              ? new Date(conv.lastMessageTime).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })
                               : ''}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-xs text-stone-500 truncate">{conv.lastMessage || 'Click to view'}</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-stone-500 truncate">
+                            {conv.lastMessage || 'Click to view messages'}
+                          </p>
                           {unread > 0 && (
-                            <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0 ml-1">
+                            <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
                               {unread}
                             </span>
                           )}
@@ -331,30 +677,61 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
           </div>
 
           {/* Right: Active Chat Area */}
-          <div className="flex-1 flex flex-col bg-white">
+          <div className={`flex-1 flex-col bg-white ${activeRecipient ? 'flex' : 'hidden md:flex'}`}>
             {activeRecipient ? (
               <>
                 {/* Chat Top Header */}
                 <div className="p-4 border-b border-stone-200 flex items-center justify-between bg-white z-10">
                   <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveRecipient(null);
+                        setActiveConvId(null);
+                      }}
+                      className="md:hidden p-1.5 rounded-xl bg-stone-100 text-stone-700 hover:bg-stone-200"
+                      aria-label="Back to conversations"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
                     <img
-                      src={activeRecipient.avatar}
-                      alt=""
+                      src={
+                        activeRecipient.avatar ||
+                        'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=200'
+                      }
+                      alt={activeRecipient.name}
                       className="w-10 h-10 rounded-2xl object-cover border border-stone-200"
                     />
                     <div>
                       <div className="flex items-center gap-1.5 font-bold text-stone-900 text-sm">
                         <span>{activeRecipient.name}</span>
-                        {activeRecipient.role === 'farmer' && (
-                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" title="Verified Producer" />
+                        {isSellerRole(activeRecipient.role) && (
+                          <ShieldCheck
+                            className="w-3.5 h-3.5 text-emerald-600"
+                            title={
+                              activeRecipient.role === 'fodder_supplier'
+                                ? 'Verified Fodder Supplier'
+                                : 'Verified Producer'
+                            }
+                          />
                         )}
                       </div>
                       <div className="text-[11px] text-stone-500 flex items-center gap-2">
-                        <span className="capitalize">{activeRecipient.role}</span>
+                        <span className="font-medium text-emerald-800">
+                          {getRoleBadgeLabel(activeRecipient.role)}
+                        </span>
+                        {activeRecipient.farmerProfile?.farmName && (
+                          <>
+                            <span>•</span>
+                            <span className="truncate max-w-[160px]">
+                              {activeRecipient.farmerProfile.farmName}
+                            </span>
+                          </>
+                        )}
                         <span>•</span>
                         <span className="flex items-center gap-0.5">
                           <MapPin className="w-3 h-3 text-stone-400" />
-                          {activeRecipient.location?.city || 'Local Hub'}, {activeRecipient.location?.province || ''}
+                          {activeRecipient.location?.city || 'Local Hub'}
                         </span>
                       </div>
                     </div>
@@ -362,22 +739,45 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                 </div>
 
                 {/* Messages Thread Container */}
-                <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-stone-50/40">
+                <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-stone-50/40 max-h-[460px]">
                   {attachedProduct && (
-                    <div className="max-w-md mx-auto p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3 shadow-xs">
-                      <img src={attachedProduct.images[0]} alt="" className="w-12 h-12 rounded-xl object-cover" />
-                      <div className="truncate text-xs">
-                        <span className="text-[10px] font-bold text-emerald-800 uppercase block">Product Inquiry</span>
-                        <strong className="text-stone-900 block truncate">{attachedProduct.name}</strong>
-                        <span className="text-emerald-700 font-bold">${attachedProduct.price.toFixed(2)} / {attachedProduct.unit}</span>
+                    <div className="max-w-md mx-auto p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={attachedProduct.images?.[0]}
+                          alt=""
+                          className="w-12 h-12 rounded-xl object-cover shrink-0"
+                        />
+                        <div className="truncate text-xs">
+                          <span className="text-[10px] font-bold text-emerald-800 uppercase block">
+                            Product Inquiry
+                          </span>
+                          <strong className="text-stone-900 block truncate">{attachedProduct.name}</strong>
+                          <span className="text-emerald-700 font-bold">
+                            ${attachedProduct.price.toFixed(2)} / {attachedProduct.unit}
+                          </span>
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedProduct(null)}
+                        className="p-1 rounded-lg hover:bg-emerald-100 text-emerald-700"
+                        title="Remove product card"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
                     </div>
                   )}
 
                   {messages.length === 0 ? (
                     <div className="py-12 text-center text-xs text-stone-400 space-y-2">
                       <MessageSquare className="w-8 h-8 mx-auto text-stone-300" />
-                      <p>Send a message to inquire about harvest dates, schedule pickup, or request bulk orders.</p>
+                      <p className="font-semibold text-stone-600">
+                        Start a direct 1-on-1 conversation with {activeRecipient.name}
+                      </p>
+                      <p>
+                        Ask about stock levels, harvest dates, bulk pricing, or arrange pickup & delivery.
+                      </p>
                     </div>
                   ) : (
                     messages.map(msg => {
@@ -393,11 +793,17 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                             }`}
                           >
                             {msg.productSnippet && (
-                              <div className={`p-2 rounded-xl mb-1.5 flex items-center gap-2 text-[11px] ${
-                                isMe ? 'bg-emerald-800 text-emerald-100' : 'bg-stone-50 text-stone-700'
-                              }`}>
-                                <Package className="w-4 h-4" />
-                                <span className="font-semibold truncate">{msg.productSnippet.name}</span>
+                              <div
+                                className={`p-2 rounded-xl mb-1.5 flex items-center gap-2 text-[11px] ${
+                                  isMe
+                                    ? 'bg-emerald-800 text-emerald-100'
+                                    : 'bg-stone-50 text-stone-700'
+                                }`}
+                              >
+                                <Package className="w-4 h-4 shrink-0" />
+                                <span className="font-semibold truncate">
+                                  {msg.productSnippet.name} (${Number(msg.productSnippet.price || 0).toFixed(2)}/{msg.productSnippet.unit})
+                                </span>
                               </div>
                             )}
                             <p className="leading-relaxed whitespace-pre-wrap">{messageText}</p>
@@ -407,7 +813,10 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                               }`}
                             >
                               <span>
-                                {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {new Date(msg.createdAt).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
                               </span>
                               {isMe && <CheckCheck className="w-3 h-3 text-emerald-300" />}
                             </div>
@@ -419,13 +828,30 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                   <div ref={messagesEndRef} />
                 </div>
 
+                {sendError && (
+                  <div className="px-4 py-2 bg-red-50 border-t border-red-200 text-red-700 text-xs font-semibold flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      {sendError}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSendError(null)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 {/* Quick Inquiry Templates */}
                 <div className="px-4 py-2 bg-stone-50 border-t border-stone-100 flex gap-2 overflow-x-auto">
                   {quickTemplates.map((tmpl, idx) => (
                     <button
                       key={idx}
+                      type="button"
                       onClick={() => setNewMessageText(tmpl)}
-                      className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-stone-200 hover:border-emerald-300 rounded-full text-[11px] text-stone-600 hover:text-emerald-800 whitespace-nowrap transition-colors"
+                      className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-stone-200 hover:border-emerald-300 rounded-full text-[11px] text-stone-600 hover:text-emerald-800 whitespace-nowrap transition-colors cursor-pointer"
                     >
                       {tmpl}
                     </button>
@@ -433,7 +859,10 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                 </div>
 
                 {/* Message Input Box */}
-                <form onSubmit={handleSendMessage} className="p-3 sm:p-4 border-t border-stone-200 bg-white flex items-center gap-2">
+                <form
+                  onSubmit={handleSendMessage}
+                  className="p-3 sm:p-4 border-t border-stone-200 bg-white flex items-center gap-2"
+                >
                   <input
                     id="message-text-input"
                     type="text"
@@ -443,23 +872,123 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                     className="flex-1 px-4 py-2.5 bg-stone-50 rounded-2xl border border-stone-200 text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                   />
                   <button
+                    id="send-direct-message-btn"
                     type="submit"
-                    disabled={!newMessageText.trim()}
-                    className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-stone-200 text-white rounded-2xl shadow-xs transition-colors"
+                    disabled={!newMessageText.trim() || sending}
+                    className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-stone-200 text-white rounded-2xl shadow-xs transition-colors cursor-pointer"
                   >
-                    <Send className="w-4 h-4" />
+                    {sending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                   </button>
                 </form>
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-stone-400 space-y-2">
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-stone-400 space-y-3">
                 <MessageSquare className="w-12 h-12 text-stone-300" />
-                <h3 className="font-bold text-stone-700 text-sm">Select a Conversation</h3>
+                <h3 className="font-bold text-stone-700 text-sm">Select or Start a 1-on-1 Chat</h3>
                 <p className="text-xs max-w-xs">
-                  Choose a farmer or buyer from the left panel or jump over to the Public Announcements channel to view official bulletins.
+                  Choose an existing conversation or click below to message any farmer, fodder supplier, or buyer directly.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setShowNewChatPicker(true)}
+                  className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Start New 1-on-1 Chat
+                </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* New Chat Directory Picker Modal */}
+      {showNewChatPicker && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setShowNewChatPicker(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-stone-200 max-h-[82vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-stone-900 text-base">Start 1-on-1 Conversation</h3>
+                <p className="text-[11px] text-stone-500">
+                  Select a farmer, fodder supplier, or buyer to message
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewChatPicker(false)}
+                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={directorySearch}
+                onChange={e => setDirectorySearch(e.target.value)}
+                placeholder="Search by name, farm, fodder, or city..."
+                className="w-full pl-9 pr-3 py-2 bg-stone-50 rounded-xl border border-stone-200 text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20"
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto divide-y divide-stone-100 pr-1">
+              {directoryUsers.length === 0 ? (
+                <div className="py-10 text-center text-xs text-stone-400">
+                  No matching members found.
+                </div>
+              ) : (
+                directoryUsers.map(member => (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => startChatWithUser(member)}
+                    className="w-full p-3 flex items-center justify-between gap-3 hover:bg-emerald-50/70 rounded-xl transition-colors text-left cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={
+                          member.avatar ||
+                          'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=200'
+                        }
+                        alt={member.name}
+                        className="w-10 h-10 rounded-2xl object-cover border border-stone-200 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-bold text-stone-900 text-xs truncate">{member.name}</div>
+                        <div className="text-[11px] text-stone-500 truncate flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                            {member.role === 'fodder_supplier' ? (
+                              <Wheat className="w-3 h-3 text-amber-600" />
+                            ) : member.role === 'farmer' ? (
+                              <Sprout className="w-3 h-3 text-emerald-600" />
+                            ) : (
+                              <ShoppingBag className="w-3 h-3 text-blue-600" />
+                            )}
+                            {getRoleBadgeLabel(member.role)}
+                          </span>
+                          {member.farmerProfile?.farmName && (
+                            <span className="truncate">• {member.farmerProfile.farmName}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-stone-400 shrink-0" />
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
