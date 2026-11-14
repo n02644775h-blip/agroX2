@@ -114,6 +114,20 @@
         "status": { "type": "string", "enum": ["open", "in_discussion", "handled", "cancelled"], "description": "Request lifecycle status" }
       },
       "required": ["buyerId", "productName", "quantityRequired", "status"]
+    },
+    "DeletedAccount": {
+      "title": "DeletedAccount",
+      "description": "Tombstone record for permanently deleted or spam-removed accounts to prevent re-login",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Deleted user UID" },
+        "email": { "type": "string", "description": "Original email address" },
+        "emailLower": { "type": "string", "description": "Lowercase normalized email for lookup" },
+        "deletedBy": { "type": "string", "description": "Admin ID or self" },
+        "reason": { "type": "string", "description": "Deletion reason" },
+        "deletedAt": { "type": "string", "description": "Deletion timestamp" }
+      },
+      "required": ["uid"]
     }
   },
   "firestore": {
@@ -144,6 +158,10 @@
     "/reviews/{reviewId}": {
       "schema": "Review",
       "description": "Completed order buyer ratings and optional written reviews"
+    },
+    "/deletedAccounts/{userId}": {
+      "schema": "DeletedAccount",
+      "description": "Tombstones for deleted user and spam accounts"
     }
   }
 }

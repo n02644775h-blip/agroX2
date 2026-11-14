@@ -515,6 +515,12 @@ async function startServer() {
       return res.status(400).json({ error: 'Name, email, and role are required' });
     }
 
+    if (store.isAccountDeleted(null, email)) {
+      return res.status(403).json({
+        error: 'This email address belongs to an account that was permanently deleted and cannot be used to register.'
+      });
+    }
+
     const existing = store.getUserByEmail(email);
     if (existing) {
       if (existing.status === 'suspended') {
@@ -1402,6 +1408,49 @@ async function startServer() {
 
   app.post('/api/account/delete', handleDeleteOwnAccount);
   app.post('/api/users/:id/delete', handleDeleteOwnAccount);
+
+  const handleAdminDeleteUser = (req: Request, res: Response) => {
+    const targetUserId = (req.params.id || req.body?.userId || '').trim();
+    const actingAdminId = (extractAuthUserId(req) || req.body?.actingAdminId || '').trim();
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'Target user ID is required.' });
+    }
+
+    const actingAdmin = actingAdminId ? store.getUserById(actingAdminId) : undefined;
+    if (!actingAdmin || actingAdmin.role !== 'admin' || actingAdmin.status === 'suspended') {
+      return res.status(403).json({
+        error: 'Unauthorized: active administrator privileges are required to delete user accounts.'
+      });
+    }
+
+    if (targetUserId === actingAdminId) {
+      return res.status(400).json({
+        error: 'You cannot delete your own active administrator account from User Management.'
+      });
+    }
+
+    const result = store.deleteUserAccount(targetUserId, {
+      force: Boolean(req.body?.force),
+      email: typeof req.body?.email === 'string' ? req.body.email : undefined
+    });
+
+    if (!result.success) {
+      return res.status(409).json({
+        error: result.error || 'Cannot delete user while active orders remain open.',
+        activeOrderNumbers: result.activeOrderNumbers || []
+      });
+    }
+
+    return res.json({
+      success: true,
+      deletedUserId: targetUserId,
+      message: 'User account permanently deleted from platform and transaction logs anonymized.'
+    });
+  };
+
+  app.post('/api/admin/users/:id/delete', handleAdminDeleteUser);
+  app.delete('/api/admin/users/:id', handleAdminDeleteUser);
 
   // --- Advertisements, POP & Hot Deals ---
   const handleGetAds = (req: Request, res: Response) => {

@@ -164,7 +164,10 @@ class MarketplaceStore {
     });
   }
 
-  deleteUserAccount(userId: string): {
+  deleteUserAccount(
+    userId: string,
+    options?: { force?: boolean; email?: string }
+  ): {
     success: boolean;
     error?: string;
     activeOrderNumbers?: string[];
@@ -175,24 +178,24 @@ class MarketplaceStore {
       existing?.role === 'fodder_supplier' ||
       this.orders.some(o => o.farmerId === userId);
 
-    if (isSeller) {
-      const blockingOrders = this.getActiveFarmerOrders(userId);
-      if (blockingOrders.length > 0) {
-        return {
-          success: false,
-          error: `You currently have ${blockingOrders.length} active or unverified order(s) (${blockingOrders.map(o => o.orderNumber).join(', ')}). Please complete, deliver, or cancel open orders before permanently deleting your account.`,
-          activeOrderNumbers: blockingOrders.map(o => o.orderNumber)
-        };
-      }
+    const blockingOrders = isSeller ? this.getActiveFarmerOrders(userId) : [];
+    if (isSeller && !options?.force && blockingOrders.length > 0) {
+      return {
+        success: false,
+        error: `This seller currently has ${blockingOrders.length} active or unverified order(s) (${blockingOrders.map(o => o.orderNumber).join(', ')}). Complete, cancel, or choose Force Delete to purge this account.`,
+        activeOrderNumbers: blockingOrders.map(o => o.orderNumber)
+      };
     }
 
-    if (existing?.email) {
-      this.deletedEmails.add(existing.email.trim().toLowerCase());
+    const emailToTombstone = existing?.email || options?.email;
+    if (emailToTombstone && emailToTombstone.trim()) {
+      this.deletedEmails.add(emailToTombstone.trim().toLowerCase());
     }
     this.deletedUserIds.add(userId);
 
     // Anonymize historical transaction records while preserving financial/audit logs
     const now = new Date().toISOString();
+    const blockingIds = new Set(blockingOrders.map(o => o.id));
     this.orders = this.orders.map(order => {
       if (order.buyerId === userId) {
         return {
@@ -213,10 +216,22 @@ class MarketplaceStore {
         };
       }
       if (order.farmerId === userId) {
+        const shouldCancelOpenOrder = Boolean(options?.force && blockingIds.has(order.id));
         return {
           ...order,
           farmerName: 'Former Producer',
           farmerPaymentDetails: undefined,
+          ...(shouldCancelOpenOrder
+            ? {
+                status: 'cancelled' as OrderStatus,
+                paymentStatus:
+                  order.paymentStatus === 'pending_verification'
+                    ? ('rejected' as PaymentStatus)
+                    : order.paymentStatus,
+                paymentRejectionReason:
+                  order.paymentRejectionReason || 'Seller account removed by platform administration.'
+              }
+            : {}),
           updatedAt: now
         };
       }
@@ -239,8 +254,11 @@ class MarketplaceStore {
       )
     }));
 
-    // Remove user profile
-    this.users = this.users.filter(u => u.id !== userId);
+    // Remove user profile (also clean any duplicate rows matching email)
+    const lowerEmail = emailToTombstone ? emailToTombstone.trim().toLowerCase() : null;
+    this.users = this.users.filter(
+      u => u.id !== userId && (!lowerEmail || u.email.trim().toLowerCase() !== lowerEmail)
+    );
 
     return { success: true };
   }

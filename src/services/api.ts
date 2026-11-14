@@ -622,6 +622,19 @@ class ApiService {
     });
   }
 
+  async adminDeleteUser(
+    userId: string,
+    payload: { actingAdminId: string; email?: string; force?: boolean; reason?: string }
+  ): Promise<{ success: boolean; deletedUserId: string; message: string }> {
+    return this.request<{ success: boolean; deletedUserId: string; message: string }>(
+      `/admin/users/${encodeURIComponent(userId)}/delete`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
   async getFarmerProfile(id: string): Promise<{ farmer: User; products: Product[]; reviews: Review[] }> {
     return this.request<{ farmer: User; products: Product[]; reviews: Review[] }>(`/farmers/${id}`);
   }

@@ -31,7 +31,7 @@ import { deleteFirebaseStorageFile } from '../services/firebaseStorage';
 import { normalizeOrderStatus } from '../utils/orderUtils';
 import { auth, db } from '../firebase/config';
 import { getFriendlyAuthErrorMessage } from '../firebase/authErrors';
-import { checkFirestoreUserSuspended } from '../services/firebaseUsers';
+import { checkFirestoreUserSuspended, checkFirestoreUserDeleted } from '../services/firebaseUsers';
 import {
   subscribeToFirebaseNotifications,
   markFirebaseNotificationRead,
@@ -42,6 +42,8 @@ import { api } from '../services/api';
 
 const SUSPENDED_ACCOUNT_MESSAGE =
   'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.';
+const DELETED_ACCOUNT_MESSAGE =
+  'This account has been permanently deleted by the agroX administration.';
 
 function createSuspendedError(message: string = SUSPENDED_ACCOUNT_MESSAGE): Error & { code?: string } {
   const err = new Error(message) as Error & { code?: string };
@@ -50,11 +52,22 @@ function createSuspendedError(message: string = SUSPENDED_ACCOUNT_MESSAGE): Erro
   return err;
 }
 
+function createDeletedError(message: string = DELETED_ACCOUNT_MESSAGE): Error & { code?: string } {
+  const err = new Error(message) as Error & { code?: string };
+  err.name = 'AccountDeletedError';
+  err.code = 'auth/account-deleted';
+  return err;
+}
+
 function isSuspendedError(err: any): boolean {
   return (
     err?.name === 'AccountSuspendedError' ||
     err?.code === 'auth/account-suspended' ||
-    (typeof err?.message === 'string' && err.message.toLowerCase().includes('account has been suspended'))
+    err?.name === 'AccountDeletedError' ||
+    err?.code === 'auth/account-deleted' ||
+    (typeof err?.message === 'string' &&
+      (err.message.toLowerCase().includes('account has been suspended') ||
+        err.message.toLowerCase().includes('permanently deleted')))
   );
 }
 import {
@@ -196,14 +209,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const enforceNotSuspended = async (uid?: string | null, email?: string | null): Promise<void> => {
-    const [fsSuspended, apiStatus] = await Promise.all([
+    const [fsSuspended, fsDeleted, apiStatus] = await Promise.all([
       checkFirestoreUserSuspended(uid, email),
+      checkFirestoreUserDeleted(uid, email),
       api.checkUserStatus({ uid, email }).catch(() => ({ suspended: false, deleted: false, status: 'unknown' }))
     ]);
 
-    if (apiStatus?.deleted) {
-      await forceRevokeSuspendedSession(uid, 'This account has been permanently deleted.');
-      throw new Error('This account has been permanently deleted.');
+    if (fsDeleted || apiStatus?.deleted) {
+      await forceRevokeSuspendedSession(uid, DELETED_ACCOUNT_MESSAGE);
+      throw createDeletedError();
     }
 
     if (fsSuspended || apiStatus?.suspended) {
@@ -271,8 +285,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw createSuspendedError();
         }
         if (fsData.status === 'deleted') {
-          await forceRevokeSuspendedSession(uid, 'This account has been permanently deleted.');
-          throw new Error('This account has been permanently deleted.');
+          await forceRevokeSuspendedSession(uid, DELETED_ACCOUNT_MESSAGE);
+          throw createDeletedError();
         }
 
         userStatus = fsData.status || 'active';
@@ -548,12 +562,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       );
     };
 
+    const handleRealtimeDeletion = () => {
+      console.warn('Real-time notice: Account has been permanently deleted by administration.');
+      forceRevokeSuspendedSession(user.id, DELETED_ACCOUNT_MESSAGE);
+    };
+
     const activeUserDocRef = doc(db, 'users', user.id);
     const statusUnsubById = onSnapshot(
       activeUserDocRef,
       (snap) => {
-        if (snap.exists() && snap.data()?.status === 'suspended') {
+        const st = snap.exists() ? snap.data()?.status : undefined;
+        if (st === 'suspended') {
           handleRealtimeSuspension();
+        } else if (st === 'deleted') {
+          handleRealtimeDeletion();
+        }
+      },
+      () => {}
+    );
+
+    const deletedTombstoneUnsub = onSnapshot(
+      doc(db, 'deletedAccounts', user.id),
+      (snap) => {
+        if (snap.exists()) {
+          handleRealtimeDeletion();
         }
       },
       () => {}
@@ -566,8 +598,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         emailQuery,
         (snapshot) => {
           for (const d of snapshot.docs) {
-            if (d.data()?.status === 'suspended') {
+            const st = d.data()?.status;
+            if (st === 'suspended') {
               handleRealtimeSuspension();
+              break;
+            }
+            if (st === 'deleted') {
+              handleRealtimeDeletion();
               break;
             }
           }
@@ -578,6 +615,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       statusUnsubById();
+      deletedTombstoneUnsub();
       if (statusUnsubByEmail) statusUnsubByEmail();
     };
   }, [user?.id, user?.email]);
@@ -1079,7 +1117,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 6. Delete user profile document(s) in Cloud Firestore (or anonymize if rule denies)
+      // 6. Write deletion tombstone & delete user profile document(s) in Cloud Firestore
+      const cleanEmail = user.email?.trim() || '';
+      await setDoc(doc(db, 'deletedAccounts', targetUid), {
+        uid: targetUid,
+        email: cleanEmail,
+        emailLower: cleanEmail.toLowerCase(),
+        deletedBy: 'self',
+        reason: 'Self-service account deletion',
+        deletedAt: serverTimestamp()
+      }).catch(() => {});
+
       const userDocRef = doc(db, 'users', targetUid);
       await deleteDoc(userDocRef).catch(async () => {
         await setDoc(

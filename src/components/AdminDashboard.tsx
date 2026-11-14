@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { User, Product, Report, Announcement, ProductCategory, AdRequest, AdStatus } from '../types';
+import { User, Product, Report, Announcement, ProductCategory, AdRequest, AdStatus, isSellerRole } from '../types';
 import {
   subscribeToFirebaseUsers,
   fetchAllFirebaseUsers,
   updateFirebaseUserStatus,
+  deleteFirebaseUserAccount,
   FirebaseSignupStats,
   calculateSignupStats
 } from '../services/firebaseUsers';
@@ -102,6 +103,12 @@ export const AdminDashboard: React.FC = () => {
   const [showAdminAvatarModal, setShowAdminAvatarModal] = useState(false);
   const [pendingDeleteProductId, setPendingDeleteProductId] = useState<string | null>(null);
   const [pendingDeleteAnnId, setPendingDeleteAnnId] = useState<string | null>(null);
+  const [pendingDeleteUser, setPendingDeleteUser] = useState<User | null>(null);
+  const [deleteForceConfirm, setDeleteForceConfirm] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('Spam / policy violation');
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [deleteUserError, setDeleteUserError] = useState<string | null>(null);
+  const [deleteBlockingOrders, setDeleteBlockingOrders] = useState<string[]>([]);
   const [adminAvatarDraft, setAdminAvatarDraft] = useState(
     adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'
   );
@@ -334,6 +341,89 @@ export const AdminDashboard: React.FC = () => {
       setTimeout(() => setSyncToast(null), 3500);
     } catch (err) {
       console.error('Failed to toggle status:', err);
+    }
+  };
+
+  const handleOpenDeleteUserModal = (target: User) => {
+    if (target.id === adminUser?.id) return;
+    setPendingDeleteUser(target);
+    setDeleteForceConfirm(false);
+    setDeleteReason('Spam / policy violation');
+    setDeleteUserError(null);
+    setDeleteBlockingOrders([]);
+  };
+
+  const handleConfirmDeleteUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingDeleteUser || !adminUser?.id) return;
+    if (pendingDeleteUser.id === adminUser.id) {
+      setDeleteUserError('You cannot delete your own active administrator account.');
+      return;
+    }
+
+    const target = pendingDeleteUser;
+    const isSeller = isSellerRole(target.role);
+
+    setDeletingUserId(target.id);
+    setDeleteUserError(null);
+    setDeleteBlockingOrders([]);
+
+    try {
+      // 1. Delete from backend store & record email/ID blocklist
+      try {
+        await api.adminDeleteUser(target.id, {
+          actingAdminId: adminUser.id,
+          email: target.email,
+          force: deleteForceConfirm,
+          reason: deleteReason.trim()
+        });
+      } catch (apiErr: any) {
+        const msg = apiErr?.message || '';
+        // If backend blocked because of active seller orders, surface orders & allow force toggle
+        if (msg.toLowerCase().includes('active or unverified order')) {
+          const matchOrders = msg.match(/\(([^)]+)\)/);
+          if (matchOrders?.[1]) {
+            setDeleteBlockingOrders(matchOrders[1].split(',').map((s: string) => s.trim()).filter(Boolean));
+          }
+          throw apiErr;
+        }
+        // Only ignore if user didn't exist in in-memory backend store; otherwise rethrow auth/validation errors
+        if (msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('cannot delete your own')) {
+          throw apiErr;
+        }
+        console.warn('Backend admin delete warning (continuing Firebase deletion):', msg);
+      }
+
+      // 2. Delete from Cloud Firestore, Firebase Storage, anonymize orders/conversations, & write tombstone
+      await deleteFirebaseUserAccount({
+        userId: target.id,
+        email: target.email,
+        isSeller,
+        force: deleteForceConfirm,
+        deletedByAdminId: adminUser.id,
+        reason: deleteReason.trim()
+      });
+
+      // 3. Immediately update local AdminDashboard lists
+      const targetEmailLower = target.email?.trim().toLowerCase();
+      setUsers(prev => {
+        const nextUsers = prev.filter(
+          u => u.id !== target.id && (!targetEmailLower || u.email?.trim().toLowerCase() !== targetEmailLower)
+        );
+        setSignupStats(calculateSignupStats(nextUsers, true));
+        return nextUsers;
+      });
+      setProducts(prev => prev.filter(p => p.farmerId !== target.id));
+      setAdRequests(prev => prev.filter(a => a.farmerId !== target.id));
+
+      setPendingDeleteUser(null);
+      setSyncToast(`Permanently deleted ${target.name} and synced cleanup to Firebase.`);
+      setTimeout(() => setSyncToast(null), 4500);
+    } catch (err: any) {
+      console.error('Admin delete user failed:', err);
+      setDeleteUserError(err?.message || 'Failed to delete user account. Please try again.');
+    } finally {
+      setDeletingUserId(null);
     }
   };
 
@@ -1068,14 +1158,32 @@ export const AdminDashboard: React.FC = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button
-                            onClick={() => handleToggleUserStatus(u.id, u.status, u.email)}
-                            className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
-                              u.status === 'active' ? 'bg-stone-100 hover:bg-stone-200 text-stone-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                            }`}
-                          >
-                            {u.status === 'active' ? 'Suspend' : 'Activate'}
-                          </button>
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleToggleUserStatus(u.id, u.status, u.email)}
+                              className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
+                                u.status === 'active' ? 'bg-stone-100 hover:bg-stone-200 text-stone-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              }`}
+                            >
+                              {u.status === 'active' ? 'Suspend' : 'Activate'}
+                            </button>
+                            {u.id !== adminUser?.id ? (
+                              <button
+                                id={`admin-delete-user-${u.id}`}
+                                type="button"
+                                onClick={() => handleOpenDeleteUserModal(u)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs bg-red-50 hover:bg-red-600 text-red-700 hover:text-white border border-red-200 hover:border-red-600 transition-colors cursor-pointer"
+                                title={`Permanently delete ${u.name}'s account`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
+                              </button>
+                            ) : (
+                              <span className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                                Current Admin
+                              </span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1749,6 +1857,138 @@ export const AdminDashboard: React.FC = () => {
                 >
                   <CheckCircle className="w-4 h-4" />
                   {isSavingAvatar ? 'Saving...' : 'Save Picture'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Delete User Account Confirmation Modal (Spam & Moderation) */}
+      {pendingDeleteUser && (
+        <div
+          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => !deletingUserId && setPendingDeleteUser(null)}
+        >
+          <div
+            id="admin-delete-user-modal"
+            className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-stone-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-red-100 text-red-700">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-stone-900 text-base">Delete User Account</h3>
+                  <p className="text-[11px] text-stone-500">Permanent Firebase & marketplace removal</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={Boolean(deletingUserId)}
+                onClick={() => setPendingDeleteUser(null)}
+                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-stone-50 border border-stone-200">
+              <img
+                src={pendingDeleteUser.avatar}
+                alt={pendingDeleteUser.name}
+                className="w-11 h-11 rounded-full object-cover bg-stone-200 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="font-bold text-stone-900 text-xs truncate">{pendingDeleteUser.name}</div>
+                <div className="text-[11px] text-stone-500 truncate">{pendingDeleteUser.email}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] font-bold uppercase text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full">
+                    {pendingDeleteUser.role === 'fodder_supplier' ? 'Fodder Supplier' : pendingDeleteUser.role}
+                  </span>
+                  {pendingDeleteUser.farmerProfile?.farmName && (
+                    <span className="text-[10px] text-emerald-700 font-medium truncate">
+                      {pendingDeleteUser.farmerProfile.farmName}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-900 text-xs space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                This action cannot be undone
+              </div>
+              <ul className="list-disc pl-5 text-[11px] text-red-800 space-y-0.5">
+                <li>Deletes the user profile from Firebase Firestore and the marketplace directory.</li>
+                <li>Removes all products, community media posts, ad requests, buyer requests, and notifications created by this account.</li>
+                <li>Anonymizes historical order records and blocks this account from signing back in.</li>
+              </ul>
+            </div>
+
+            {deleteUserError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-300 text-red-800 text-xs space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>Deletion blocked</span>
+                </div>
+                <p className="text-[11px]">{deleteUserError}</p>
+                {deleteBlockingOrders.length > 0 && (
+                  <p className="text-[11px] font-semibold">
+                    Open orders: {deleteBlockingOrders.join(', ')}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmDeleteUser} className="space-y-3.5 text-xs">
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">Removal Reason (Audit Log)</label>
+                <input
+                  id="admin-delete-reason-input"
+                  type="text"
+                  value={deleteReason}
+                  onChange={e => setDeleteReason(e.target.value)}
+                  placeholder="e.g. Spam / fake listings"
+                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-red-500/20"
+                />
+              </div>
+
+              {isSellerRole(pendingDeleteUser.role) && (
+                <label className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 cursor-pointer">
+                  <input
+                    id="admin-force-delete-checkbox"
+                    type="checkbox"
+                    checked={deleteForceConfirm}
+                    onChange={e => setDeleteForceConfirm(e.target.checked)}
+                    className="mt-0.5 accent-red-600 cursor-pointer"
+                  />
+                  <span className="text-[11px] leading-snug">
+                    <strong className="block font-bold">Force delete spam seller account</strong>
+                    Cancel any open or unverified orders from this seller automatically (preserving anonymized order records) and purge immediately.
+                  </span>
+                </label>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  disabled={Boolean(deletingUserId)}
+                  onClick={() => setPendingDeleteUser(null)}
+                  className="px-4 py-2 rounded-xl border border-stone-300 text-stone-700 hover:bg-stone-50 font-bold cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="confirm-admin-delete-user-btn"
+                  type="submit"
+                  disabled={Boolean(deletingUserId)}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-stone-300 text-white font-bold flex items-center gap-1.5 shadow-md cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {deletingUserId ? 'Deleting & Syncing...' : 'Permanently Delete Account'}
                 </button>
               </div>
             </form>

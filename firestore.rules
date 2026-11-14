@@ -59,5 +59,10 @@ service cloud.firestore {
     match /buyerRequests/{requestId} {
       allow read, create, update, delete: if true;
     }
+
+    // Deleted account tombstones (prevents deleted spam accounts from re-entering)
+    match /deletedAccounts/{userId} {
+      allow read, create, update, delete: if true;
+    }
   }
 }

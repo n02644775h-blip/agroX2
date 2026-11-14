@@ -6,6 +6,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -15,6 +16,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { handleFirestoreError, OperationType } from '../firebase/errorHandler';
+import { deleteFirebaseStorageFile } from './firebaseStorage';
+import { normalizeOrderStatus } from '../utils/orderUtils';
 import { User, UserRole } from '../types';
 
 export interface FirebaseSignupStats {
@@ -318,6 +321,244 @@ export async function updateFirebaseUserStatus(userId: string, status: 'active' 
   } catch (error) {
     console.error(`Failed to update status for user ${userId} in Firestore:`, error);
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+  }
+}
+
+/**
+ * Check directly against Firestore whether a user account has been permanently deleted
+ * (checks `deletedAccounts` tombstones as well as `status === 'deleted'` in `users`).
+ */
+export async function checkFirestoreUserDeleted(uid?: string | null, email?: string | null): Promise<boolean> {
+  try {
+    if (uid) {
+      const tombRef = doc(db, 'deletedAccounts', uid);
+      const tombSnap = await getDocFromServer(tombRef).catch(() => getDoc(tombRef).catch(() => null));
+      if (tombSnap && tombSnap.exists()) {
+        return true;
+      }
+
+      const userRef = doc(db, 'users', uid);
+      const userSnap = await getDocFromServer(userRef).catch(() => getDoc(userRef).catch(() => null));
+      if (userSnap && userSnap.exists() && userSnap.data()?.status === 'deleted') {
+        return true;
+      }
+    }
+
+    if (email && email.trim()) {
+      const cleanEmail = email.trim();
+      const lowerEmail = cleanEmail.toLowerCase();
+
+      const tombEmailQuery = query(collection(db, 'deletedAccounts'), where('emailLower', '==', lowerEmail));
+      const tombEmailSnap = await getDocsFromServer(tombEmailQuery).catch(() => getDocs(tombEmailQuery).catch(() => null));
+      if (tombEmailSnap && !tombEmailSnap.empty) {
+        return true;
+      }
+
+      const emailCandidates = Array.from(new Set([cleanEmail, lowerEmail]));
+      for (const candidate of emailCandidates) {
+        const emailQuery = query(collection(db, 'users'), where('email', '==', candidate));
+        const emailSnap = await getDocsFromServer(emailQuery).catch(() => getDocs(emailQuery).catch(() => null));
+        if (emailSnap && !emailSnap.empty) {
+          for (const d of emailSnap.docs) {
+            if (d.data()?.status === 'deleted') return true;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not verify deletion status in Firestore:', err);
+  }
+  return false;
+}
+
+/**
+ * Permanently delete a user account and all associated content in Cloud Firestore & Firebase Storage,
+ * anonymize historical orders/conversations, and record a tombstone in `deletedAccounts` so spam
+ * accounts cannot sign back in or auto-recreate their profile.
+ */
+export async function deleteFirebaseUserAccount(params: {
+  userId: string;
+  email?: string;
+  isSeller?: boolean;
+  force?: boolean;
+  deletedByAdminId?: string;
+  reason?: string;
+}): Promise<void> {
+  const { userId, email, isSeller, force, deletedByAdminId, reason } = params;
+  const cleanEmail = email?.trim() || '';
+
+  // 1. Guard against active seller orders unless admin explicitly chose force delete
+  if (isSeller && !force) {
+    const farmerOrdersSnap = await getDocs(
+      query(collection(db, 'orders'), where('farmerId', '==', userId))
+    ).catch(() => null);
+    if (farmerOrdersSnap && !farmerOrdersSnap.empty) {
+      const activeOrderNumbers: string[] = [];
+      for (const orderDoc of farmerOrdersSnap.docs) {
+        const data = orderDoc.data() as any;
+        const canonical = normalizeOrderStatus(data?.status, data?.deliveryMethod);
+        const pendingPop = data?.paymentStatus === 'pending_verification';
+        if ((canonical !== 'done' && canonical !== 'cancelled') || pendingPop) {
+          activeOrderNumbers.push(data?.orderNumber || orderDoc.id);
+        }
+      }
+      if (activeOrderNumbers.length > 0) {
+        throw new Error(
+          `Seller has ${activeOrderNumbers.length} active or unverified order(s) (${activeOrderNumbers.join(', ')}). Enable Force Delete to cancel open orders and remove this spam account.`
+        );
+      }
+    }
+  }
+
+  // 2. Delete media posts + Firebase Storage media files
+  const postsSnap = await getDocs(
+    query(collection(db, 'mediaPosts'), where('farmerId', '==', userId))
+  ).catch(() => null);
+  if (postsSnap && !postsSnap.empty) {
+    for (const pDoc of postsSnap.docs) {
+      const mediaArr = (pDoc.data() as any)?.media;
+      if (Array.isArray(mediaArr)) {
+        for (const m of mediaArr) {
+          if (m?.storagePath) {
+            await deleteFirebaseStorageFile(m.storagePath);
+          }
+        }
+      }
+      await deleteDoc(pDoc.ref).catch(() => {});
+    }
+  }
+
+  // 3. Delete user-owned listings, ad requests, buyer requests, and notifications
+  const collectionsToDelete: [string, string][] = [
+    ['products', 'farmerId'],
+    ['adRequests', 'farmerId'],
+    ['buyerRequests', 'buyerId'],
+    ['notifications', 'userId']
+  ];
+  for (const [colName, fieldName] of collectionsToDelete) {
+    const snap = await getDocs(
+      query(collection(db, colName), where(fieldName, '==', userId))
+    ).catch(() => null);
+    if (snap && !snap.empty) {
+      for (const d of snap.docs) {
+        await deleteDoc(d.ref).catch(() => {});
+      }
+    }
+  }
+
+  // 4. Anonymize historical orders in Firestore (rules forbid deleting orders)
+  const buyerOrdersSnap = await getDocs(
+    query(collection(db, 'orders'), where('buyerId', '==', userId))
+  ).catch(() => null);
+  if (buyerOrdersSnap && !buyerOrdersSnap.empty) {
+    for (const oDoc of buyerOrdersSnap.docs) {
+      const data = oDoc.data() as any;
+      await updateDoc(oDoc.ref, {
+        buyerName: 'Deleted User',
+        buyerEmail: '',
+        buyerPhone: '',
+        deliveryAddress: data?.deliveryAddress ? 'Redacted (Account Deleted)' : '',
+        deliveryLocation: data?.deliveryLocation
+          ? {
+              mode: data.deliveryLocation.mode || 'manual',
+              city: data.deliveryLocation.city || '',
+              formattedAddress: 'Redacted (Account Deleted)'
+            }
+          : null,
+        buyerNotes: '',
+        updatedAt: serverTimestamp()
+      }).catch(() => {});
+    }
+  }
+
+  const sellerOrdersSnap = await getDocs(
+    query(collection(db, 'orders'), where('farmerId', '==', userId))
+  ).catch(() => null);
+  if (sellerOrdersSnap && !sellerOrdersSnap.empty) {
+    for (const oDoc of sellerOrdersSnap.docs) {
+      const data = oDoc.data() as any;
+      const canonical = normalizeOrderStatus(data?.status, data?.deliveryMethod);
+      const pendingPop = data?.paymentStatus === 'pending_verification';
+      const shouldCancel = Boolean(force && ((canonical !== 'done' && canonical !== 'cancelled') || pendingPop));
+      await updateDoc(oDoc.ref, {
+        farmerName: 'Former Producer',
+        farmerPaymentDetails: null,
+        ...(shouldCancel
+          ? {
+              status: 'cancelled',
+              ...(pendingPop ? { paymentStatus: 'rejected' } : {}),
+              paymentRejectionReason:
+                data?.paymentRejectionReason || 'Seller account removed by platform administration.'
+            }
+          : {}),
+        updatedAt: serverTimestamp()
+      }).catch(() => {});
+    }
+  }
+
+  // 5. Anonymize participant display metadata in conversations
+  const convSnap = await getDocs(
+    query(collection(db, 'conversations'), where('participantIds', 'array-contains', userId))
+  ).catch(() => null);
+  if (convSnap && !convSnap.empty) {
+    for (const cDoc of convSnap.docs) {
+      const data = cDoc.data() as any;
+      if (Array.isArray(data?.participants)) {
+        const updatedParticipants = data.participants.map((p: any) =>
+          p?.id === userId ? { ...p, name: 'Deleted User', avatar: '', farmName: null } : p
+        );
+        await updateDoc(cDoc.ref, {
+          participants: updatedParticipants,
+          updatedAt: serverTimestamp()
+        }).catch(() => {});
+      }
+    }
+  }
+
+  // 6. Write deletion tombstone so spam account cannot re-login or recreate profile
+  try {
+    await setDoc(doc(db, 'deletedAccounts', userId), {
+      uid: userId,
+      email: cleanEmail,
+      emailLower: cleanEmail.toLowerCase(),
+      deletedBy: deletedByAdminId || 'admin',
+      reason: reason?.trim() || 'Removed by platform administration',
+      deletedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `deletedAccounts/${userId}`);
+  }
+
+  // 7. Delete primary user document and any duplicate docs matching uid or email
+  try {
+    await deleteDoc(doc(db, 'users', userId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${userId}`);
+  }
+
+  const byUidSnap = await getDocs(
+    query(collection(db, 'users'), where('uid', '==', userId))
+  ).catch(() => null);
+  if (byUidSnap && !byUidSnap.empty) {
+    for (const d of byUidSnap.docs) {
+      if (d.id !== userId) {
+        await deleteDoc(d.ref).catch(() => {});
+      }
+    }
+  }
+
+  if (cleanEmail) {
+    const emailCandidates = Array.from(new Set([cleanEmail, cleanEmail.toLowerCase()]));
+    for (const candidate of emailCandidates) {
+      const byEmailSnap = await getDocs(
+        query(collection(db, 'users'), where('email', '==', candidate))
+      ).catch(() => null);
+      if (byEmailSnap && !byEmailSnap.empty) {
+        for (const d of byEmailSnap.docs) {
+          await deleteDoc(d.ref).catch(() => {});
+        }
+      }
+    }
   }
 }
 
