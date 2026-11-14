@@ -5,8 +5,7 @@ import {
   subscribeToFirebaseAnnouncements,
   createFirebaseAnnouncement,
   reactToFirebaseAnnouncement,
-  deleteFirebaseAnnouncement,
-  INITIAL_ANNOUNCEMENTS
+  deleteFirebaseAnnouncement
 } from '../services/firebaseAnnouncements';
 import { Announcement } from '../types';
 import {
@@ -271,7 +270,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
                     type="text"
                     value={titleInput}
                     onChange={e => setTitleInput(e.target.value)}
-                    placeholder="Announcement Headline (e.g. 🚛 Subsidized Cold-Chain Pickup Routes)"
+                    placeholder="Announcement Headline"
                     className="w-full px-3.5 py-2 bg-white rounded-xl border border-emerald-300 text-xs text-stone-900 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     required
                   />
@@ -415,9 +414,9 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
         ) : filteredAnnouncements.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center p-6 space-y-2">
             <Megaphone className="w-10 h-10 text-stone-300" />
-            <h4 className="font-bold text-stone-700 text-sm">No announcements in this channel</h4>
+            <h4 className="font-bold text-stone-700 text-sm">No announcements yet</h4>
             <p className="text-xs text-stone-400 max-w-sm">
-              Check back soon for new logistic subsidies, weather bulletins, and regional harvest updates from the admin team.
+              Only official announcements manually published by the agroX administrator appear in this channel.
             </p>
           </div>
         ) : (
@@ -462,7 +461,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
                       <div className="text-[11px] text-stone-400 flex items-center gap-1.5 mt-0.5">
                         <Clock className="w-3 h-3" />
                         <span>
-                          {new Date(ann.createdAt).toLocaleDateString([], {
+                          {new Date(ann.createdAt).toLocaleString([], {
                             month: 'short',
                             day: 'numeric',
                             hour: '2-digit',

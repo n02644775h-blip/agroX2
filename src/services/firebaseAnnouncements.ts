@@ -21,78 +21,38 @@ export const BANNED_UNAUTHORIZED_AUTHORS = [
   'Farai Chidzero'
 ];
 
-export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [
-  {
-    id: 'ann-1',
-    title: '🚛 Subsidized Cold-Chain Collection Routes: Mashonaland & Midlands',
-    content: 'The Ministry of Agriculture partnership cold-chain trucks will begin bi-weekly pickups every Tuesday and Friday across Marondera, Chinhoyi, and Gweru central aggregation depots. Farmers can schedule collection directly via their dashboard to minimize post-harvest transit losses.',
-    priority: 'urgent',
-    targetAudience: 'all',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
-    category: 'logistics',
-    pinned: true,
-    reactions: { '👍': 42, '🚛': 38, '🌱': 19 },
-    likesCount: 99
-  },
-  {
-    id: 'ann-2',
-    title: '💰 Smallholder Solar Irrigation Equipment Grant - Application Round 2',
-    content: 'Applications are now officially open for the 2026 Smallholder Solar Irrigation and Drip Kit subsidy. Verified farmers on agroX with at least 3 completed marketplace orders qualify for 40% co-funding. Submit farm details through the Subsidies portal.',
-    priority: 'normal',
-    targetAudience: 'farmers',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
-    category: 'subsidy',
-    pinned: false,
-    reactions: { '❤️': 61, '🌱': 45, '👍': 34 },
-    likesCount: 140
-  },
-  {
-    id: 'ann-3',
-    title: '🌧️ Regional Weather Bulletin: Early Seasonal Rainfall Patterns',
-    content: 'Meteorological services forecast favorable early convective rains across Manicaland and Masvingo starting this weekend. Horticultural producers are advised to inspect greenhouse drainage and protect seedbed nurseries against runoff.',
-    priority: 'normal',
-    targetAudience: 'all',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
-    category: 'weather',
-    pinned: false,
-    reactions: { '🌧️': 28, '🌱': 17 },
-    likesCount: 45
-  },
-  {
-    id: 'ann-4',
-    title: '📊 Weekly Wholesale Price Benchmark & Demand Surge: Red Onions & Roadrunners',
-    content: 'Wholesale demand for cured Red Creole onions has risen by +18% week-over-week in Mbare and Bulawayo fresh markets. Premium Kuroiler and indigenous roadrunner breeding stock are seeing record inquiries from commercial buyers.',
-    priority: 'normal',
-    targetAudience: 'all',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
-    category: 'market_update',
-    pinned: false,
-    reactions: { '📊': 53, '👍': 41 },
-    likesCount: 94
-  },
-  {
-    id: 'ann-5',
-    title: '🌿 Platform Upgrade: Instant Native Camera & Live P2P Produce Inquiries',
-    content: 'Farmers can now snap and compress high-resolution harvest photos directly from their smartphone cameras and receive live direct inquiries from verified restaurant and bulk buyers with instant notification bells.',
-    priority: 'normal',
-    targetAudience: 'all',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
-    category: 'platform',
-    pinned: false,
-    reactions: { '🌱': 39, '❤️': 27, '👍': 31 },
-    likesCount: 97
-  }
+const LEGACY_SEEDED_ANNOUNCEMENT_IDS = new Set([
+  'ann-1',
+  'ann-2',
+  'ann-3',
+  'ann-4',
+  'ann-5'
+]);
+
+const LEGACY_SEEDED_TITLE_SNIPPETS = [
+  'subsidized cold-chain collection routes',
+  'cold-chain subsidized routes',
+  'smallholder solar irrigation equipment grant',
+  'regional weather bulletin',
+  'regional weather & rainfall advisory',
+  'weekly wholesale price benchmark',
+  'platform upgrade: instant native camera',
+  'welcome to agrox marketplace: direct spring harvest season'
 ];
+
+export function isAutoSeededOrUnauthorizedAnnouncement(ann: Partial<Announcement> & { id?: string }): boolean {
+  const id = (ann.id || '').trim();
+  const title = (ann.title || '').toLowerCase();
+  const author = (ann.author || '').trim();
+
+  if (BANNED_UNAUTHORIZED_AUTHORS.includes(author)) return true;
+  if (ann.authorRole && ann.authorRole !== 'admin') return true;
+  if (LEGACY_SEEDED_ANNOUNCEMENT_IDS.has(id)) return true;
+  if (LEGACY_SEEDED_TITLE_SNIPPETS.some(snippet => title.includes(snippet))) return true;
+  return false;
+}
+
+export const INITIAL_ANNOUNCEMENTS: Partial<Announcement>[] = [];
 
 export function parseFirestoreAnnouncement(docId: string, data: any): Announcement {
   let createdAt = data?.createdAt;
@@ -106,7 +66,7 @@ export function parseFirestoreAnnouncement(docId: string, data: any): Announceme
 
   return {
     id: docId,
-    title: data?.title || 'Community Update',
+    title: data?.title || 'Platform Announcement',
     content: data?.content || data?.message || '',
     priority: data?.priority === 'urgent' ? 'urgent' : 'normal',
     targetAudience: data?.targetAudience || 'all',
@@ -134,31 +94,16 @@ export function subscribeToFirebaseAnnouncements(
       q,
       async (snapshot) => {
         if (snapshot.empty) {
-          // If Firestore is empty, seed with initial platform announcements
-          const seededList: Announcement[] = [];
-          for (const initAnn of INITIAL_ANNOUNCEMENTS) {
-            const annDocRef = doc(db, 'announcements', initAnn.id!);
-            const docData = {
-              ...initAnn,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
-            };
-            setDoc(annDocRef, sanitizeForFirestore(docData), { merge: true }).catch(() => {});
-            seededList.push(parseFirestoreAnnouncement(initAnn.id!, {
-              ...initAnn,
-              createdAt: new Date().toISOString()
-            }));
-          }
-          callback(seededList);
+          // Never auto-seed AI or default announcements; only admin-created posts should appear
+          callback([]);
           return;
         }
 
         const list: Announcement[] = [];
         snapshot.forEach((docSnap) => {
           const ann = parseFirestoreAnnouncement(docSnap.id, docSnap.data());
-          // Auto-purge any unauthorized/banned fake authors from Firestore
-          if (BANNED_UNAUTHORIZED_AUTHORS.includes(ann.author)) {
-            // Delete rogue document from Firestore
+          // Auto-purge any legacy AI/seeded announcements or unauthorized authors from Firestore
+          if (isAutoSeededOrUnauthorizedAnnouncement(ann)) {
             deleteDoc(doc(db, 'announcements', docSnap.id)).catch(() => {});
             return;
           }
@@ -186,19 +131,23 @@ export function subscribeToFirebaseAnnouncements(
       },
       (error) => {
         console.warn('Firestore announcements listener notice:', error?.message || error);
-        callback(INITIAL_ANNOUNCEMENTS.map(a => parseFirestoreAnnouncement(a.id!, a)));
+        callback([]);
       }
     );
 
     return unsubscribe;
   } catch (error) {
     console.warn('Firestore announcements subscription exception:', error);
-    callback(INITIAL_ANNOUNCEMENTS.map(a => parseFirestoreAnnouncement(a.id!, a)));
+    callback([]);
     return () => {};
   }
 }
 
 export async function createFirebaseAnnouncement(data: Partial<Announcement>): Promise<Announcement> {
+  if (data.authorRole && data.authorRole !== 'admin') {
+    throw new Error('Only platform administrators can publish announcements.');
+  }
+
   const annId = data.id || `ann-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`;
   const annRef = doc(db, 'announcements', annId);
 
@@ -211,7 +160,7 @@ export async function createFirebaseAnnouncement(data: Partial<Announcement>): P
     priority: data.priority || 'normal',
     targetAudience: data.targetAudience || 'all',
     author: data.author || 'agroX Admin Team',
-    authorRole: data.authorRole || 'admin',
+    authorRole: 'admin',
     authorAvatar: data.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
     pinned: Boolean(data.pinned),
     reactions: data.reactions || { '👍': 0 },

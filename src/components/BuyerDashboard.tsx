@@ -236,7 +236,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                       </div>
                     </div>
                     <div className="text-right tabular-nums">
-                      <div className="text-base font-black text-stone-900">${order.totalAmount.toFixed(2)}</div>
+                      <div className="text-base font-black text-stone-900">${Number(order.totalAmount || 0).toFixed(2)}</div>
                       <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${payMeta.badgeClass}`}>
                         {payMeta.label}
                       </span>
@@ -272,7 +272,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                   {/* Items & Payment Method Summary */}
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 overflow-x-auto">
-                      {order.items.map((item, idx) => (
+                      {(order.items || []).map((item, idx) => (
                         <div key={idx} className="flex items-center gap-1.5 bg-stone-50 pr-2 rounded-lg border border-stone-100 shrink-0">
                           <img
                             src={item.productImage}

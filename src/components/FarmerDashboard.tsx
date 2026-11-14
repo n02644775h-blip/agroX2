@@ -817,7 +817,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                       <div className="text-left sm:text-right tabular-nums">
                         <div className="text-lg font-black text-stone-900">${order.totalAmount.toFixed(2)}</div>
                         <div className="text-[11px] text-stone-400">
-                          {new Date(order.createdAt).toLocaleDateString(undefined, {
+                          {new Date(order.createdAt).toLocaleString(undefined, {
                             month: 'short',
                             day: 'numeric',
                             hour: '2-digit',

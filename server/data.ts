@@ -1192,56 +1192,7 @@ export const INITIAL_NOTIFICATIONS: Notification[] = [
   }
 ];
 
-export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: 'ann-1',
-    title: '🌿 Welcome to agroX Marketplace: Direct Spring Harvest Season 2026',
-    content: 'We are thrilled to welcome all local farmers and buyers to agroX. Our platform connects regional farming cooperatives directly with conscious household and wholesale buyers with guaranteed zero middlemen markups and maximum harvest freshness.',
-    priority: 'normal',
-    targetAudience: 'all',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-    createdAt: '2026-08-20T08:00:00Z',
-    active: true,
-    category: 'platform',
-    pinned: true,
-    likesCount: 24,
-    reactions: { '👍': 18, '❤️': 12, '🌱': 15 }
-  },
-  {
-    id: 'ann-2',
-    title: '🚛 Cold-Chain Subsidized Routes for Registered Farmers',
-    content: 'Producers in Mashonaland and Midlands can now book subsidized refrigerated collection routes every Tuesday and Friday through the AgriRoute cold-chain initiative. Keep perishables fresh from farm gate to door!',
-    priority: 'urgent',
-    targetAudience: 'farmers',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
-    createdAt: '2026-08-24T10:00:00Z',
-    active: true,
-    category: 'logistics',
-    pinned: false,
-    likesCount: 19,
-    reactions: { '👍': 14, '🚛': 9 }
-  },
-  {
-    id: 'ann-3',
-    title: '🌧️ Regional Weather & Rainfall Advisory for Midlands & Manicaland',
-    content: 'Scattered early showers are forecast across eastern highlands and central valleys this weekend. Buyers are advised to place weekend produce orders in advance to prevent road haulage delays.',
-    priority: 'normal',
-    targetAudience: 'all',
-    author: 'agroX Admin Team',
-    authorRole: 'admin',
-    authorAvatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&q=80&w=400',
-    createdAt: '2026-08-28T07:30:00Z',
-    active: true,
-    category: 'weather',
-    pinned: false,
-    likesCount: 15,
-    reactions: { '🌧️': 11, '👍': 8 }
-  }
-];
+export const INITIAL_ANNOUNCEMENTS: Announcement[] = [];
 
 export const INITIAL_REPORTS: Report[] = [
   {

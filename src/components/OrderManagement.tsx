@@ -38,14 +38,41 @@ interface OrderManagementProps {
   initialSelectedOrder?: Order | null;
   onContactFarmer: (farmerId: string, orderId?: string) => void;
   onOpenReviewModal: (order: Order) => void;
+  onOpenAuth?: (mode: 'login' | 'register') => void;
 }
+
+const formatOrderDateTime = (value?: string): string => {
+  if (!value) return 'Recently placed';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Recently placed';
+  try {
+    return parsed.toLocaleString(undefined, {
+      dateStyle: 'full',
+      timeStyle: 'short'
+    });
+  } catch {
+    return parsed.toLocaleString();
+  }
+};
+
+const formatOrderTime = (value?: string): string => {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  try {
+    return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return parsed.toTimeString().slice(0, 5);
+  }
+};
 
 export const OrderManagement: React.FC<OrderManagementProps> = ({
   initialSelectedOrder,
   onContactFarmer,
-  onOpenReviewModal
+  onOpenReviewModal,
+  onOpenAuth
 }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialSelectedOrder?.id || null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'received' | 'packaged' | 'in_progress' | 'done'>('all');
@@ -77,7 +104,12 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
   }, [initialSelectedOrder?.id]);
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!user) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
     let mounted = true;
     setLoading(true);
 
@@ -111,8 +143,12 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
     const unsub = subscribeToFirebaseOrders(
       { userId: user.id, role: user.role },
       (fbOrders) => {
+        if (!mounted) return;
         mergeOrders(fbOrders);
         setLoading(false);
+      },
+      () => {
+        if (mounted) setLoading(false);
       }
     );
 
@@ -120,7 +156,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
       mounted = false;
       unsub();
     };
-  }, [user?.id, user?.role]);
+  }, [user?.id, user?.role, authLoading]);
 
   const filteredOrders = orders.filter(order => {
     if (statusFilter === 'all') return true;
@@ -368,7 +404,35 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
         </div>
       </div>
 
-      {loading && orders.length === 0 ? (
+      {!authLoading && !user ? (
+        <div className="bg-white rounded-3xl p-10 sm:p-12 text-center border border-stone-200 space-y-4 shadow-xs">
+          <FileText className="w-12 h-12 text-emerald-600 mx-auto" />
+          <div className="space-y-1.5">
+            <h3 className="font-bold text-stone-900 text-lg">Sign in to view your orders</h3>
+            <p className="text-xs text-stone-500 max-w-md mx-auto">
+              Access your live order progress, delivery tracking, farm pickup instructions, and uploaded payment records.
+            </p>
+          </div>
+          {onOpenAuth && (
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => onOpenAuth('login')}
+                className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenAuth('register')}
+                className="px-5 py-2.5 rounded-xl border border-stone-300 hover:bg-stone-50 text-stone-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Create Account
+              </button>
+            </div>
+          )}
+        </div>
+      ) : loading && orders.length === 0 ? (
         <div className="py-16 text-center text-xs text-stone-400">Loading order details...</div>
       ) : filteredOrders.length === 0 ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 space-y-3">
@@ -406,7 +470,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-stone-900 text-sm">{order.orderNumber}</span>
                       <span className="font-black text-emerald-800 text-sm tabular-nums">
-                        ${order.totalAmount.toFixed(2)}
+                        ${Number(order.totalAmount || 0).toFixed(2)}
                       </span>
                     </div>
 
@@ -453,11 +517,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                       </span>
                     </div>
                     <div className="text-xs text-stone-500 mt-1">
-                      Placed on{' '}
-                      {new Date(selectedOrder.createdAt).toLocaleDateString(undefined, {
-                        dateStyle: 'full',
-                        timeStyle: 'short'
-                      })}
+                      Placed on {formatOrderDateTime(selectedOrder.createdAt)}
                     </div>
                   </div>
 
@@ -605,13 +665,13 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
 
                   {/* Status Timeline History Log */}
                   <div className="space-y-1.5 pt-2 border-t border-stone-200/60">
-                    {selectedOrder.statusHistory.map((hist, i) => (
+                    {(selectedOrder.statusHistory || []).map((hist, i) => (
                       <div key={i} className="flex items-center justify-between text-xs text-stone-600">
                         <span className="font-medium capitalize text-stone-800">
-                          • {hist.note || hist.status.replace(/_/g, ' ')}
+                          • {hist.note || String(hist.status || '').replace(/_/g, ' ')}
                         </span>
                         <span className="text-[11px] text-stone-400 tabular-nums">
-                          {new Date(hist.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {formatOrderTime(hist.timestamp)}
                         </span>
                       </div>
                     ))}
@@ -637,11 +697,11 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                     </div>
                     <div>
                       <span className="text-stone-400 block text-[11px]">Order Total</span>
-                      <strong>${selectedOrder.totalAmount.toFixed(2)}</strong>
+                      <strong>${Number(selectedOrder.totalAmount || 0).toFixed(2)}</strong>
                       {selectedOrder.deliveryFee !== undefined && (
                         <span className="text-stone-500 text-[11px]">
                           {' '}
-                          (incl. ${selectedOrder.deliveryFee.toFixed(2)} delivery)
+                          (incl. ${Number(selectedOrder.deliveryFee || 0).toFixed(2)} delivery)
                         </span>
                       )}
                     </div>
@@ -761,7 +821,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                 <div className="space-y-3">
                   <h3 className="font-bold text-stone-900 text-sm">Items Ordered</h3>
                   <div className="divide-y divide-stone-100 border border-stone-200 rounded-2xl overflow-hidden">
-                    {selectedOrder.items.map((item, idx) => (
+                    {(selectedOrder.items || []).map((item, idx) => (
                       <div key={idx} className="p-3.5 flex items-center justify-between bg-white hover:bg-stone-50/50">
                         <div className="flex items-center gap-3">
                           <img
@@ -773,12 +833,12 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                           <div>
                             <div className="font-bold text-stone-900 text-sm">{item.productName}</div>
                             <div className="text-xs text-stone-500 tabular-nums">
-                              {item.quantity} {item.unit} × ${item.price.toFixed(2)}
+                              {item.quantity} {item.unit} × ${Number(item.price || 0).toFixed(2)}
                             </div>
                           </div>
                         </div>
                         <div className="text-sm font-bold text-stone-900 tabular-nums">
-                          ${item.subtotal.toFixed(2)}
+                          ${Number(item.subtotal || 0).toFixed(2)}
                         </div>
                       </div>
                     ))}
@@ -856,7 +916,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                     <div><strong>Farmer:</strong> {selectedOrder.farmerName}</div>
                     <div><strong>Buyer:</strong> {selectedOrder.buyerName} ({selectedOrder.buyerPhone})</div>
                     <div className="text-emerald-800 font-bold pt-1 tabular-nums">
-                      Total Amount: ${selectedOrder.totalAmount.toFixed(2)}
+                      Total Amount: ${Number(selectedOrder.totalAmount || 0).toFixed(2)}
                     </div>
                   </div>
                 </div>

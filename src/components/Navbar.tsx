@@ -157,6 +157,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {user?.role === 'buyer' && (
+              <button
+                id="nav-buyer-hub-btn"
+                onClick={() => handleNav('buyer_dashboard')}
+                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
+                  currentView === 'buyer_dashboard'
+                    ? 'bg-amber-50 text-amber-800 font-bold'
+                    : 'hover:text-gray-900 hover:bg-gray-100'
+                }`}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                Buyer Hub
+              </button>
+            )}
+
             {user && (
               <button
                 id="nav-announcements-chat-btn"

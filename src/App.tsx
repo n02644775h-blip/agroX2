@@ -469,6 +469,10 @@ export function App() {
             initialSelectedOrder={selectedOrderForTracking}
             onContactFarmer={handleContactFromOrder}
             onOpenReviewModal={setReviewOrder}
+            onOpenAuth={(mode) => {
+              setAuthMode(mode);
+              setIsAuthOpen(true);
+            }}
           />
         )}
 

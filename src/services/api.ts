@@ -471,19 +471,22 @@ class ApiService {
   // --- Announcements ---
   async getAnnouncements(role?: string): Promise<Announcement[]> {
     const query = role ? `?role=${role}` : '';
+    const filterLegacy = (list: Announcement[]) =>
+      list.filter(a => !['ann-1', 'ann-2', 'ann-3', 'ann-4', 'ann-5'].includes(a.id));
     try {
       const serverAnns = await this.request<Announcement[]>(`/announcements${query}`);
       // Save last successful fetch
       if (Array.isArray(serverAnns)) {
-        localStorage.setItem('agrox_cached_announcements', JSON.stringify(serverAnns));
-        return serverAnns;
+        const cleaned = filterLegacy(serverAnns);
+        localStorage.setItem('agrox_cached_announcements', JSON.stringify(cleaned));
+        return cleaned;
       }
       return [];
     } catch (err) {
       console.warn('Falling back to locally cached announcements:', err);
       try {
         const cached = localStorage.getItem('agrox_cached_announcements');
-        if (cached) return JSON.parse(cached);
+        if (cached) return filterLegacy(JSON.parse(cached));
       } catch {
         // ignore storage parse error
       }
@@ -499,7 +502,7 @@ class ApiService {
       priority: announcement.priority || 'normal',
       targetAudience: announcement.targetAudience || 'all',
       author: announcement.author || 'agroX Admin Team',
-      authorRole: announcement.authorRole || 'admin',
+      authorRole: 'admin' as const,
       authorAvatar: announcement.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
       pinned: Boolean(announcement.pinned)
     };
@@ -544,6 +547,13 @@ class ApiService {
   }
 
   async deleteAnnouncement(id: string): Promise<void> {
+    try {
+      const cached = localStorage.getItem('agrox_cached_announcements');
+      if (cached) {
+        const list: Announcement[] = JSON.parse(cached);
+        localStorage.setItem('agrox_cached_announcements', JSON.stringify(list.filter(a => a.id !== id)));
+      }
+    } catch {}
     await this.request(`/announcements/${id}`, {
       method: 'DELETE'
     });

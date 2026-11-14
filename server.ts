@@ -945,6 +945,9 @@ async function startServer() {
   app.post('/api/announcements', (req: Request, res: Response) => {
     try {
       const { title, content, message, text, priority, targetAudience, author, authorRole, authorAvatar, category, pinned } = req.body || {};
+      if (authorRole && authorRole !== 'admin') {
+        return res.status(403).json({ error: 'Only platform administrators can publish announcements.' });
+      }
       const finalTitle = (title || '').toString().trim();
       const finalContent = (content || message || text || '').toString().trim();
 
@@ -958,7 +961,7 @@ async function startServer() {
         priority: priority || 'normal',
         targetAudience: targetAudience || 'all',
         author: author || 'agroX Admin Team',
-        authorRole: authorRole || 'admin',
+        authorRole: 'admin',
         authorAvatar: authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
         category: category || 'general',
         pinned: Boolean(pinned)
