@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { Product, Order, OrderStatus, ProductAvailability, PaymentStatus, BuyerRequest } from '../types';
+import { Product, Order, OrderStatus, ProductAvailability, PaymentStatus, BuyerRequest, Review } from '../types';
 import { subscribeToFirebaseProducts, deleteProductFromFirebase } from '../services/firebaseProducts';
 import {
   subscribeToFirebaseOrders,
@@ -9,6 +9,11 @@ import {
   updateFirebaseOrderPayment
 } from '../services/firebaseOrders';
 import { createFirebaseNotification } from '../services/firebaseNotifications';
+import {
+  subscribeToFirebaseReviews,
+  calculateFarmerRatingStats,
+  getRatingLabel
+} from '../services/firebaseReviews';
 import {
   normalizeOrderStatus,
   getOrderStages,
@@ -20,6 +25,7 @@ import { FarmerProfileModal } from './FarmerProfileModal';
 import { FarmerAdvertModal } from './FarmerAdvertModal';
 import { FarmerPostsTab } from './FarmerPostsTab';
 import { FarmerBuyerRequestsPanel } from './FarmerBuyerRequestsPanel';
+import { DeleteAccountModal } from './DeleteAccountModal';
 import {
   DollarSign,
   Package,
@@ -55,7 +61,8 @@ import {
   XCircle,
   AlertCircle,
   CheckCircle2,
-  Navigation
+  Navigation,
+  Star
 } from 'lucide-react';
 import {
   AreaChart,
@@ -107,10 +114,16 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
 
   const knownOrderIdsRef = useRef<Set<string>>(new Set());
   const ordersBootstrappedRef = useRef<boolean>(false);
+  const knownReviewIdsRef = useRef<Set<string>>(new Set());
+  const reviewsBootstrappedRef = useRef<boolean>(false);
+
+  // Ratings & Reviews
+  const [farmerReviews, setFarmerReviews] = useState<Review[]>([]);
 
   // Modals
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAdvertModal, setShowAdvertModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -138,19 +151,50 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
     });
   };
 
+  const mergeIncomingReviews = (incoming: Review[]) => {
+    if (reviewsBootstrappedRef.current) {
+      const brandNew = incoming.filter(r => !knownReviewIdsRef.current.has(r.id));
+      if (brandNew.length > 0) {
+        const latest = brandNew[0];
+        setOrderToast(
+          `New ${latest.rating}-star rating received from ${latest.buyerName}!`
+        );
+        setTimeout(() => setOrderToast(null), 4000);
+      }
+    }
+    incoming.forEach(r => knownReviewIdsRef.current.add(r.id));
+    if (incoming.length > 0) {
+      reviewsBootstrappedRef.current = true;
+    }
+
+    setFarmerReviews(prev => {
+      const map = new Map<string, Review>();
+      prev.forEach(r => map.set(r.id, r));
+      incoming.forEach(r => map.set(r.id, r));
+      return Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+  };
+
   const loadFarmerData = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const [statsData, prodsData, ordersData] = await Promise.all([
+      const [statsData, prodsData, ordersData, reviewsData] = await Promise.all([
         api.getFarmerStats(user.id).catch(() => null),
         api.getProducts({ farmerId: user.id }),
-        api.getOrders({ farmerId: user.id })
+        api.getOrders({ farmerId: user.id }),
+        api.getReviews(user.id).catch(() => [])
       ]);
       setStats(statsData);
       setProducts(prodsData);
       mergeIncomingOrders(ordersData);
       ordersBootstrappedRef.current = true;
+      if (Array.isArray(reviewsData)) {
+        mergeIncomingReviews(reviewsData);
+        reviewsBootstrappedRef.current = true;
+      }
     } catch (err) {
       console.error('Failed to load farmer dashboard:', err);
     } finally {
@@ -161,6 +205,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   useEffect(() => {
     knownOrderIdsRef.current = new Set();
     ordersBootstrappedRef.current = false;
+    knownReviewIdsRef.current = new Set();
+    reviewsBootstrappedRef.current = false;
     loadFarmerData();
 
     if (user?.id) {
@@ -189,6 +235,14 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
         }
       );
 
+      const unsubscribeReviews = subscribeToFirebaseReviews(
+        { farmerId: user.id },
+        (fbReviews) => {
+          mergeIncomingReviews(fbReviews);
+          reviewsBootstrappedRef.current = true;
+        }
+      );
+
       // Lightweight 5s background API poll alongside Firestore real-time stream
       const pollId = window.setInterval(() => {
         api
@@ -199,11 +253,20 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
             }
           })
           .catch(() => {});
+        api
+          .getReviews(user.id)
+          .then(latestReviews => {
+            if (Array.isArray(latestReviews)) {
+              mergeIncomingReviews(latestReviews);
+            }
+          })
+          .catch(() => {});
       }, 5000);
 
       return () => {
         unsubscribeProducts();
         unsubscribeOrders();
+        unsubscribeReviews();
         window.clearInterval(pollId);
       };
     }
@@ -338,6 +401,12 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
 
   const pendingOrders = orders.filter(o => normalizeOrderStatus(o.status, o.deliveryMethod) === 'received');
   const completedOrdersCount = orders.filter(o => normalizeOrderStatus(o.status, o.deliveryMethod) === 'done').length;
+
+  const ratingStats = calculateFarmerRatingStats(farmerReviews);
+  const reviewsByOrderId: Record<string, Review> = {};
+  for (const rev of farmerReviews) {
+    if (rev.orderId) reviewsByOrderId[rev.orderId] = rev;
+  }
 
   const filteredOrders = orders.filter(o => {
     const canonical = normalizeOrderStatus(o.status, o.deliveryMethod);
@@ -728,6 +797,63 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                 Request Advertisement
               </button>
             </div>
+
+            {/* Farmer Rating Summary Widget */}
+            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-stone-900 text-sm">Rating Summary</h3>
+                <span className="text-[11px] font-semibold text-stone-500">
+                  {ratingStats.totalRatings} {ratingStats.totalRatings === 1 ? 'rating' : 'ratings'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-3xl font-black text-stone-900 tabular-nums">
+                  {ratingStats.totalRatings > 0 ? ratingStats.averageRating.toFixed(1) : '—'}
+                </div>
+                <div>
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map(st => (
+                      <Star
+                        key={st}
+                        className={`w-4 h-4 ${
+                          ratingStats.totalRatings > 0 && st <= Math.round(ratingStats.averageRating)
+                            ? 'fill-amber-400 text-amber-400'
+                            : 'text-stone-300'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    {ratingStats.totalRatings > 0
+                      ? 'Genuine completed-order average'
+                      : 'No ratings yet'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                {([5, 4, 3, 2, 1] as const).map(star => {
+                  const count = ratingStats.distribution[star] || 0;
+                  const pct =
+                    ratingStats.totalRatings > 0
+                      ? Math.round((count / ratingStats.totalRatings) * 100)
+                      : 0;
+                  return (
+                    <div key={star} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-7 font-semibold text-stone-600 tabular-nums">{star}★</span>
+                      <div className="flex-1 h-2 rounded-full bg-stone-100 overflow-hidden">
+                        <div
+                          className="h-full bg-amber-400 rounded-full transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="w-6 text-right font-bold text-stone-500 tabular-nums">{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -748,7 +874,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                 { id: 'received', label: 'Received' },
                 { id: 'packaged', label: 'Packaged' },
                 { id: 'in_progress', label: 'Delivering / Ready' },
-                { id: 'done', label: 'Done' },
+                { id: 'done', label: `Done (${completedOrdersCount})` },
                 { id: 'pending_pop', label: 'Pending POP' }
               ].map(f => (
                 <button
@@ -762,6 +888,40 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                 >
                   {f.label}
                 </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Farmer Rating Summary Strip in Orders Tab */}
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center shrink-0">
+                <span className="text-base font-black text-amber-900 leading-none tabular-nums">
+                  {ratingStats.totalRatings > 0 ? ratingStats.averageRating.toFixed(1) : '—'}
+                </span>
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 mt-0.5" />
+              </div>
+              <div>
+                <div className="font-bold text-stone-900 text-sm">
+                  Completed Order Ratings ({ratingStats.totalRatings})
+                </div>
+                <p className="text-xs text-stone-500">
+                  {ratingStats.totalRatings > 0
+                    ? `Average ${ratingStats.averageRating.toFixed(1)} out of 5 stars from verified buyers`
+                    : 'Ratings submitted by buyers on completed orders appear here automatically.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-5 gap-2 text-[11px] min-w-[260px]">
+              {([5, 4, 3, 2, 1] as const).map(star => (
+                <div
+                  key={star}
+                  className="px-2 py-1.5 rounded-xl bg-stone-50 border border-stone-200/80 text-center tabular-nums"
+                >
+                  <div className="font-bold text-stone-700">{star}★</div>
+                  <div className="font-extrabold text-amber-700">{ratingStats.distribution[star]}</div>
+                </div>
               ))}
             </div>
           </div>
@@ -1045,6 +1205,63 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                         </div>
                       </div>
                     </div>
+
+                    {/* Completed Order Rating & Completion Metadata (Read-Only for Farmer) */}
+                    {isDone && (() => {
+                      const matchedReview = reviewsByOrderId[order.id];
+                      const ratingVal = matchedReview?.rating ?? order.rating;
+                      const commentText = matchedReview?.comment ?? order.reviewComment ?? '';
+                      const doneHist = (order.statusHistory || [])
+                        .slice()
+                        .reverse()
+                        .find(h => normalizeOrderStatus(h.status, order.deliveryMethod) === 'done');
+                      const completionDate = order.completedAt || doneHist?.timestamp || order.updatedAt;
+                      const hasRating = typeof ratingVal === 'number' && ratingVal >= 1;
+
+                      return (
+                        <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200/80 text-xs space-y-1.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-stone-800 flex items-center gap-1">
+                                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                                <span>Buyer Rating:</span>
+                              </span>
+                              {hasRating ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[11px]">
+                                  <span className="flex items-center gap-0.5">
+                                    {[1, 2, 3, 4, 5].map(st => (
+                                      <Star
+                                        key={st}
+                                        className={`w-3 h-3 ${
+                                          st <= ratingVal! ? 'fill-amber-400 text-amber-400' : 'text-stone-300'
+                                        }`}
+                                      />
+                                    ))}
+                                  </span>
+                                  <span>{getRatingLabel(ratingVal!)}</span>
+                                </span>
+                              ) : (
+                                <span className="px-2.5 py-0.5 rounded-full bg-stone-200 text-stone-600 font-bold text-[11px]">
+                                  Not Yet Rated
+                                </span>
+                              )}
+                            </div>
+
+                            {completionDate && (
+                              <span className="text-[11px] text-stone-500">
+                                Completed: <strong>{new Date(completionDate).toLocaleDateString()}</strong>
+                              </span>
+                            )}
+                          </div>
+
+                          {hasRating && commentText && (
+                            <p className="text-stone-700 bg-white px-3 py-2 rounded-lg border border-stone-200/70">
+                              "{commentText}"
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Stage Transition Controls & Full Details Link */}
                     <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-3">
@@ -1458,6 +1675,26 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Account Management / Danger Zone */}
+          <div className="pt-5 border-t border-stone-200 flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                Account Management
+              </div>
+              <p className="text-[11px] text-stone-500">
+                Need to permanently close your FarmBridge account? Active buyer orders must be completed first.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="farmer-settings-delete-account-btn"
+              onClick={() => setShowDeleteAccountModal(true)}
+              className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline shrink-0 cursor-pointer"
+            >
+              Delete Account
+            </button>
+          </div>
         </div>
       )}
 
@@ -1553,6 +1790,16 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
           products={products}
         />
       )}
+
+      {/* Permanent Account Deletion Modal */}
+      <DeleteAccountModal
+        isOpen={showDeleteAccountModal}
+        onClose={() => setShowDeleteAccountModal(false)}
+        onDeleted={() => {
+          setShowDeleteAccountModal(false);
+          if (onNavigate) onNavigate('marketplace');
+        }}
+      />
     </div>
   );
 };

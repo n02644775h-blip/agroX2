@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { subscribeToFirebaseOrders } from '../services/firebaseOrders';
+import { subscribeToFirebaseReviews, getRatingLabel } from '../services/firebaseReviews';
 import {
   normalizeOrderStatus,
   getOrderStages,
@@ -9,7 +10,7 @@ import {
   getPaymentMethodLabel,
   getPaymentStatusMeta
 } from '../utils/orderUtils';
-import { Product, Order, BuyerRequest } from '../types';
+import { Product, Order, BuyerRequest, Review } from '../types';
 import { ProductCard } from './ProductCard';
 import { BuyerRequestsPanel } from './BuyerRequestsPanel';
 import {
@@ -24,22 +25,29 @@ import {
   CreditCard,
   FileCheck,
   Receipt,
-  X
+  X,
+  Star,
+  Settings
 } from 'lucide-react';
 
 interface BuyerDashboardProps {
   onNavigate: (view: string, data?: any) => void;
   onSelectProduct: (product: Product) => void;
   onOpenMessagesForRequest?: (request: BuyerRequest) => void;
+  onOpenReviewModal?: (order: Order) => void;
+  onOpenSettings?: () => void;
 }
 
 export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
   onNavigate,
   onSelectProduct,
-  onOpenMessagesForRequest
+  onOpenMessagesForRequest,
+  onOpenReviewModal,
+  onOpenSettings
 }) => {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [reviewsByOrderId, setReviewsByOrderId] = useState<Record<string, Review>>({});
   const [ordersTab, setOrdersTab] = useState<'active' | 'history' | 'all'>('active');
   const [favoriteProducts, setFavoriteProducts] = useState<Product[]>([]);
   const [recommended, setRecommended] = useState<Product[]>([]);
@@ -92,9 +100,23 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
       }
     );
 
+    const mergeReviews = (list: Review[]) => {
+      setReviewsByOrderId(prev => {
+        const next = { ...prev };
+        for (const rev of list) {
+          if (rev.orderId) next[rev.orderId] = rev;
+        }
+        return next;
+      });
+    };
+
+    api.getReviews(undefined, undefined, user.id).then(mergeReviews).catch(() => {});
+    const unsubReviews = subscribeToFirebaseReviews({ buyerId: user.id }, mergeReviews);
+
     return () => {
       active = false;
       unsubOrders();
+      unsubReviews();
     };
   }, [user]);
 
@@ -128,6 +150,15 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="px-4 py-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs backdrop-blur-md transition-all shrink-0 flex items-center gap-2 border border-white/20 cursor-pointer"
+            >
+              <Settings className="w-4 h-4 text-amber-200" />
+              <span>Settings</span>
+            </button>
+          )}
           <button
             onClick={() => onNavigate('messages')}
             className="px-4 py-3 rounded-2xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs backdrop-blur-md transition-all shrink-0 flex items-center gap-2 border border-white/20 cursor-pointer"
@@ -331,14 +362,46 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                         </span>
                       )}
 
-                      <button
-                        type="button"
-                        onClick={() => onNavigate('orders', { selectedOrder: order })}
-                        className="text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>Track &amp; Manage</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {statusMeta.canonical === 'done' && (() => {
+                          const matchedReview = reviewsByOrderId[order.id];
+                          const ratingVal = matchedReview?.rating ?? order.rating;
+                          const commentVal = matchedReview?.comment ?? order.reviewComment;
+                          const hasRated = Boolean(order.isReviewed || matchedReview || ratingVal);
+
+                          if (hasRated && ratingVal) {
+                            return (
+                              <span
+                                title={commentVal || getRatingLabel(ratingVal)}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[10px]"
+                              >
+                                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                Your Rating: {getRatingLabel(ratingVal)}
+                              </span>
+                            );
+                          }
+
+                          return onOpenReviewModal ? (
+                            <button
+                              type="button"
+                              onClick={() => onOpenReviewModal(order)}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-900 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Star className="w-3 h-3 fill-stone-900" />
+                              Rate Your Order
+                            </button>
+                          ) : null;
+                        })()}
+
+                        <button
+                          type="button"
+                          onClick={() => onNavigate('orders', { selectedOrder: order })}
+                          className="text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>Track &amp; Manage</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

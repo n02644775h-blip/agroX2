@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { isSellerRole } from '../types';
@@ -8,7 +8,6 @@ import {
   MessageSquare,
   Bell,
   Heart,
-  User,
   PlusCircle,
   Menu,
   X,
@@ -20,9 +19,11 @@ import {
   LogOut,
   MapPin,
   Smartphone,
-  Download,
   Megaphone,
-  Wheat
+  Settings,
+  Search,
+  Users,
+  ClipboardList
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -33,6 +34,11 @@ interface NavbarProps {
   onOpenNotifications?: () => void;
   onOpenCart?: () => void;
   onOpenInstallApp?: () => void;
+  onOpenSettings?: () => void;
+  searchQuery?: string;
+  onSearchChange?: (query: string) => void;
+  onSearchSubmit?: (query: string) => void;
+  onScrollToSection?: (sectionId: string) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,12 +48,34 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddProduct,
   onOpenNotifications,
   onOpenCart,
-  onOpenInstallApp
+  onOpenInstallApp,
+  onOpenSettings,
+  searchQuery = '',
+  onSearchChange,
+  onSearchSubmit,
+  onScrollToSection
 }) => {
   const { user, logout, unreadNotifsCount, unreadMessagesCount } = useAuth();
   const { totalItems, openCart } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleNav = (view: string, data?: any) => {
     onNavigate(view, data);
@@ -55,205 +83,234 @@ export const Navbar: React.FC<NavbarProps> = ({
     setUserDropdownOpen(false);
   };
 
-  const getRoleBadge = () => {
-    if (!user) return null;
-    if (user.role === 'fodder_supplier') {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-200">
-          <Wheat className="w-3 h-3 text-amber-700" />
-          Fodder Supplier
-        </span>
-      );
+  const handleSectionLink = (sectionId: string) => {
+    setMobileMenuOpen(false);
+    setUserDropdownOpen(false);
+    if (onScrollToSection) {
+      onScrollToSection(sectionId);
+    } else {
+      onNavigate('marketplace', { scrollTo: sectionId });
     }
-    if (user.role === 'farmer') {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-          <Sprout className="w-3 h-3 text-emerald-600" />
-          Farmer
-        </span>
-      );
+  };
+
+  const handleSearchFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = localSearch.trim();
+    if (onSearchChange) onSearchChange(trimmed);
+    if (onSearchSubmit) {
+      onSearchSubmit(trimmed);
+    } else {
+      handleSectionLink('fresh-from-farmers');
     }
-    if (user.role === 'admin') {
-      return (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-          <ShieldCheck className="w-3 h-3 text-purple-600" />
-          Admin
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-        <ShoppingBag className="w-3 h-3 text-amber-600" />
-        Buyer
-      </span>
-    );
+    setMobileSearchOpen(false);
+    setMobileMenuOpen(false);
+  };
+
+  const getRoleLabel = () => {
+    if (!user) return '';
+    if (user.role === 'fodder_supplier') return 'Fodder Supplier';
+    if (user.role === 'farmer') return 'Farmer';
+    if (user.role === 'admin') return 'Administrator';
+    return 'Buyer';
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-xs">
+    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E8EEE8]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3 sm:gap-6">
-          {/* Logo & Brand */}
-          <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center justify-between h-16 gap-3 lg:gap-6">
+          {/* Left: FarmBridge Brand Mark */}
+          <div className="flex items-center gap-6 shrink-0">
             <button
               id="navbar-brand-logo"
               onClick={() => handleNav('marketplace')}
-              className="flex items-center gap-2.5 text-left group focus:outline-none"
+              className="flex items-center gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#174B35] rounded-lg"
             >
-              <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center text-white font-bold shadow-xs group-hover:bg-green-700 transition-colors">
+              <div className="w-9 h-9 bg-[#174B35] rounded-xl flex items-center justify-center text-white transition-colors group-hover:bg-[#123c2a]">
                 <Sprout className="w-5 h-5" />
               </div>
-              <span className="text-xl font-bold tracking-tight text-green-800 block leading-none">
-                agroX
-              </span>
+              <div className="leading-none">
+                <span className="text-lg font-bold tracking-tight text-[#202B24] block">
+                  FarmBridge
+                </span>
+                <span className="text-[10px] font-medium text-[#77A987] tracking-wide hidden sm:block">
+                  Direct Agricultural Market
+                </span>
+              </div>
             </button>
-            <div className="hidden lg:block">
-              {getRoleBadge()}
-            </div>
+
+            {/* Primary Navigation Links */}
+            <nav
+              aria-label="Main navigation"
+              className="hidden md:flex items-center gap-1 text-[13px] font-medium text-[#202B24]/75"
+            >
+              <button
+                id="nav-marketplace-btn"
+                onClick={() => handleNav('marketplace')}
+                className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                  currentView === 'marketplace'
+                    ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
+                    : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                }`}
+              >
+                Marketplace
+              </button>
+
+              <button
+                id="nav-community-btn"
+                onClick={() => handleSectionLink('farmbridge-community-section')}
+                className="px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 hover:text-[#174B35] hover:bg-[#F8FAF7]"
+              >
+                Community
+              </button>
+
+              <button
+                id="nav-buyer-requests-btn"
+                onClick={() => handleSectionLink('buyer-requests-section')}
+                className="px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 hover:text-[#174B35] hover:bg-[#F8FAF7]"
+              >
+                Buyer Requests
+              </button>
+
+              {isSellerRole(user?.role) && (
+                <button
+                  id="nav-farmer-portal-btn"
+                  onClick={() => handleNav('farmer_dashboard')}
+                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                    currentView === 'farmer_dashboard' || currentView === 'farm_profile'
+                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
+                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                  }`}
+                >
+                  {user?.role === 'fodder_supplier' ? 'Supplier Hub' : 'Farmer Hub'}
+                </button>
+              )}
+
+              {user?.role === 'buyer' && (
+                <button
+                  id="nav-buyer-hub-btn"
+                  onClick={() => handleNav('buyer_dashboard')}
+                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                    currentView === 'buyer_dashboard'
+                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
+                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                  }`}
+                >
+                  Buyer Hub
+                </button>
+              )}
+
+              {user?.role === 'admin' && (
+                <button
+                  id="nav-admin-portal-btn"
+                  onClick={() => handleNav('admin')}
+                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                    currentView === 'admin'
+                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
+                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                  }`}
+                >
+                  Admin
+                </button>
+              )}
+
+              {user && (
+                <button
+                  id="nav-orders-btn"
+                  onClick={() => handleNav('orders')}
+                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                    currentView === 'orders'
+                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
+                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                  }`}
+                >
+                  Orders
+                </button>
+              )}
+            </nav>
           </div>
 
-          {/* Main Action Links */}
-          <nav className="hidden md:flex items-center gap-1 text-xs font-semibold text-gray-600">
+          {/* Center-Right: Compact Desktop Search */}
+          <form
+            onSubmit={handleSearchFormSubmit}
+            className="hidden xl:flex items-center flex-1 max-w-xs relative"
+          >
+            <Search className="w-4 h-4 text-[#202B24]/45 absolute left-3 pointer-events-none" />
+            <input
+              type="text"
+              value={localSearch}
+              onChange={(e) => {
+                setLocalSearch(e.target.value);
+                if (onSearchChange) onSearchChange(e.target.value);
+              }}
+              placeholder="Search produce, farms..."
+              aria-label="Search marketplace"
+              className="w-full pl-9 pr-8 py-1.5 text-xs bg-[#F8FAF7] border border-[#E8EEE8] rounded-xl text-[#202B24] placeholder:text-[#202B24]/45 focus:outline-none focus:bg-white focus:border-[#77A987] transition-colors"
+            />
+            {localSearch && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLocalSearch('');
+                  if (onSearchChange) onSearchChange('');
+                  if (onSearchSubmit) onSearchSubmit('');
+                }}
+                aria-label="Clear search"
+                className="absolute right-2.5 text-[#202B24]/45 hover:text-[#202B24]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </form>
+
+          {/* Right Action Controls (Essential shopping tools always accessible on desktop & mobile) */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Mobile & Compact Search Toggle */}
             <button
-              id="nav-marketplace-btn"
-              onClick={() => handleNav('marketplace')}
-              className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                currentView === 'marketplace'
-                  ? 'bg-green-50 text-green-700 font-bold'
-                  : 'hover:text-gray-900 hover:bg-gray-100'
-              }`}
+              type="button"
+              id="navbar-search-toggle"
+              onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+              className="xl:hidden p-2 rounded-xl text-[#202B24]/75 hover:text-[#174B35] hover:bg-[#F8FAF7] transition-colors"
+              title="Search produce"
+              aria-label="Search produce"
             >
-              <Store className="w-3.5 h-3.5" />
-              Marketplace
+              <Search className="w-5 h-5" />
             </button>
 
-            {isSellerRole(user?.role) && (
-              <button
-                id="nav-farmer-portal-btn"
-                onClick={() => handleNav('farmer_dashboard')}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentView === 'farmer_dashboard' || currentView === 'farm_profile'
-                    ? 'bg-green-50 text-green-700 font-bold'
-                    : 'hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <LayoutDashboard className="w-3.5 h-3.5" />
-                {user?.role === 'fodder_supplier' ? 'Fodder Portal' : 'Farmer Portal'}
-              </button>
-            )}
-
-            {user?.role === 'admin' && (
-              <button
-                id="nav-admin-portal-btn"
-                onClick={() => handleNav('admin')}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentView === 'admin'
-                    ? 'bg-purple-50 text-purple-700 font-bold'
-                    : 'hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Admin Portal
-              </button>
-            )}
-
-            {user?.role === 'buyer' && (
-              <button
-                id="nav-buyer-hub-btn"
-                onClick={() => handleNav('buyer_dashboard')}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentView === 'buyer_dashboard'
-                    ? 'bg-amber-50 text-amber-800 font-bold'
-                    : 'hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <LayoutDashboard className="w-3.5 h-3.5" />
-                Buyer Hub
-              </button>
-            )}
-
-            {user && (
-              <button
-                id="nav-announcements-chat-btn"
-                onClick={() => handleNav('messages', { channel: 'announcements' })}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentView === 'messages'
-                    ? 'bg-green-50 text-green-700 font-bold'
-                    : 'hover:text-gray-900 hover:bg-gray-100'
-                }`}
-                title="Public announcements and community chat"
-              >
-                <Megaphone className="w-3.5 h-3.5 text-green-600" />
-                <span>Announcements</span>
-              </button>
-            )}
-
-            {user && (
-              <button
-                id="nav-orders-btn"
-                onClick={() => handleNav('orders')}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentView === 'orders'
-                    ? 'bg-green-50 text-green-700 font-bold'
-                    : 'hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                Orders
-              </button>
-            )}
-
-            {user?.role === 'buyer' && (
-              <button
-                id="nav-favorites-btn"
-                onClick={() => handleNav('favorites')}
-                className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-                  currentView === 'favorites'
-                    ? 'bg-green-50 text-green-700 font-bold'
-                    : 'hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                <Heart className="w-3.5 h-3.5" />
-                Favorites
-              </button>
-            )}
-          </nav>
-
-          {/* Right Action Icons & Controls */}
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            {/* Farmer / Fodder Supplier Add Product Button */}
-            {isSellerRole(user?.role) && (
+            {/* Seller Quick Add */}
+            {isSellerRole(user?.role) && onOpenAddProduct && (
               <button
                 id="navbar-add-product-btn"
                 onClick={onOpenAddProduct}
-                className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
+                className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#174B35] hover:bg-[#123c2a] text-white text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shrink-0"
               >
-                <PlusCircle className="w-4 h-4" />
-                <span>{user?.role === 'fodder_supplier' ? 'Add Fodder' : 'Add Produce'}</span>
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>{user?.role === 'fodder_supplier' ? 'Add Fodder' : 'List Produce'}</span>
               </button>
             )}
 
-            {/* Messages Icon */}
+            {/* Direct Messages */}
             {user && (
               <button
                 id="navbar-messages-btn"
                 onClick={() => handleNav('messages', { channel: 'direct' })}
-                className={`relative p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors ${
-                  currentView === 'messages' ? 'bg-gray-100 text-green-700' : ''
+                className={`relative p-2 rounded-xl transition-colors ${
+                  currentView === 'messages'
+                    ? 'bg-[#F8FAF7] text-[#174B35]'
+                    : 'text-[#202B24]/75 hover:text-[#174B35] hover:bg-[#F8FAF7]'
                 }`}
                 title="Messages"
                 aria-label="Messages"
               >
                 <MessageSquare className="w-5 h-5" />
                 {unreadMessagesCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-green-600 text-white text-[10px] font-bold flex items-center justify-center">
+                  <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#174B35] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                     {unreadMessagesCount}
                   </span>
                 )}
               </button>
             )}
 
-            {/* Notifications Icon */}
+            {/* Notifications */}
             {user && (
               <button
                 id="navbar-notifications-btn"
@@ -264,22 +321,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                     handleNav('notifications');
                   }
                 }}
-                className={`relative p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors ${
-                  currentView === 'notifications' ? 'bg-gray-100 text-green-700' : ''
+                className={`relative p-2 rounded-xl transition-colors ${
+                  currentView === 'notifications'
+                    ? 'bg-[#F8FAF7] text-[#174B35]'
+                    : 'text-[#202B24]/75 hover:text-[#174B35] hover:bg-[#F8FAF7]'
                 }`}
                 title="Notifications"
                 aria-label="Notifications"
               >
                 <Bell className="w-5 h-5" />
                 {unreadNotifsCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-[10px] text-white flex items-center justify-center rounded-full font-bold">
+                  <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                     {unreadNotifsCount}
                   </span>
                 )}
               </button>
             )}
 
-            {/* Buyer Cart Trigger */}
+            {/* Shopping Cart (Always visible on mobile and desktop) */}
             <button
               id="navbar-cart-btn"
               onClick={() => {
@@ -289,245 +348,327 @@ export const Navbar: React.FC<NavbarProps> = ({
                   openCart();
                 }
               }}
-              className="relative p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+              className="relative p-2 rounded-xl text-[#202B24]/80 hover:text-[#174B35] hover:bg-[#F8FAF7] transition-colors"
               title="Shopping Cart"
-              aria-label="Shopping Cart"
+              aria-label={`Shopping Cart (${totalItems} items)`}
             >
               <ShoppingBag className="w-5 h-5" />
               {totalItems > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-green-600 text-white text-[10px] font-bold flex items-center justify-center">
+                <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#174B35] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                   {totalItems}
                 </span>
               )}
             </button>
 
-            {/* Install Android App Trigger (Desktop/Tablet) */}
-            {onOpenInstallApp && (
-              <button
-                id="navbar-install-app-btn"
-                onClick={onOpenInstallApp}
-                className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-green-800 hover:bg-green-900 text-white text-xs font-bold rounded-lg shadow-xs transition-colors"
-                title="Install Android Application"
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>Android App</span>
-              </button>
-            )}
-
-            {/* User Profile / Auth Actions with Professional Polish layout */}
+            {/* Account / Auth Menu */}
             {user ? (
-              <div className="relative border-l pl-3 sm:pl-4 border-gray-200">
+              <div ref={dropdownRef} className="relative pl-1.5 sm:pl-2.5 border-l border-[#E8EEE8]">
                 <button
                   id="navbar-user-menu-btn"
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2.5 p-1 rounded-lg hover:bg-gray-50 transition-all text-left"
-                  aria-label="User menu"
+                  className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#F8FAF7] transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#174B35]"
+                  aria-label="User account menu"
+                  aria-expanded={userDropdownOpen}
                 >
-                  <div className="text-right hidden sm:block">
-                    <p className="text-xs font-bold leading-none text-gray-900">{user.name}</p>
-                    <p className="text-[10px] text-gray-500 mt-1 capitalize font-medium">
-                      {user.role === 'fodder_supplier'
-                        ? 'Verified Fodder Supplier'
-                        : user.role === 'farmer'
-                        ? 'Verified Producer'
-                        : user.role === 'admin'
-                        ? 'Platform Admin'
-                        : 'Active Buyer'}
-                    </p>
-                  </div>
-                  <div className="w-9 h-9 rounded-full bg-green-100 border-2 border-green-500 overflow-hidden flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-[#F8FAF7] border border-[#E8EEE8] overflow-hidden flex items-center justify-center shrink-0">
                     {user.avatar ? (
                       <img
                         src={user.avatar}
                         alt={user.name}
+                        referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-green-200 font-bold text-green-700 text-xs">
+                      <span className="font-bold text-[#174B35] text-xs">
                         {user.name.slice(0, 2).toUpperCase()}
-                      </div>
+                      </span>
                     )}
                   </div>
-                  <ChevronDown className="w-3.5 h-3.5 text-gray-400 hidden sm:block" />
+                  <div className="hidden sm:block text-left leading-tight max-w-[110px]">
+                    <p className="text-xs font-semibold text-[#202B24] truncate">{user.name}</p>
+                    <p className="text-[11px] text-[#77A987] font-medium truncate">{getRoleLabel()}</p>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-[#202B24]/45 hidden sm:block" />
                 </button>
 
                 {userDropdownOpen && (
                   <div
                     id="user-dropdown-menu"
-                    className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+                    className="absolute right-0 mt-2 w-60 bg-white rounded-2xl shadow-lg border border-[#E8EEE8] py-2 z-50"
                   >
-                    <div className="px-4 py-2 border-b border-gray-100">
-                      <div className="font-bold text-gray-900 text-xs truncate">{user.name}</div>
-                      <div className="text-[11px] text-gray-500 truncate">{user.email}</div>
-                      <div className="text-[10px] text-green-700 font-semibold mt-1 flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
-                        {user.location.city}, {user.location.province}
+                    <div className="px-4 py-2.5 border-b border-[#E8EEE8]">
+                      <div className="font-semibold text-[#202B24] text-xs truncate">{user.name}</div>
+                      <div className="text-[11px] text-[#202B24]/60 truncate">{user.email}</div>
+                      <div className="text-[11px] text-[#174B35] font-medium mt-1 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        <span className="truncate">
+                          {user.location.city}, {user.location.province}
+                        </span>
                       </div>
                     </div>
 
-                    {isSellerRole(user.role) && (
+                    <div className="py-1">
+                      {isSellerRole(user.role) && (
+                        <button
+                          onClick={() => handleNav('farmer_dashboard')}
+                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        >
+                          <LayoutDashboard className="w-4 h-4 text-[#174B35]" />
+                          {user.role === 'fodder_supplier' ? 'Fodder Supplier Portal' : 'Farmer Portal'}
+                        </button>
+                      )}
+
+                      {user.role === 'buyer' && (
+                        <button
+                          onClick={() => handleNav('buyer_dashboard')}
+                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        >
+                          <LayoutDashboard className="w-4 h-4 text-[#174B35]" />
+                          Buyer Hub
+                        </button>
+                      )}
+
+                      {user.role === 'admin' && (
+                        <button
+                          onClick={() => handleNav('admin')}
+                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        >
+                          <ShieldCheck className="w-4 h-4 text-[#174B35]" />
+                          Admin Portal
+                        </button>
+                      )}
+
                       <button
-                        onClick={() => handleNav('farmer_dashboard')}
-                        className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 font-medium"
+                        onClick={() => handleNav('orders')}
+                        className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
                       >
-                        <LayoutDashboard className="w-4 h-4 text-green-600" />
-                        {user.role === 'fodder_supplier' ? 'Fodder Supplier Portal' : 'Farmer Portal'}
+                        <FileText className="w-4 h-4 text-[#202B24]/60" />
+                        Orders & History
                       </button>
-                    )}
 
-                    {user.role === 'buyer' && (
+                      {user.role === 'buyer' && (
+                        <button
+                          onClick={() => handleNav('favorites')}
+                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        >
+                          <Heart className="w-4 h-4 text-[#202B24]/60" />
+                          Saved Produce
+                        </button>
+                      )}
+
                       <button
-                        onClick={() => handleNav('buyer_dashboard')}
-                        className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 font-medium"
+                        onClick={() => handleNav('messages', { channel: 'announcements' })}
+                        className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
                       >
-                        <LayoutDashboard className="w-4 h-4 text-amber-600" />
-                        Buyer Hub
+                        <Megaphone className="w-4 h-4 text-[#202B24]/60" />
+                        Announcements
                       </button>
-                    )}
 
-                    {user.role === 'admin' && (
+                      {onOpenSettings && (
+                        <button
+                          id="navbar-user-settings-btn"
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            onOpenSettings();
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        >
+                          <Settings className="w-4 h-4 text-[#202B24]/60" />
+                          User Settings
+                        </button>
+                      )}
+
+                      {onOpenInstallApp && (
+                        <button
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            onOpenInstallApp();
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        >
+                          <Smartphone className="w-4 h-4 text-[#202B24]/60" />
+                          Android App
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="border-t border-[#E8EEE8] mt-1 pt-1">
                       <button
-                        onClick={() => handleNav('admin')}
-                        className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 font-medium"
+                        id="navbar-logout-btn"
+                        onClick={() => {
+                          logout();
+                          setUserDropdownOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 font-semibold"
                       >
-                        <ShieldCheck className="w-4 h-4 text-purple-600" />
-                        Admin Portal
+                        <LogOut className="w-4 h-4" />
+                        Sign Out
                       </button>
-                    )}
-
-                    <button
-                      onClick={() => handleNav('orders')}
-                      className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2 font-medium"
-                    >
-                      <FileText className="w-4 h-4 text-gray-500" />
-                      Orders & History
-                    </button>
-
-                    <div className="border-t border-gray-100 my-1"></div>
-
-                    <button
-                      id="navbar-logout-btn"
-                      onClick={() => {
-                        logout();
-                        setUserDropdownOpen(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 font-semibold"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Sign Out
-                    </button>
+                    </div>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 border-l pl-3 border-gray-200">
+              <div className="flex items-center gap-1.5 pl-1.5 sm:pl-2.5 border-l border-[#E8EEE8]">
                 <button
                   id="navbar-login-btn"
                   onClick={() => onOpenAuth('login')}
-                  className="px-3 py-1.5 text-xs font-semibold text-gray-700 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="px-3 py-1.5 text-xs font-semibold text-[#202B24] hover:text-[#174B35] rounded-xl hover:bg-[#F8FAF7] transition-colors whitespace-nowrap"
                 >
                   Log In
                 </button>
                 <button
                   id="navbar-register-btn"
                   onClick={() => onOpenAuth('register')}
-                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-xs transition-colors"
+                  className="hidden sm:inline-flex px-3.5 py-1.5 text-xs font-semibold text-white bg-[#174B35] hover:bg-[#123c2a] rounded-xl transition-colors whitespace-nowrap"
                 >
                   Register
                 </button>
               </div>
             )}
 
-            {/* Mobile Hamburger Toggle */}
+            {/* Mobile Menu Toggle */}
             <button
               id="navbar-mobile-toggle"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 md:hidden"
-              aria-label="Open mobile menu"
+              className="p-2 rounded-xl text-[#202B24]/75 hover:bg-[#F8FAF7] md:hidden"
+              aria-label="Toggle navigation menu"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6 text-gray-700" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>
+
+        {/* Expandable Search Bar (Mobile / Tablet / Compact Desktop) */}
+        {mobileSearchOpen && (
+          <form
+            onSubmit={handleSearchFormSubmit}
+            className="xl:hidden pb-3 pt-1 border-t border-[#E8EEE8] flex items-center gap-2"
+          >
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-[#202B24]/45 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                autoFocus
+                value={localSearch}
+                onChange={(e) => {
+                  setLocalSearch(e.target.value);
+                  if (onSearchChange) onSearchChange(e.target.value);
+                }}
+                placeholder="Search fresh produce, fodder, or farms..."
+                className="w-full pl-9 pr-3 py-2 text-xs bg-[#F8FAF7] border border-[#E8EEE8] rounded-xl text-[#202B24] focus:outline-none focus:bg-white focus:border-[#77A987]"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-[#174B35] text-white text-xs font-semibold rounded-xl shrink-0"
+            >
+              Search
+            </button>
+          </form>
+        )}
       </div>
 
-      {/* Mobile Drawer Menu */}
+      {/* Mobile Navigation Drawer */}
       {mobileMenuOpen && (
-        <div id="mobile-menu-drawer" className="md:hidden border-t border-gray-200 bg-white px-4 pt-3 pb-6 space-y-3">
-          <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Navigation</div>
-            {getRoleBadge()}
-          </div>
-
+        <div
+          id="mobile-menu-drawer"
+          className="md:hidden border-t border-[#E8EEE8] bg-white px-4 pt-3 pb-6 space-y-3"
+        >
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => handleNav('marketplace')}
-              className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-green-50 hover:text-green-700 font-semibold"
+              className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] hover:border-[#77A987] border border-[#E8EEE8] font-semibold text-left"
             >
-              <Store className="w-4 h-4 text-green-600" />
-              Marketplace
+              <Store className="w-4 h-4 text-[#174B35] shrink-0" />
+              <span>Marketplace</span>
+            </button>
+
+            <button
+              onClick={() => handleSectionLink('farmbridge-community-section')}
+              className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+            >
+              <Users className="w-4 h-4 text-[#174B35] shrink-0" />
+              <span>Community</span>
+            </button>
+
+            <button
+              onClick={() => handleSectionLink('buyer-requests-section')}
+              className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+            >
+              <ClipboardList className="w-4 h-4 text-[#174B35] shrink-0" />
+              <span>Buyer Requests</span>
             </button>
 
             {isSellerRole(user?.role) ? (
               <button
                 onClick={() => handleNav('farmer_dashboard')}
-                className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-green-50 hover:text-green-700 font-semibold"
+                className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
               >
-                <LayoutDashboard className="w-4 h-4 text-green-600" />
-                {user?.role === 'fodder_supplier' ? 'Fodder Portal' : 'Farmer Portal'}
+                <LayoutDashboard className="w-4 h-4 text-[#174B35] shrink-0" />
+                <span>{user?.role === 'fodder_supplier' ? 'Supplier Hub' : 'Farmer Hub'}</span>
               </button>
             ) : user?.role === 'admin' ? (
               <button
                 onClick={() => handleNav('admin')}
-                className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-purple-50 hover:text-purple-700 font-semibold"
+                className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
               >
-                <ShieldCheck className="w-4 h-4 text-purple-600" />
-                Admin Portal
+                <ShieldCheck className="w-4 h-4 text-[#174B35] shrink-0" />
+                <span>Admin Portal</span>
               </button>
             ) : (
               <button
-                onClick={() => handleNav('buyer_dashboard')}
-                className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-amber-50 hover:text-amber-700 font-semibold"
+                onClick={() => (user ? handleNav('buyer_dashboard') : onOpenAuth('login'))}
+                className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
               >
-                <LayoutDashboard className="w-4 h-4 text-amber-600" />
-                Buyer Hub
+                <LayoutDashboard className="w-4 h-4 text-[#174B35] shrink-0" />
+                <span>Buyer Hub</span>
               </button>
             )}
 
-            <button
-              onClick={() => handleNav('orders')}
-              className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-gray-100 font-semibold"
-            >
-              <FileText className="w-4 h-4 text-gray-500" />
-              Orders
-            </button>
+            {user && (
+              <>
+                <button
+                  onClick={() => handleNav('orders')}
+                  className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+                >
+                  <FileText className="w-4 h-4 text-[#174B35] shrink-0" />
+                  <span>Orders</span>
+                </button>
 
-            <button
-              onClick={() => handleNav('messages', { channel: 'direct' })}
-              className="flex items-center gap-2 p-2.5 rounded-lg text-xs text-gray-700 bg-gray-50 hover:bg-gray-100 font-semibold"
-            >
-              <MessageSquare className="w-4 h-4 text-gray-500" />
-              Messages
-            </button>
+                <button
+                  onClick={() => handleNav('messages', { channel: 'direct' })}
+                  className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+                >
+                  <MessageSquare className="w-4 h-4 text-[#174B35] shrink-0" />
+                  <span>Messages</span>
+                </button>
+              </>
+            )}
           </div>
 
-          {/* Android App Direct Install Option in Mobile Drawer */}
-          {onOpenInstallApp && (
+          {!user && (
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
-                onOpenInstallApp();
+                onOpenAuth('register');
               }}
-              className="w-full py-2.5 px-3 rounded-xl bg-green-800 text-white flex items-center justify-between text-xs font-bold shadow-xs hover:bg-green-900 transition-colors"
+              className="w-full py-2.5 rounded-xl bg-[#174B35] text-white text-xs font-semibold"
             >
-              <span className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-green-300" />
-                <span>Get agroX Android App</span>
-              </span>
-              <span className="text-[10px] bg-green-700 text-green-100 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                <Download className="w-3 h-3" />
-                APK / PWA
-              </span>
+              Create Account
+            </button>
+          )}
+
+          {user && onOpenSettings && (
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                onOpenSettings();
+              }}
+              className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold"
+            >
+              <Settings className="w-4 h-4 text-[#202B24]/65" />
+              <span>User Settings</span>
             </button>
           )}
         </div>
@@ -535,4 +676,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
-

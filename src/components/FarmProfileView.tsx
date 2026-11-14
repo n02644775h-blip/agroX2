@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import {
+  subscribeToFirebaseReviews,
+  calculateFarmerRatingStats,
+  getRatingLabel
+} from '../services/firebaseReviews';
 import { User, Product, Review } from '../types';
 import { ProductCard } from './ProductCard';
 import { FarmerProfileModal } from './FarmerProfileModal';
@@ -13,10 +18,7 @@ import {
   ArrowLeft,
   Calendar,
   Phone,
-  Mail,
-  CheckCircle,
   Clock,
-  Sparkles,
   Edit3
 } from 'lucide-react';
 
@@ -40,17 +42,28 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [showEditModal, setShowEditModal] = useState<boolean>(false);
 
+  const mergeReviews = (incoming: Review[]) => {
+    setReviews(prev => {
+      const map = new Map<string, Review>();
+      prev.forEach(r => map.set(r.id, r));
+      incoming.forEach(r => map.set(r.id, r));
+      return Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+  };
+
   const loadFarmerStore = async () => {
     setLoading(true);
     try {
       const [userData, prodsData, revsData] = await Promise.all([
         api.getUserById(farmerId),
         api.getProducts({ farmerId }),
-        api.getReviews(farmerId)
+        api.getReviews(farmerId).catch(() => [])
       ]);
       setFarmer(userData);
       setProducts(prodsData);
-      setReviews(revsData);
+      if (Array.isArray(revsData)) mergeReviews(revsData);
     } catch (err) {
       console.error('Failed to load farm store:', err);
     } finally {
@@ -59,7 +72,19 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
   };
 
   useEffect(() => {
+    setReviews([]);
     loadFarmerStore();
+
+    const unsubReviews = subscribeToFirebaseReviews(
+      { farmerId },
+      (fbReviews) => {
+        mergeReviews(fbReviews);
+      }
+    );
+
+    return () => {
+      unsubReviews();
+    };
   }, [farmerId]);
 
   if (loading) {
@@ -85,9 +110,9 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
   }
 
   const profile = farmer.farmerProfile;
-  const avgRating = reviews.length > 0
-    ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)
-    : (profile?.rating || 4.9).toFixed(1);
+  const ratingStats = calculateFarmerRatingStats(reviews);
+  const avgRatingDisplay =
+    ratingStats.totalRatings > 0 ? ratingStats.averageRating.toFixed(1) : 'New';
 
   return (
     <div className="space-y-8 pb-16">
@@ -147,9 +172,11 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
                     {profile?.address || `${farmer.location.city}, ${farmer.location.province}`}
                   </span>
                   <span>•</span>
-                  <span className="flex items-center gap-1 text-amber-500 font-bold">
+                  <span className="flex items-center gap-1 text-amber-600 font-bold">
                     <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    {avgRating} ({reviews.length} reviews)
+                    {ratingStats.totalRatings > 0
+                      ? `${avgRatingDisplay} (${ratingStats.totalRatings} ${ratingStats.totalRatings === 1 ? 'rating' : 'ratings'})`
+                      : 'No ratings yet'}
                   </span>
                 </div>
               </div>
@@ -250,22 +277,51 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
         )}
       </div>
 
-      {/* Farm Customer Reviews */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-stone-100 pb-4">
+      {/* Farm Customer Reviews & Rating Distribution */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
           <div>
-            <h3 className="font-bold text-stone-900 text-lg">Customer Testimonials & Ratings</h3>
-            <p className="text-xs text-stone-500">Verified reviews from direct buyers</p>
+            <h3 className="font-bold text-stone-900 text-lg">Customer Testimonials &amp; Ratings</h3>
+            <p className="text-xs text-stone-500">
+              Verified ratings submitted by buyers after completed orders
+            </p>
           </div>
-          <div className="flex items-center gap-1 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl font-bold text-amber-900 text-sm">
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-3.5 py-2 rounded-xl font-bold text-amber-900 text-sm self-start">
             <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-            {avgRating} / 5.0
+            <span>
+              {ratingStats.totalRatings > 0
+                ? `${avgRatingDisplay} / 5.0 (${ratingStats.totalRatings})`
+                : 'No ratings yet'}
+            </span>
           </div>
         </div>
 
+        {ratingStats.totalRatings > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 bg-stone-50 p-4 rounded-2xl border border-stone-200/70">
+            {([5, 4, 3, 2, 1] as const).map(star => {
+              const count = ratingStats.distribution[star] || 0;
+              const pct = Math.round((count / ratingStats.totalRatings) * 100);
+              return (
+                <div key={star} className="space-y-1 text-xs">
+                  <div className="flex items-center justify-between font-bold text-stone-700">
+                    <span>{star} ★</span>
+                    <span className="tabular-nums text-stone-500">{count}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-stone-200 overflow-hidden">
+                    <div
+                      className="h-full bg-amber-400 rounded-full transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {reviews.length === 0 ? (
           <div className="py-6 text-center text-xs text-stone-400">
-            No reviews yet for this farm.
+            No completed-order ratings yet for this producer.
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -279,16 +335,25 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
                       <span className="text-[10px] text-stone-400">{new Date(rev.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
-                  <div className="flex">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`w-3 h-3 ${i < rev.rating ? 'fill-amber-400 text-amber-400' : 'text-stone-300'}`}
-                      />
-                    ))}
+                  <div className="flex flex-col items-end">
+                    <div className="flex">
+                      {[...Array(5)].map((_, i) => (
+                        <Star
+                          key={i}
+                          className={`w-3 h-3 ${i < rev.rating ? 'fill-amber-400 text-amber-400' : 'text-stone-300'}`}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-semibold text-amber-800 mt-0.5">
+                      {rev.ratingLabel || getRatingLabel(rev.rating)}
+                    </span>
                   </div>
                 </div>
-                <p className="text-xs text-stone-600 leading-relaxed">{rev.comment}</p>
+                {rev.comment ? (
+                  <p className="text-xs text-stone-600 leading-relaxed">{rev.comment}</p>
+                ) : (
+                  <p className="text-[11px] text-stone-400 italic">Rated without written review.</p>
+                )}
               </div>
             ))}
           </div>
@@ -306,3 +371,4 @@ export const FarmProfileView: React.FC<FarmProfileViewProps> = ({
     </div>
   );
 };
+

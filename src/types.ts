@@ -84,7 +84,7 @@ export interface User {
     community?: string;
     address?: string;
   };
-  status: 'active' | 'suspended' | 'pending_verification';
+  status: 'active' | 'suspended' | 'pending_verification' | 'deleted';
   emailVerified?: boolean;
   phoneVerified?: boolean;
   verificationMethod?: 'email' | 'phone';
@@ -232,12 +232,17 @@ export interface Order {
     timestamp: string;
     note?: string;
   }[];
+  completedAt?: string;
   isReviewed?: boolean;
+  rating?: number;
+  reviewComment?: string;
+  ratedAt?: string;
 }
 
 export interface Review {
   id: string;
   orderId: string;
+  orderNumber?: string;
   productId?: string;
   productName?: string;
   farmerId: string;
@@ -245,12 +250,19 @@ export interface Review {
   buyerName: string;
   buyerAvatar: string;
   rating: number;
+  ratingLabel?: string;
   qualityRating?: number;
   communicationRating?: number;
   deliveryRating?: number;
-  comment: string;
+  comment?: string;
   createdAt: string;
   farmerResponse?: string;
+}
+
+export interface FarmerRatingStats {
+  averageRating: number;
+  totalRatings: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
 }
 
 export interface Message {
@@ -457,6 +469,11 @@ export interface MediaPostItem {
   type: 'image' | 'video';
   mimeType?: string;
   fileName?: string;
+  thumbnailUrl?: string;
+  convertedFrom?: string;
+  durationSec?: number;
+  storagePath?: string;
+  size?: number;
 }
 
 export interface MediaPost {

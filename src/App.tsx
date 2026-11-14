@@ -27,6 +27,7 @@ import { AndroidBottomNav } from './components/AndroidBottomNav';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { AndroidDeviceShell } from './components/AndroidDeviceShell';
 import { OrderConfirmationModal } from './components/OrderConfirmationModal';
+import { UserSettingsModal } from './components/UserSettingsModal';
 import { Product, Order, User, AppNotification, MediaPost, BuyerRequest, isSellerRole } from './types';
 import {
   Sprout,
@@ -39,11 +40,18 @@ import {
   MapPin,
   Lock,
   AlertTriangle,
+  CheckCircle2,
   X
 } from 'lucide-react';
 
 export function App() {
-  const { user, suspensionNotice, clearSuspensionNotice } = useAuth();
+  const {
+    user,
+    suspensionNotice,
+    clearSuspensionNotice,
+    accountDeletionNotice,
+    clearAccountDeletionNotice
+  } = useAuth();
   const { openCart, isCheckoutOpen, closeCheckout } = useCart();
 
   // Navigation State with persistence across refreshes
@@ -82,7 +90,24 @@ export function App() {
   const [isAdminAccessOpen, setIsAdminAccessOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
   const [isFarmerProfileOpen, setIsFarmerProfileOpen] = useState(false);
+  const [isUserSettingsOpen, setIsUserSettingsOpen] = useState(false);
   const [isAndroidView, setIsAndroidView] = useState(false);
+  const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
+  const [pendingScrollSection, setPendingScrollSection] = useState<string | null>(null);
+  const [infoModal, setInfoModal] = useState<'support' | 'privacy' | 'terms' | null>(null);
+
+  // Redirect to marketplace cleanly when signed out or account is deleted while on a protected view
+  useEffect(() => {
+    if (
+      !user &&
+      ['farmer_dashboard', 'buyer_dashboard', 'admin', 'messages', 'favorites'].includes(currentView)
+    ) {
+      setCurrentView('marketplace');
+      try {
+        localStorage.setItem('agrox_current_view', 'marketplace');
+      } catch {}
+    }
+  }, [user, currentView]);
 
   // Initialize native Capacitor mobile services (Splash Screen, Status Bar, Back Button)
   useEffect(() => {
@@ -266,11 +291,45 @@ export function App() {
     }
   }, [user, pendingChatProduct, pendingChatPost, pendingChatUser]);
 
+  // Handle scrolling to homepage section anchors even when navigating from sub-views
+  useEffect(() => {
+    if (currentView === 'marketplace' && pendingScrollSection) {
+      const targetId = pendingScrollSection;
+      setPendingScrollSection(null);
+      const timer = setTimeout(() => {
+        const el = document.getElementById(targetId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 120);
+      return () => clearTimeout(timer);
+    }
+  }, [currentView, pendingScrollSection]);
+
+  const handleScrollToSection = (sectionId: string) => {
+    mobileService.triggerHaptic('light');
+    if (currentView !== 'marketplace') {
+      setPendingScrollSection(sectionId);
+      setCurrentView('marketplace');
+      try {
+        localStorage.setItem('agrox_current_view', 'marketplace');
+      } catch {}
+    } else {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  };
+
   // Handle navigation
   const handleNavigate = (view: string, data?: any) => {
     mobileService.triggerHaptic('light');
     if (view === 'messages' && data?.channel) {
       setMessagesChannel(data.channel);
+    }
+    if (data?.scrollTo) {
+      setPendingScrollSection(data.scrollTo);
     }
     setCurrentView(view);
     try {
@@ -278,7 +337,9 @@ export function App() {
     } catch (e) {
       console.warn('Could not save current view:', e);
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!data?.scrollTo) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
     if (view === 'orders' && data?.selectedOrder) {
       setSelectedOrderForTracking(data.selectedOrder);
@@ -373,7 +434,7 @@ export function App() {
       isAndroidView={isAndroidView}
       setIsAndroidView={setIsAndroidView}
     >
-      <div className="min-h-screen bg-[#F4F7F5] text-[#1A2E1A] font-sans flex flex-col selection:bg-green-600 selection:text-white pb-20 md:pb-0">
+      <div className="min-h-screen bg-[#F8FAF7] text-[#202B24] font-sans flex flex-col selection:bg-[#174B35] selection:text-white pb-20 md:pb-0">
         {/* Browser Cookie & Storage Access Authorization Banner */}
         <CookieAccessBanner />
 
@@ -395,10 +456,37 @@ export function App() {
             setIsAddProductOpen(true);
           }}
           onOpenInstallApp={() => setIsInstallModalOpen(true)}
+          onOpenSettings={() => setIsUserSettingsOpen(true)}
+          searchQuery={marketplaceSearchQuery}
+          onSearchChange={setMarketplaceSearchQuery}
+          onSearchSubmit={(q) => {
+            setMarketplaceSearchQuery(q);
+            handleScrollToSection('fresh-from-farmers');
+          }}
+          onScrollToSection={handleScrollToSection}
         />
 
       {/* Main Application Canvas */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-12">
+        {accountDeletionNotice && (
+          <div
+            role="status"
+            className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-start justify-between gap-3 shadow-xs"
+          >
+            <div className="flex items-start gap-3 text-xs sm:text-sm font-semibold">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <span>{accountDeletionNotice}</span>
+            </div>
+            <button
+              onClick={clearAccountDeletionNotice}
+              className="p-1 rounded-lg hover:bg-emerald-100 text-emerald-700 transition-colors shrink-0"
+              aria-label="Dismiss account deletion confirmation"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {suspensionNotice && (
           <div
             role="alert"
@@ -424,6 +512,14 @@ export function App() {
             onSelectFarmer={handleSelectFarmer}
             onContactFarmer={handleContactFarmerFromProduct}
             onRequestQuote={handleRequestQuoteFromPost}
+            onRespondToBuyerRequest={handleRespondToBuyerRequest}
+            onOpenAuth={(mode) => {
+              setAuthMode(mode);
+              setIsAuthOpen(true);
+            }}
+            onNavigate={handleNavigate}
+            externalSearchQuery={marketplaceSearchQuery}
+            onSearchQueryChange={setMarketplaceSearchQuery}
           />
         )}
 
@@ -454,6 +550,8 @@ export function App() {
           <BuyerDashboard
             onNavigate={handleNavigate}
             onSelectProduct={setSelectedProduct}
+            onOpenReviewModal={setReviewOrder}
+            onOpenSettings={() => setIsUserSettingsOpen(true)}
             onOpenMessagesForRequest={() => {
               setMessagesChannel('direct');
               setCurrentView('messages');
@@ -505,132 +603,169 @@ export function App() {
         )}
       </main>
 
-      {/* Trust & Local Agriculture Guarantee Strip */}
-      <section className="bg-white border-y border-stone-200 py-10 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-700 shrink-0">
-                <Sprout className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="font-bold text-stone-900 text-sm">Direct Farm-Gate Transparency</h4>
-                <p className="text-xs text-stone-500 mt-1 leading-relaxed">
-                  Support local agriculture directly. Every dollar goes straight to the hardworking farming families producing your food.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-700 shrink-0">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="font-bold text-stone-900 text-sm">Verified Producers & Quality</h4>
-                <p className="text-xs text-stone-500 mt-1 leading-relaxed">
-                  Every farmer profile is verified. Access authentic harvest dates, farming methods, and real customer reviews.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-700 shrink-0">
-                <Truck className="w-6 h-6" />
-              </div>
-              <div>
-                <h4 className="font-bold text-stone-900 text-sm">Flexible Farm Gate or Delivery</h4>
-                <p className="text-xs text-stone-500 mt-1 leading-relaxed">
-                  Choose free on-farm collection to visit the growers in person, or enjoy reliable local doorstep delivery.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Global Application Footer */}
-      <footer className="bg-stone-900 text-stone-400 text-xs py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div className="space-y-3 md:col-span-2">
+      {/* Minimalist Global Footer */}
+      <footer className="bg-white border-t border-[#E8EEE8] text-[#202B24]/70 text-xs py-12 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+            {/* Brand & Description */}
+            <div className="space-y-3 sm:col-span-2 lg:col-span-1">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-bold">
-                  <Sprout className="w-5 h-5" />
+                <div className="w-8 h-8 rounded-xl bg-[#174B35] flex items-center justify-center text-white">
+                  <Sprout className="w-4 h-4" />
                 </div>
-                <span className="font-extrabold text-white text-lg tracking-tight">agroX</span>
+                <span className="font-bold text-[#202B24] text-base tracking-tight">FarmBridge</span>
               </div>
-              <p className="text-stone-400 text-xs max-w-md leading-relaxed">
-                Empowering smallholder and commercial farmers with a modern digital marketplace to connect directly with consumers, restaurants, and wholesale buyers across Zimbabwe and regional agricultural hubs.
+              <p className="text-[#202B24]/65 text-xs leading-relaxed max-w-xs">
+                Connecting buyers directly with local farmers and fodder suppliers for fresh produce, transparent sourcing, and reliable farm-gate delivery.
               </p>
             </div>
 
-            <div className="space-y-2">
-              <h5 className="font-bold text-white uppercase text-[11px] tracking-wider">Navigation</h5>
-              <ul className="space-y-1.5 text-stone-400">
-                <li><button onClick={() => handleNavigate('marketplace')} className="hover:text-emerald-400 transition-colors">Marketplace Browse</button></li>
-                <li><button onClick={() => handleNavigate('buyer_dashboard')} className="hover:text-emerald-400 transition-colors">Buyer Hub</button></li>
-                <li><button onClick={() => handleNavigate('farmer_dashboard')} className="hover:text-emerald-400 transition-colors">Farmer Portal</button></li>
-                <li><button onClick={() => handleNavigate('orders')} className="hover:text-emerald-400 transition-colors">Order Tracking</button></li>
+            {/* Marketplace Links */}
+            <div className="space-y-3">
+              <h5 className="font-semibold text-[#202B24] text-xs uppercase tracking-wider">
+                Marketplace
+              </h5>
+              <ul className="space-y-2 text-[#202B24]/70">
                 <li>
                   <button
-                    id="footer-nav-admin-btn"
-                    onClick={() => setIsAdminAccessOpen(true)}
-                    className="text-stone-400 hover:text-purple-400 transition-colors flex items-center gap-1.5 font-medium pt-1"
+                    type="button"
+                    onClick={() => handleScrollToSection('fresh-from-farmers')}
+                    className="hover:text-[#174B35] transition-colors"
                   >
-                    <Lock className="w-3 h-3 text-purple-400" />
-                    <span>Admin Access</span>
+                    Browse Produce
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => handleScrollToSection('featured-farmers-section')}
+                    className="hover:text-[#174B35] transition-colors"
+                  >
+                    Meet Our Farmers
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => (user ? handleNavigate('orders') : setIsAuthOpen(true))}
+                    className="hover:text-[#174B35] transition-colors"
+                  >
+                    Order Tracking
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (user?.role === 'buyer') handleNavigate('buyer_dashboard');
+                      else if (isSellerRole(user?.role)) handleNavigate('farmer_dashboard');
+                      else setIsAuthOpen(true);
+                    }}
+                    className="hover:text-[#174B35] transition-colors"
+                  >
+                    Account Dashboard
                   </button>
                 </li>
               </ul>
             </div>
 
+            {/* Community Links */}
             <div className="space-y-3">
-              <h5 className="font-bold text-white uppercase text-[11px] tracking-wider">Contact & Support</h5>
-              <div className="space-y-1.5 text-stone-400">
-                <div className="flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-stone-500" />
+              <h5 className="font-semibold text-[#202B24] text-xs uppercase tracking-wider">
+                Community
+              </h5>
+              <ul className="space-y-2 text-[#202B24]/70">
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => handleScrollToSection('farmbridge-community-section')}
+                    className="hover:text-[#174B35] transition-colors"
+                  >
+                    FarmBridge Community
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => handleScrollToSection('buyer-requests-section')}
+                    className="hover:text-[#174B35] transition-colors"
+                  >
+                    Buyer Requests
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setInfoModal('support')}
+                    className="hover:text-[#174B35] transition-colors"
+                  >
+                    Help & Support
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setIsInstallModalOpen(true)}
+                    className="hover:text-[#174B35] transition-colors"
+                  >
+                    Android App
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            {/* Contact & Legal */}
+            <div className="space-y-3">
+              <h5 className="font-semibold text-[#202B24] text-xs uppercase tracking-wider">
+                Contact & Legal
+              </h5>
+              <div className="space-y-2 text-[#202B24]/70">
+                <div className="flex items-center gap-2">
+                  <Phone className="w-3.5 h-3.5 text-[#77A987] shrink-0" />
                   <span>+263 77 123 4567</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-stone-500" />
+                <div className="flex items-center gap-2">
+                  <Mail className="w-3.5 h-3.5 text-[#77A987] shrink-0" />
                   <span>support@agrox.market</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-stone-500" />
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-[#77A987] shrink-0" />
                   <span>Harare & Provincial Hubs</span>
                 </div>
               </div>
-
-              {/* Prominent Footer Admin Access Button */}
-              <div className="pt-2">
+              <div className="pt-1 flex flex-wrap items-center gap-3 text-[11px]">
                 <button
-                  id="footer-admin-access-btn"
-                  onClick={() => setIsAdminAccessOpen(true)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 active:bg-purple-950 text-stone-200 hover:text-white border border-stone-700/80 text-xs font-bold transition-all shadow-xs cursor-pointer group"
+                  type="button"
+                  onClick={() => setInfoModal('privacy')}
+                  className="hover:text-[#174B35] underline-offset-2 hover:underline"
                 >
-                  <Lock className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-300" />
-                  <span>Admin Access Portal</span>
+                  Privacy Policy
+                </button>
+                <span className="text-[#E8EEE8]">·</span>
+                <button
+                  type="button"
+                  onClick={() => setInfoModal('terms')}
+                  className="hover:text-[#174B35] underline-offset-2 hover:underline"
+                >
+                  Terms & Conditions
                 </button>
               </div>
             </div>
           </div>
 
-          <div className="border-t border-stone-800 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-stone-500 text-[11px]">
-            <div>© {new Date().getFullYear()} agroX Digital Agricultural Marketplace. All rights reserved.</div>
-            <div className="flex items-center gap-4 flex-wrap">
-              <span>Fair Trade</span>
-              <span>•</span>
-              <span>Organic Standards</span>
-              <span>•</span>
-              <span>Direct Agriculture</span>
-              <span>•</span>
+          <div className="border-t border-[#E8EEE8] pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-[#202B24]/55 text-[11px]">
+            <div>© {new Date().getFullYear()} FarmBridge Agricultural Marketplace. All rights reserved.</div>
+            <div className="flex items-center gap-4">
+              <span>Direct Farm Trade</span>
+              <span>·</span>
               <button
                 id="footer-bottom-admin-access-link"
+                type="button"
                 onClick={() => setIsAdminAccessOpen(true)}
-                className="text-stone-400 hover:text-purple-400 transition-colors flex items-center gap-1 font-semibold"
+                className="text-[#202B24]/70 hover:text-[#174B35] transition-colors inline-flex items-center gap-1 font-medium"
               >
-                <ShieldCheck className="w-3 h-3 text-purple-400" />
-                <span>Admin Sign In</span>
+                <Lock className="w-3 h-3" />
+                <span>Admin Access</span>
               </button>
             </div>
           </div>
@@ -716,7 +851,6 @@ export function App() {
           onClose={() => setReviewOrder(null)}
           onSuccess={() => {
             setReviewOrder(null);
-            setCurrentView('orders');
           }}
         />
       )}
@@ -756,6 +890,15 @@ export function App() {
         />
       )}
 
+      <UserSettingsModal
+        isOpen={isUserSettingsOpen}
+        onClose={() => setIsUserSettingsOpen(false)}
+        onAccountDeleted={() => {
+          setIsUserSettingsOpen(false);
+          handleNavigate('marketplace');
+        }}
+      />
+
       {/* Android Material 3 Bottom Navigation Bar */}
       <AndroidBottomNav
         currentView={currentView}
@@ -773,6 +916,91 @@ export function App() {
         isOpen={isInstallModalOpen}
         onClose={() => setIsInstallModalOpen(false)}
       />
+
+      {/* Footer Info Modal (Help & Support, Privacy Policy, Terms & Conditions) */}
+      {infoModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setInfoModal(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-lg w-full border border-[#E8EEE8] shadow-xl p-6 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#E8EEE8] pb-3">
+              <h3 className="text-base font-bold text-[#202B24]">
+                {infoModal === 'support'
+                  ? 'Help & Support'
+                  : infoModal === 'privacy'
+                  ? 'Privacy Policy'
+                  : 'Terms & Conditions'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setInfoModal(null)}
+                className="p-1.5 rounded-xl text-[#202B24]/50 hover:text-[#202B24] hover:bg-[#F8FAF7]"
+                aria-label="Close modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {infoModal === 'support' && (
+              <div className="space-y-3 text-xs text-[#202B24]/75 leading-relaxed">
+                <p>
+                  Need help with an order, Proof of Payment verification, or connecting with a local producer? Reach our marketplace support desk directly:
+                </p>
+                <div className="p-3.5 rounded-2xl bg-[#F8FAF7] border border-[#E8EEE8] space-y-2">
+                  <div className="flex items-center gap-2 font-medium text-[#202B24]">
+                    <Phone className="w-4 h-4 text-[#174B35]" />
+                    <span>+263 77 123 4567 (Mon–Sat, 08:00–17:00)</span>
+                  </div>
+                  <div className="flex items-center gap-2 font-medium text-[#202B24]">
+                    <Mail className="w-4 h-4 text-[#174B35]" />
+                    <span>support@agrox.market</span>
+                  </div>
+                  <div className="flex items-center gap-2 font-medium text-[#202B24]">
+                    <MapPin className="w-4 h-4 text-[#174B35]" />
+                    <span>Harare & Provincial Agricultural Hubs</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {infoModal === 'privacy' && (
+              <div className="space-y-2.5 text-xs text-[#202B24]/75 leading-relaxed">
+                <p>
+                  FarmBridge collects only the contact, delivery, and farm profile details required to fulfill agricultural orders and enable 1-on-1 messaging between buyers and sellers.
+                </p>
+                <p>
+                  Uploaded Proof of Payment files and order histories are visible solely to the buyer, the fulfilling producer, and authorized platform administrators. You may delete your account at any time from User Settings.
+                </p>
+              </div>
+            )}
+
+            {infoModal === 'terms' && (
+              <div className="space-y-2.5 text-xs text-[#202B24]/75 leading-relaxed">
+                <p>
+                  Producers on FarmBridge agree to list accurate harvest availability, pricing, and regional pickup or delivery terms. Buyers agree to submit authentic Proof of Payment for electronic orders or settle Cash on Delivery upon receipt.
+                </p>
+                <p>
+                  Disputes or listing concerns can be reported directly from any product page for administrative review.
+                </p>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setInfoModal(null)}
+                className="px-4 py-2 rounded-xl bg-[#174B35] text-white text-xs font-semibold hover:bg-[#123c2a] transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   </AndroidDeviceShell>
 );

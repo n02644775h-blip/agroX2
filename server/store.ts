@@ -48,12 +48,20 @@ class MarketplaceStore {
   private adRequests: AdRequest[] = [...INITIAL_AD_REQUESTS];
   private mediaPosts: MediaPost[] = [...INITIAL_MEDIA_POSTS];
   private buyerRequests: BuyerRequest[] = [...INITIAL_BUYER_REQUESTS];
+  private deletedUserIds: Set<string> = new Set();
+  private deletedEmails: Set<string> = new Set();
   private favorites: Record<string, string[]> = {
     'buyer-1': ['prod-1', 'prod-2', 'prod-5'],
     'buyer-2': ['prod-3', 'prod-4']
   };
 
   // --- Auth & Users ---
+  isAccountDeleted(id?: string | null, email?: string | null): boolean {
+    if (id && this.deletedUserIds.has(id)) return true;
+    if (email && this.deletedEmails.has(email.trim().toLowerCase())) return true;
+    return false;
+  }
+
   getUsers(): User[] {
     return this.users;
   }
@@ -143,6 +151,98 @@ class MarketplaceStore {
     }
 
     return matchedUser;
+  }
+
+  getActiveFarmerOrders(farmerId: string): Order[] {
+    return this.orders.filter(o => {
+      const involvesFarmer =
+        o.farmerId === farmerId || o.items.some(item => item.farmerId === farmerId);
+      if (!involvesFarmer) return false;
+      const isClosed = ['done', 'completed', 'cancelled', 'rejected'].includes(o.status);
+      const hasPendingPaymentVerification = o.paymentStatus === 'pending_verification';
+      return !isClosed || hasPendingPaymentVerification;
+    });
+  }
+
+  deleteUserAccount(userId: string): {
+    success: boolean;
+    error?: string;
+    activeOrderNumbers?: string[];
+  } {
+    const existing = this.getUserById(userId);
+    const isSeller =
+      existing?.role === 'farmer' ||
+      existing?.role === 'fodder_supplier' ||
+      this.orders.some(o => o.farmerId === userId);
+
+    if (isSeller) {
+      const blockingOrders = this.getActiveFarmerOrders(userId);
+      if (blockingOrders.length > 0) {
+        return {
+          success: false,
+          error: `You currently have ${blockingOrders.length} active or unverified order(s) (${blockingOrders.map(o => o.orderNumber).join(', ')}). Please complete, deliver, or cancel open orders before permanently deleting your account.`,
+          activeOrderNumbers: blockingOrders.map(o => o.orderNumber)
+        };
+      }
+    }
+
+    if (existing?.email) {
+      this.deletedEmails.add(existing.email.trim().toLowerCase());
+    }
+    this.deletedUserIds.add(userId);
+
+    // Anonymize historical transaction records while preserving financial/audit logs
+    const now = new Date().toISOString();
+    this.orders = this.orders.map(order => {
+      if (order.buyerId === userId) {
+        return {
+          ...order,
+          buyerName: 'Deleted User',
+          buyerEmail: '',
+          buyerPhone: '',
+          deliveryAddress: order.deliveryAddress ? 'Redacted (Account Deleted)' : undefined,
+          deliveryLocation: order.deliveryLocation
+            ? {
+                mode: order.deliveryLocation.mode,
+                city: order.deliveryLocation.city,
+                formattedAddress: 'Redacted (Account Deleted)'
+              }
+            : undefined,
+          buyerNotes: '',
+          updatedAt: now
+        };
+      }
+      if (order.farmerId === userId) {
+        return {
+          ...order,
+          farmerName: 'Former Producer',
+          farmerPaymentDetails: undefined,
+          updatedAt: now
+        };
+      }
+      return order;
+    });
+
+    // Remove user's products, media posts, ad requests, buyer requests, notifications, and favorites
+    this.products = this.products.filter(p => p.farmerId !== userId);
+    this.mediaPosts = this.mediaPosts.filter(p => p.farmerId !== userId);
+    this.adRequests = this.adRequests.filter(a => a.farmerId !== userId);
+    this.buyerRequests = this.buyerRequests.filter(r => r.buyerId !== userId);
+    this.notifications = this.notifications.filter(n => n.userId !== userId);
+    delete this.favorites[userId];
+
+    // Anonymize participant display info in existing conversations
+    this.conversations = this.conversations.map(conv => ({
+      ...conv,
+      participants: conv.participants.map(p =>
+        p.id === userId ? { ...p, name: 'Deleted User', avatar: '', farmName: undefined } : p
+      )
+    }));
+
+    // Remove user profile
+    this.users = this.users.filter(u => u.id !== userId);
+
+    return { success: true };
   }
 
   // --- Categories ---
@@ -408,6 +508,9 @@ class MarketplaceStore {
 
     order.status = status;
     order.updatedAt = now;
+    if (status === 'done' || status === 'completed') {
+      order.completedAt = now;
+    }
     if (pickupTimeWindow !== undefined) {
       order.pickupTimeWindow = pickupTimeWindow;
       if (order.pickupLocation) {
@@ -547,38 +650,94 @@ class MarketplaceStore {
   }
 
   // --- Reviews ---
-  getReviews(farmerId?: string, productId?: string): Review[] {
+  getReviews(farmerId?: string, productId?: string, buyerId?: string): Review[] {
     let list = [...this.reviews];
     if (farmerId) list = list.filter(r => r.farmerId === farmerId);
     if (productId) list = list.filter(r => r.productId === productId);
+    if (buyerId) list = list.filter(r => r.buyerId === buyerId);
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
-  createReview(reviewData: Omit<Review, 'id' | 'createdAt'>): Review {
-    const id = `rev-${Date.now()}`;
-    const now = new Date().toISOString();
-    const newReview: Review = { ...reviewData, id, createdAt: now };
-    this.reviews.unshift(newReview);
-
-    // Update order status if orderId provided
-    if (reviewData.orderId) {
-      const order = this.getOrderById(reviewData.orderId);
-      if (order) order.isReviewed = true;
+  createReview(
+    reviewData: Omit<Review, 'id' | 'createdAt'> & { orderStatus?: string }
+  ): Review {
+    const numRating = Math.min(5, Math.max(1, Math.round(Number(reviewData.rating))));
+    if (!Number.isFinite(numRating) || numRating < 1 || numRating > 5) {
+      throw new Error('INVALID_RATING');
     }
 
-    // Update Farmer rating
+    const existingOrder = reviewData.orderId ? this.getOrderById(reviewData.orderId) : undefined;
+    if (existingOrder) {
+      if (existingOrder.buyerId !== reviewData.buyerId) {
+        throw new Error('FORBIDDEN_BUYER');
+      }
+      if (existingOrder.status !== 'done' && existingOrder.status !== 'completed') {
+        throw new Error('ORDER_NOT_DONE');
+      }
+    } else if (
+      reviewData.orderStatus &&
+      reviewData.orderStatus !== 'done' &&
+      reviewData.orderStatus !== 'completed'
+    ) {
+      throw new Error('ORDER_NOT_DONE');
+    }
+
+    const alreadyRated = this.reviews.some(
+      r => r.orderId === reviewData.orderId && r.farmerId === reviewData.farmerId
+    );
+    if (alreadyRated || existingOrder?.isReviewed) {
+      throw new Error('DUPLICATE_REVIEW');
+    }
+
+    const id = `rev-${reviewData.orderId || Date.now()}`;
+    const now = new Date().toISOString();
+    const cleanComment = (reviewData.comment || '').trim();
+    const ratingLabels: Record<number, string> = {
+      1: '1 Star – Very Poor',
+      2: '2 Stars – Poor',
+      3: '3 Stars – Average',
+      4: '4 Stars – Good',
+      5: '5 Stars – Excellent'
+    };
+
+    const newReview: Review = {
+      ...reviewData,
+      id,
+      orderNumber: existingOrder?.orderNumber || reviewData.orderNumber,
+      rating: numRating,
+      ratingLabel: reviewData.ratingLabel || ratingLabels[numRating],
+      comment: cleanComment,
+      createdAt: now
+    };
+    this.reviews.unshift(newReview);
+
+    // Update order record
+    if (existingOrder) {
+      existingOrder.isReviewed = true;
+      existingOrder.rating = numRating;
+      existingOrder.reviewComment = cleanComment;
+      existingOrder.ratedAt = now;
+    }
+
+    // Recompute real Farmer rating
     const farmerReviews = this.reviews.filter(r => r.farmerId === reviewData.farmerId);
-    const avgFarmerRating = farmerReviews.reduce((sum, r) => sum + r.rating, 0) / farmerReviews.length;
+    const avgFarmerRating =
+      farmerReviews.length > 0
+        ? farmerReviews.reduce((sum, r) => sum + r.rating, 0) / farmerReviews.length
+        : 0;
     const farmer = this.getUserById(reviewData.farmerId);
     if (farmer?.farmerProfile) {
       farmer.farmerProfile.rating = Number(avgFarmerRating.toFixed(1));
       farmer.farmerProfile.totalReviews = farmerReviews.length;
     }
 
-    // Update Product rating
+    // Recompute Product rating
     if (reviewData.productId) {
       const prodReviews = this.reviews.filter(r => r.productId === reviewData.productId);
-      const avgProdRating = prodReviews.reduce((sum, r) => sum + r.rating, 0) / prodReviews.length;
+      const avgProdRating =
+        prodReviews.length > 0
+          ? prodReviews.reduce((sum, r) => sum + r.rating, 0) / prodReviews.length
+          : 0;
       this.updateProduct(reviewData.productId, {
         rating: Number(avgProdRating.toFixed(1)),
         reviewsCount: prodReviews.length
@@ -586,14 +745,18 @@ class MarketplaceStore {
     }
 
     // Notify farmer
+    const reviewSnippet = cleanComment
+      ? `"${cleanComment.substring(0, 80)}${cleanComment.length > 80 ? '...' : ''}"`
+      : `Rated ${ratingLabels[numRating]}.`;
     this.createNotification({
       userId: reviewData.farmerId,
-      title: `New Review Received (${reviewData.rating} Stars)`,
-      message: `${reviewData.buyerName} left a review: "${reviewData.comment.substring(0, 80)}..."`,
-      type: 'system',
-      link: `/farmer/${reviewData.farmerId}`,
+      title: `New ${numRating}-Star Order Rating (${newReview.orderNumber || 'Order'})`,
+      message: `${reviewData.buyerName} rated their completed order ${numRating}/5: ${reviewSnippet}`,
+      type: 'order',
+      link: `/orders/${reviewData.orderId}`,
       read: false,
-      createdAt: now
+      createdAt: now,
+      metadata: { orderId: reviewData.orderId, rating: numRating }
     });
 
     return newReview;
@@ -1140,11 +1303,15 @@ class MarketplaceStore {
     const farmerProducts = this.products.filter(p => p.farmerId === farmerId);
     const farmerOrders = this.orders.filter(o => o.farmerId === farmerId);
     const totalSales = farmerOrders
-      .filter(o => o.status === 'completed' || o.status === 'out_for_delivery' || o.status === 'ready_for_collection')
+      .filter(o =>
+        ['done', 'completed', 'delivering', 'out_for_delivery', 'ready_for_pickup', 'ready_for_collection'].includes(
+          o.status
+        )
+      )
       .reduce((sum, o) => sum + o.totalAmount, 0);
 
-    const pendingOrdersCount = farmerOrders.filter(o => o.status === 'pending').length;
-    const completedOrdersCount = farmerOrders.filter(o => o.status === 'completed').length;
+    const pendingOrdersCount = farmerOrders.filter(o => o.status === 'received' || o.status === 'pending').length;
+    const completedOrdersCount = farmerOrders.filter(o => o.status === 'done' || o.status === 'completed').length;
     const activeListingsCount = farmerProducts.filter(p => p.availability === 'available' || p.availability === 'low_stock').length;
 
     // Daily/monthly sales grouping for charts

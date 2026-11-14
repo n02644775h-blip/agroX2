@@ -5,6 +5,10 @@ import {
   saveFirebasePost,
   deleteFirebasePost
 } from '../services/firebasePosts';
+import {
+  syncServerMediaToFirebaseStorage,
+  deleteFirebaseStorageFile
+} from '../services/firebaseStorage';
 import { MediaPost, MediaPostItem, Product, ProductUnit, User } from '../types';
 import {
   ImagePlus,
@@ -29,10 +33,19 @@ interface FarmerPostsTabProps {
   products: Product[];
 }
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
-const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm'];
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/heic-sequence',
+  'image/heif-sequence'
+];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v'];
 
 const UNITS: ProductUnit[] = [
   'kg',
@@ -62,6 +75,8 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
   const [mediaItems, setMediaItems] = useState<MediaPostItem[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingFileName, setUploadingFileName] = useState('');
+  const [uploadStatusNote, setUploadStatusNote] = useState('');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const [caption, setCaption] = useState('');
   const [description, setDescription] = useState('');
@@ -181,11 +196,8 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
     }
   };
 
-  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
-    e.target.value = '';
+  const processUploadedFiles = async (files: File[]) => {
     if (files.length === 0) return;
-
     setErrorMsg('');
 
     if (mediaItems.length + files.length > 6) {
@@ -197,51 +209,104 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
       const mime = (file.type || '').toLowerCase();
       const lowerName = file.name.toLowerCase();
       const isImage =
-        ALLOWED_IMAGE_TYPES.includes(mime) || /\.(jpg|jpeg|png|webp)$/.test(lowerName);
-      const isVideo = ALLOWED_VIDEO_TYPES.includes(mime) || /\.(mp4|webm)$/.test(lowerName);
+        ALLOWED_IMAGE_TYPES.includes(mime) || /\.(jpg|jpeg|png|webp|heic|heif)$/.test(lowerName);
+      const isVideo =
+        ALLOWED_VIDEO_TYPES.includes(mime) || /\.(mp4|webm|mov)$/.test(lowerName);
 
       if (!isImage && !isVideo) {
         setErrorMsg(
-          `Unsupported file "${file.name}". Please upload JPG, PNG, WebP images or MP4, WebM videos.`
+          `Unsupported file "${file.name}". Supported formats: JPG, JPEG, PNG, WebP, HEIC/HEIF images and MP4, WebM, MOV videos.`
         );
         return;
       }
 
       if (isImage && file.size > MAX_IMAGE_BYTES) {
-        setErrorMsg(`Image "${file.name}" exceeds the 8MB limit.`);
+        setErrorMsg(`Image "${file.name}" exceeds the 15MB limit.`);
         return;
       }
 
       if (isVideo && file.size > MAX_VIDEO_BYTES) {
-        setErrorMsg(`Video "${file.name}" exceeds the 25MB limit.`);
+        setErrorMsg(`Video "${file.name}" exceeds the 50MB limit.`);
         return;
       }
     }
 
     for (const file of files) {
+      const lowerName = file.name.toLowerCase();
+      const needsServerConvert =
+        /\.(heic|heif|mov)$/.test(lowerName) ||
+        ['image/heic', 'image/heif', 'video/quicktime'].includes((file.type || '').toLowerCase());
       try {
         setUploadingFileName(file.name);
+        setUploadStatusNote(
+          needsServerConvert
+            ? 'Uploading & converting for web playback...'
+            : 'Uploading media...'
+        );
         setUploadProgress(5);
-        const uploaded = await api.uploadMediaFile(file, percent => {
+
+        const uploaded = await api.uploadMediaFile(file, (percent) => {
           setUploadProgress(percent);
+          if (percent >= 99 && needsServerConvert) {
+            setUploadStatusNote('Optimizing HEIC / MOV format for web browsers...');
+          }
         });
-        setMediaItems(prev => [
+
+        let finalUrl = uploaded.url;
+        let storagePath: string | undefined;
+
+        // Sync converted/processed asset to Firebase Storage when Firebase Auth is active
+        const syncedStorage = await syncServerMediaToFirebaseStorage(
+          uploaded.url,
+          `showcase/${user.id}/${Date.now()}_${uploaded.fileName}`,
+          uploaded.mimeType
+        ).catch(() => null);
+        if (syncedStorage?.downloadUrl) {
+          finalUrl = syncedStorage.downloadUrl;
+          storagePath = syncedStorage.storagePath;
+        }
+
+        setMediaItems((prev) => [
           ...prev,
           {
-            url: uploaded.url,
+            url: finalUrl,
+            thumbnailUrl: uploaded.thumbnailUrl,
             type: uploaded.type,
             mimeType: uploaded.mimeType,
-            fileName: uploaded.fileName
+            fileName: uploaded.fileName,
+            convertedFrom: uploaded.convertedFrom,
+            durationSec: uploaded.durationSec,
+            storagePath,
+            size: uploaded.size
           }
         ]);
       } catch (err: any) {
-        setErrorMsg(err?.message || `Failed to upload ${file.name}.`);
+        setErrorMsg(
+          err?.message ||
+            `Failed to process "${file.name}". The file may be corrupted or in an unsupported codec.`
+        );
         break;
       } finally {
         setUploadProgress(null);
         setUploadingFileName('');
+        setUploadStatusNote('');
       }
     }
+  };
+
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = '';
+    await processUploadedFiles(files);
+  };
+
+  const handleDropFiles = async (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    if (uploadProgress !== null) return;
+    const files: File[] = e.dataTransfer?.files ? (Array.from(e.dataTransfer.files) as File[]) : [];
+    await processUploadedFiles(files);
   };
 
   const parseHashtags = (raw: string): string[] => {
@@ -338,6 +403,14 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
 
   const handleDelete = async (postId: string) => {
     try {
+      const targetPost = posts.find(p => p.id === postId);
+      if (targetPost?.media) {
+        for (const m of targetPost.media) {
+          if (m.storagePath) {
+            await deleteFirebaseStorageFile(m.storagePath);
+          }
+        }
+      }
       await api.deleteMediaPost(postId, user.id).catch(() => {});
       await deleteFirebasePost(postId);
       setPosts(prev => prev.filter(p => p.id !== postId));
@@ -426,26 +499,43 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold text-stone-700">
-                Photos or Videos * (JPG, PNG, WebP ≤8MB • MP4, WebM ≤25MB)
+                Photos or Videos * (JPG, PNG, WebP, HEIC/HEIF ≤15MB • MP4, WebM, MOV ≤50MB)
               </label>
               <span className="text-[11px] text-stone-500">{mediaItems.length}/6 uploaded</span>
             </div>
 
-            <label className="flex flex-col items-center justify-center gap-2 p-5 rounded-2xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50 cursor-pointer transition-colors text-center">
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingOver(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingOver(false);
+              }}
+              onDrop={handleDropFiles}
+              className={`flex flex-col items-center justify-center gap-2 p-5 rounded-2xl border-2 border-dashed cursor-pointer transition-colors text-center ${
+                isDraggingOver
+                  ? 'border-emerald-600 bg-emerald-100/70'
+                  : 'border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50'
+              }`}
+            >
               <div className="flex items-center gap-2 text-emerald-700">
                 <ImagePlus className="w-5 h-5" />
                 <Video className="w-5 h-5" />
               </div>
               <span className="text-xs font-bold text-emerald-900">
-                Click to select single or multiple photos / videos
+                Drag &amp; drop or click to select photos / videos
               </span>
               <span className="text-[11px] text-stone-500">
-                Supports carousel galleries and farm video clips
+                Supports iPhone HEIC/HEIF &amp; MOV (auto-converted for instant web playback)
               </span>
               <input
                 type="file"
                 multiple
-                accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
+                accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,.heic,.heif,video/mp4,video/webm,video/quicktime,.mov"
                 onChange={handleMediaUpload}
                 className="hidden"
                 disabled={uploadProgress !== null}
@@ -455,7 +545,9 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
             {uploadProgress !== null && (
               <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-semibold text-stone-700">
-                  <span className="truncate">Uploading {uploadingFileName}...</span>
+                  <span className="truncate">
+                    {uploadStatusNote || 'Uploading'} {uploadingFileName}...
+                  </span>
                   <span className="tabular-nums text-emerald-700">{uploadProgress}%</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-stone-200 overflow-hidden">
@@ -477,8 +569,11 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
                     {m.type === 'video' ? (
                       <video
                         src={m.url}
+                        poster={m.thumbnailUrl}
+                        controls
                         muted
                         playsInline
+                        preload="metadata"
                         className="w-full h-full object-cover"
                       />
                     ) : (
@@ -490,9 +585,10 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
                     )}
                     <button
                       type="button"
-                      onClick={() =>
-                        setMediaItems(prev => prev.filter((_, i) => i !== idx))
-                      }
+                      onClick={() => {
+                        if (m.storagePath) deleteFirebaseStorageFile(m.storagePath);
+                        setMediaItems(prev => prev.filter((_, i) => i !== idx));
+                      }}
                       className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
                       aria-label="Remove media"
                     >
@@ -500,7 +596,12 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
                     </button>
                     {m.type === 'video' && (
                       <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
-                        VIDEO
+                        {m.convertedFrom ? `${m.convertedFrom.toUpperCase()}→MP4` : 'VIDEO'}
+                      </span>
+                    )}
+                    {m.type === 'image' && m.convertedFrom && (
+                      <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-white text-[10px] font-bold">
+                        {m.convertedFrom.toUpperCase()}→JPG
                       </span>
                     )}
                   </div>
@@ -690,9 +791,11 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
                   {leadMedia?.type === 'video' ? (
                     <video
                       src={leadMedia.url}
+                      poster={leadMedia.thumbnailUrl}
                       controls
                       muted
                       playsInline
+                      preload="metadata"
                       className="w-full h-full object-cover"
                     />
                   ) : leadMedia ? (

@@ -2,13 +2,35 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { store } from './server/store';
 import { User, Product, Order, Review, Announcement, Report, ProductCategory } from './src/types';
 
+const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function extractAuthUserId(req: Request): string | null {
+  const cookies = parseCookies(req);
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const token = authHeader.replace('Bearer ', '').trim();
+    const parts = token.split('_');
+    if (parts[0] === 'token' && parts.length >= 2) {
+      return parts[1];
+    }
+    return parts[1] || token;
+  }
+  if (cookies.agrox_uid) return cookies.agrox_uid;
+  if (cookies.agriconnect_token) {
+    const parts = cookies.agriconnect_token.split('_');
+    return parts[1] || cookies.agriconnect_token;
+  }
+  return null;
+}
 
 function parseCookies(req: Request): Record<string, string> {
   const list: Record<string, string> = {};
@@ -30,17 +52,20 @@ async function startServer() {
   const PORT = 3000;
 
   const uploadsDir = path.join(process.cwd(), 'uploads');
+  const tmpUploadsDir = path.join(uploadsDir, '_tmp');
   fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.mkdirSync(tmpUploadsDir, { recursive: true });
   app.use('/uploads', express.static(uploadsDir));
 
   // Direct binary upload route (mounted before express.json so raw payloads stream cleanly)
   app.post(
     '/api/media/upload',
     express.raw({
-      limit: '28mb',
+      limit: '60mb',
       type: ['image/*', 'video/*', 'application/octet-stream']
     }),
-    (req: Request, res: Response) => {
+    async (req: Request, res: Response) => {
+      const tempFiles: string[] = [];
       try {
         const buffer = req.body as Buffer;
         if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
@@ -51,53 +76,271 @@ async function startServer() {
         const rawHeaderName = decodeURIComponent(String(req.headers['x-file-name'] || 'upload'));
         const extFromName = path.extname(rawHeaderName).toLowerCase();
 
-        const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-        const allowedVideoTypes = ['video/mp4', 'video/webm'];
+        const allowedImageTypes = [
+          'image/jpeg',
+          'image/jpg',
+          'image/png',
+          'image/webp',
+          'image/heic',
+          'image/heif',
+          'image/heic-sequence',
+          'image/heif-sequence'
+        ];
+        const allowedVideoTypes = [
+          'video/mp4',
+          'video/webm',
+          'video/quicktime',
+          'video/x-m4v'
+        ];
+
+        const isHeic =
+          rawHeaderType.includes('heic') ||
+          rawHeaderType.includes('heif') ||
+          extFromName === '.heic' ||
+          extFromName === '.heif';
+        const isMov =
+          rawHeaderType === 'video/quicktime' || extFromName === '.mov';
+
         const isImage =
+          isHeic ||
           allowedImageTypes.includes(rawHeaderType) ||
-          ['.jpg', '.jpeg', '.png', '.webp'].includes(extFromName);
+          ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'].includes(extFromName);
         const isVideo =
-          allowedVideoTypes.includes(rawHeaderType) ||
-          ['.mp4', '.webm'].includes(extFromName);
+          !isImage &&
+          (isMov ||
+            allowedVideoTypes.includes(rawHeaderType) ||
+            ['.mp4', '.webm', '.mov', '.m4v'].includes(extFromName));
 
         if (!isImage && !isVideo) {
           return res.status(400).json({
-            error: 'Unsupported media format. Allowed: JPG, PNG, WebP images and MP4, WebM videos.'
+            error:
+              'Unsupported media format. Allowed: JPG, PNG, WebP, HEIC/HEIF images and MP4, WebM, MOV videos.'
           });
         }
 
-        if (isImage && buffer.length > 8 * 1024 * 1024) {
-          return res.status(400).json({ error: 'Image size exceeds the 8MB limit.' });
+        if (isImage && buffer.length > 15 * 1024 * 1024) {
+          return res.status(400).json({ error: 'Image size exceeds the 15MB limit.' });
         }
-        if (isVideo && buffer.length > 25 * 1024 * 1024) {
-          return res.status(400).json({ error: 'Video size exceeds the 25MB limit.' });
+        if (isVideo && buffer.length > 50 * 1024 * 1024) {
+          return res.status(400).json({ error: 'Video size exceeds the 50MB limit.' });
         }
 
-        const safeExt =
-          extFromName && ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.webm'].includes(extFromName)
+        const tokenId = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+        const safeBase =
+          path
+            .basename(rawHeaderName, extFromName)
+            .replace(/[^a-zA-Z0-9_-]/g, '_')
+            .slice(0, 40) || 'media';
+
+        if (isImage) {
+          const inputExt = extFromName || (isHeic ? '.heic' : '.jpg');
+          const tmpInputPath = path.join(tmpUploadsDir, `${tokenId}-${safeBase}${inputExt}`);
+          fs.writeFileSync(tmpInputPath, buffer);
+          tempFiles.push(tmpInputPath);
+
+          if (isHeic) {
+            const outputFileName = `${tokenId}-${safeBase}.jpg`;
+            const destPath = path.join(uploadsDir, outputFileName);
+            try {
+              await execFileAsync(
+                'convert',
+                [tmpInputPath, '-auto-orient', '-strip', '-quality', '88', destPath],
+                { timeout: 30000 }
+              );
+              const stat = fs.statSync(destPath);
+              return res.status(201).json({
+                url: `/uploads/${outputFileName}`,
+                type: 'image',
+                mimeType: 'image/jpeg',
+                fileName: `${safeBase}.jpg`,
+                originalMimeType: rawHeaderType || 'image/heic',
+                convertedFrom: 'heic',
+                converted: true,
+                size: stat.size
+              });
+            } catch (convErr: any) {
+              console.error('HEIC conversion failed:', convErr?.stderr || convErr?.message);
+              return res.status(400).json({
+                error:
+                  'Could not process this HEIC/HEIF image. Please check that the file is not corrupted and try again.'
+              });
+            }
+          }
+
+          // Standard JPG / PNG / WebP: validate image file integrity
+          try {
+            await execFileAsync('identify', [tmpInputPath], { timeout: 10000 });
+          } catch {
+            return res.status(400).json({
+              error: 'The selected image file appears corrupted or invalid.'
+            });
+          }
+
+          const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(extFromName)
             ? extFromName
-            : isVideo
-              ? rawHeaderType.includes('webm') ? '.webm' : '.mp4'
-              : rawHeaderType.includes('png') ? '.png' : rawHeaderType.includes('webp') ? '.webp' : '.jpg';
+            : rawHeaderType.includes('png')
+            ? '.png'
+            : rawHeaderType.includes('webp')
+            ? '.webp'
+            : '.jpg';
+          const storedFileName = `${tokenId}-${safeBase}${safeExt}`;
+          const destPath = path.join(uploadsDir, storedFileName);
+          fs.writeFileSync(destPath, buffer);
 
-        const safeBase = path
-          .basename(rawHeaderName, extFromName)
-          .replace(/[^a-zA-Z0-9_-]/g, '_')
-          .slice(0, 40) || 'media';
-        const storedFileName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${safeBase}${safeExt}`;
-        const destPath = path.join(uploadsDir, storedFileName);
-        fs.writeFileSync(destPath, buffer);
+          return res.status(201).json({
+            url: `/uploads/${storedFileName}`,
+            type: 'image',
+            mimeType:
+              rawHeaderType && rawHeaderType !== 'application/octet-stream'
+                ? rawHeaderType
+                : safeExt === '.png'
+                ? 'image/png'
+                : safeExt === '.webp'
+                ? 'image/webp'
+                : 'image/jpeg',
+            fileName: rawHeaderName,
+            size: buffer.length
+          });
+        }
 
+        // Video upload & compatibility processing (MP4, WebM, MOV)
+        const inputVideoExt = extFromName || (isMov ? '.mov' : rawHeaderType.includes('webm') ? '.webm' : '.mp4');
+        const tmpVideoPath = path.join(tmpUploadsDir, `${tokenId}-${safeBase}${inputVideoExt}`);
+        fs.writeFileSync(tmpVideoPath, buffer);
+        tempFiles.push(tmpVideoPath);
+
+        let probeData: any = null;
+        try {
+          const { stdout } = await execFileAsync(
+            'ffprobe',
+            ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', tmpVideoPath],
+            { timeout: 15000 }
+          );
+          probeData = JSON.parse(stdout || '{}');
+        } catch {
+          return res.status(400).json({
+            error: 'Unable to inspect video file. The file may be corrupted or not a valid MP4, WebM, or MOV video.'
+          });
+        }
+
+        const streams = Array.isArray(probeData?.streams) ? probeData.streams : [];
+        const videoStream = streams.find((s: any) => s.codec_type === 'video');
+        if (!videoStream) {
+          return res.status(400).json({
+            error: 'No video stream found inside the uploaded file.'
+          });
+        }
+
+        const audioStream = streams.find((s: any) => s.codec_type === 'audio');
+        const videoCodec = String(videoStream.codec_name || '').toLowerCase();
+        const durationSec = probeData?.format?.duration
+          ? Math.round(Number(probeData.format.duration) * 10) / 10
+          : undefined;
+
+        const isWebm = inputVideoExt === '.webm' && (videoCodec === 'vp8' || videoCodec === 'vp9' || videoCodec === 'av1');
+        const needsTranscode =
+          isMov ||
+          inputVideoExt === '.m4v' ||
+          (!isWebm && videoCodec !== 'h264');
+
+        let finalVideoFileName = `${tokenId}-${safeBase}${isWebm ? '.webm' : '.mp4'}`;
+        const finalVideoPath = path.join(uploadsDir, finalVideoFileName);
+        let finalMimeType = isWebm ? 'video/webm' : 'video/mp4';
+        let converted = false;
+
+        if (needsTranscode) {
+          finalVideoFileName = `${tokenId}-${safeBase}.mp4`;
+          const transcodeDest = path.join(uploadsDir, finalVideoFileName);
+          const ffmpegArgs = [
+            '-y',
+            '-i',
+            tmpVideoPath,
+            '-c:v',
+            'libx264',
+            '-preset',
+            'fast',
+            '-crf',
+            '24',
+            '-pix_fmt',
+            'yuv420p',
+            '-movflags',
+            '+faststart'
+          ];
+          if (audioStream) {
+            ffmpegArgs.push('-c:a', 'aac', '-b:a', '128k');
+          } else {
+            ffmpegArgs.push('-an');
+          }
+          ffmpegArgs.push(transcodeDest);
+
+          try {
+            await execFileAsync('ffmpeg', ffmpegArgs, { timeout: 120000 });
+            finalMimeType = 'video/mp4';
+            converted = true;
+          } catch (transcodeErr: any) {
+            console.error('MOV/Video transcoding failed:', transcodeErr?.stderr || transcodeErr?.message);
+            return res.status(400).json({
+              error:
+                'Could not convert this video for browser playback. Please verify the file is a valid MOV, MP4, or WebM clip.'
+            });
+          }
+        } else {
+          fs.writeFileSync(finalVideoPath, buffer);
+        }
+
+        // Generate thumbnail poster frame
+        const thumbFileName = `${tokenId}-${safeBase}-thumb.jpg`;
+        const thumbDestPath = path.join(uploadsDir, thumbFileName);
+        let thumbnailUrl: string | undefined;
+        try {
+          await execFileAsync(
+            'ffmpeg',
+            ['-y', '-ss', '00:00:00.5', '-i', path.join(uploadsDir, finalVideoFileName), '-vframes', '1', '-q:v', '3', thumbDestPath],
+            { timeout: 15000 }
+          );
+          if (fs.existsSync(thumbDestPath)) {
+            thumbnailUrl = `/uploads/${thumbFileName}`;
+          }
+        } catch {
+          // Retry at timestamp 0 for very short <0.5s videos
+          try {
+            await execFileAsync(
+              'ffmpeg',
+              ['-y', '-ss', '0', '-i', path.join(uploadsDir, finalVideoFileName), '-vframes', '1', '-q:v', '3', thumbDestPath],
+              { timeout: 15000 }
+            );
+            if (fs.existsSync(thumbDestPath)) {
+              thumbnailUrl = `/uploads/${thumbFileName}`;
+            }
+          } catch {
+            thumbnailUrl = undefined;
+          }
+        }
+
+        const outStat = fs.statSync(path.join(uploadsDir, finalVideoFileName));
         return res.status(201).json({
-          url: `/uploads/${storedFileName}`,
-          type: isVideo ? 'video' : 'image',
-          mimeType: rawHeaderType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          fileName: rawHeaderName,
-          size: buffer.length
+          url: `/uploads/${finalVideoFileName}`,
+          thumbnailUrl,
+          type: 'video',
+          mimeType: finalMimeType,
+          fileName: converted ? `${safeBase}.mp4` : rawHeaderName,
+          originalMimeType: rawHeaderType || (isMov ? 'video/quicktime' : finalMimeType),
+          convertedFrom: isMov ? 'mov' : converted ? videoCodec : undefined,
+          converted,
+          durationSec,
+          size: outStat.size
         });
       } catch (err: any) {
         console.error('Media upload failed:', err);
         return res.status(500).json({ error: err?.message || 'Failed to save uploaded media.' });
+      } finally {
+        for (const f of tempFiles) {
+          try {
+            if (fs.existsSync(f)) fs.unlinkSync(f);
+          } catch {
+            // ignore cleanup errors
+          }
+        }
       }
     }
   );
@@ -131,6 +374,14 @@ async function startServer() {
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
+    }
+
+    if (store.isAccountDeleted(null, email)) {
+      res.setHeader('Set-Cookie', [
+        `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
+        `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
+      ]);
+      return res.status(401).json({ error: 'This account has been permanently deleted.' });
     }
 
     const user = store.getUserByEmail(email);
@@ -373,12 +624,14 @@ async function startServer() {
   app.get('/api/auth/status', (req: Request, res: Response) => {
     const email = (req.query.email as string | undefined)?.trim();
     const uid = (req.query.uid as string | undefined)?.trim();
+    const deleted = store.isAccountDeleted(uid, email);
     const byId = uid ? store.getUserById(uid) : undefined;
     const byEmail = email ? store.getUserByEmail(email) : undefined;
     const suspended = byId?.status === 'suspended' || byEmail?.status === 'suspended';
     return res.json({
       suspended,
-      status: suspended ? 'suspended' : (byId?.status || byEmail?.status || 'unknown')
+      deleted,
+      status: deleted ? 'deleted' : suspended ? 'suspended' : (byId?.status || byEmail?.status || 'unknown')
     });
   });
 
@@ -796,35 +1049,72 @@ async function startServer() {
 
   // --- Reviews ---
   app.get('/api/reviews', (req: Request, res: Response) => {
-    const { farmerId, productId } = req.query;
-    res.json(store.getReviews(farmerId as string, productId as string));
+    const { farmerId, productId, buyerId } = req.query;
+    res.json(store.getReviews(farmerId as string, productId as string, buyerId as string));
   });
 
-  app.post('/api/orders/:id/review', (req: Request, res: Response) => {
-    const { rating, qualityRating, communicationRating, deliveryRating, comment, buyerId, farmerId, productId } = req.body;
+  const handleCreateOrderReview = (req: Request, res: Response) => {
+    const orderId = req.params.id || req.body?.orderId;
+    const {
+      rating,
+      qualityRating,
+      communicationRating,
+      deliveryRating,
+      comment,
+      buyerId,
+      buyerName,
+      buyerAvatar,
+      farmerId,
+      productId,
+      productName,
+      orderNumber,
+      orderStatus
+    } = req.body || {};
 
-    if (!rating || !comment || !buyerId || !farmerId) {
-      return res.status(400).json({ error: 'Rating, comment, buyerId, and farmerId are required' });
+    const numRating = Number(rating);
+    if (!orderId || !Number.isFinite(numRating) || numRating < 1 || numRating > 5 || !buyerId || !farmerId) {
+      return res.status(400).json({ error: 'Order ID, star rating (1-5), buyerId, and farmerId are required.' });
     }
 
     const buyer = store.getUserById(buyerId);
+    try {
+      const review = store.createReview({
+        orderId,
+        orderNumber,
+        productId,
+        productName,
+        farmerId,
+        buyerId,
+        buyerName: buyer?.name || buyerName || 'Verified Buyer',
+        buyerAvatar:
+          buyer?.avatar ||
+          buyerAvatar ||
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+        rating: Math.round(numRating),
+        qualityRating: qualityRating ? parseInt(qualityRating, 10) : undefined,
+        communicationRating: communicationRating ? parseInt(communicationRating, 10) : undefined,
+        deliveryRating: deliveryRating ? parseInt(deliveryRating, 10) : undefined,
+        comment: typeof comment === 'string' ? comment.trim() : '',
+        orderStatus
+      });
 
-    const review = store.createReview({
-      orderId: req.params.id,
-      productId,
-      farmerId,
-      buyerId,
-      buyerName: buyer?.name || 'Verified Buyer',
-      buyerAvatar: buyer?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-      rating: parseInt(rating, 10),
-      qualityRating: qualityRating ? parseInt(qualityRating, 10) : undefined,
-      communicationRating: communicationRating ? parseInt(communicationRating, 10) : undefined,
-      deliveryRating: deliveryRating ? parseInt(deliveryRating, 10) : undefined,
-      comment
-    });
+      return res.status(201).json(review);
+    } catch (err: any) {
+      if (err?.message === 'FORBIDDEN_BUYER') {
+        return res.status(403).json({ error: 'Only the buyer who placed this order can rate it.' });
+      }
+      if (err?.message === 'ORDER_NOT_DONE') {
+        return res.status(400).json({ error: 'Ratings become available only after the order has reached Done status.' });
+      }
+      if (err?.message === 'DUPLICATE_REVIEW') {
+        return res.status(409).json({ error: 'You have already rated this completed order.' });
+      }
+      return res.status(400).json({ error: err?.message || 'Could not submit order rating.' });
+    }
+  };
 
-    res.status(201).json(review);
-  });
+  app.post('/api/orders/:id/review', handleCreateOrderReview);
+  app.post('/api/reviews', handleCreateOrderReview);
 
   // --- Conversations & Messages ---
   app.get('/api/conversations', (req: Request, res: Response) => {
@@ -1075,6 +1365,43 @@ async function startServer() {
     if (!updated) return res.status(404).json({ error: 'User not found' });
     res.json(updated);
   });
+
+  const handleDeleteOwnAccount = (req: Request, res: Response) => {
+    const targetUserId = (req.params.id || req.body?.userId || '').trim();
+    const actingUserId = (extractAuthUserId(req) || req.body?.actingUserId || '').trim();
+
+    if (!targetUserId) {
+      return res.status(400).json({ error: 'User ID is required.' });
+    }
+
+    // Enforce self-only account deletion (prevent deleting another user's account)
+    if (!actingUserId || actingUserId !== targetUserId) {
+      return res.status(403).json({
+        error: 'Unauthorized: you can only permanently delete your own FarmBridge account.'
+      });
+    }
+
+    const result = store.deleteUserAccount(targetUserId);
+    if (!result.success) {
+      return res.status(409).json({
+        error: result.error || 'Cannot delete account while active orders remain open.',
+        activeOrderNumbers: result.activeOrderNumbers || []
+      });
+    }
+
+    res.setHeader('Set-Cookie', [
+      `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
+      `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
+    ]);
+
+    return res.json({
+      success: true,
+      message: 'Your FarmBridge account has been permanently deleted and transaction logs anonymized.'
+    });
+  };
+
+  app.post('/api/account/delete', handleDeleteOwnAccount);
+  app.post('/api/users/:id/delete', handleDeleteOwnAccount);
 
   // --- Advertisements, POP & Hot Deals ---
   const handleGetAds = (req: Request, res: Response) => {

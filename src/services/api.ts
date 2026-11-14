@@ -130,11 +130,11 @@ class ApiService {
     return this.request<{ user: User | null; suspended?: boolean }>('/auth/me');
   }
 
-  async checkUserStatus(params: { uid?: string | null; email?: string | null }): Promise<{ suspended: boolean; status: string }> {
+  async checkUserStatus(params: { uid?: string | null; email?: string | null }): Promise<{ suspended: boolean; deleted?: boolean; status: string }> {
     const query = new URLSearchParams();
     if (params.uid) query.append('uid', params.uid);
     if (params.email) query.append('email', params.email);
-    return this.request<{ suspended: boolean; status: string }>(`/auth/status?${query.toString()}`);
+    return this.request<{ suspended: boolean; deleted?: boolean; status: string }>(`/auth/status?${query.toString()}`);
   }
 
   // --- Categories ---
@@ -359,10 +359,15 @@ class ApiService {
     qualityRating?: number;
     communicationRating?: number;
     deliveryRating?: number;
-    comment: string;
+    comment?: string;
     buyerId: string;
+    buyerName?: string;
+    buyerAvatar?: string;
     farmerId: string;
     productId?: string;
+    productName?: string;
+    orderNumber?: string;
+    orderStatus?: string;
   }): Promise<Review> {
     return this.request<Review>(`/orders/${orderId}/review`, {
       method: 'POST',
@@ -376,11 +381,13 @@ class ApiService {
     qualityRating?: number;
     communicationRating?: number;
     deliveryRating?: number;
-    comment: string;
+    comment?: string;
     buyerId: string;
     farmerId: string;
     productId?: string;
     productName?: string;
+    orderNumber?: string;
+    orderStatus?: string;
     buyerName?: string;
     buyerAvatar?: string;
   }): Promise<Review> {
@@ -388,10 +395,11 @@ class ApiService {
   }
 
   // --- Reviews ---
-  async getReviews(farmerId?: string, productId?: string): Promise<Review[]> {
+  async getReviews(farmerId?: string, productId?: string, buyerId?: string): Promise<Review[]> {
     const params = new URLSearchParams();
     if (farmerId) params.append('farmerId', farmerId);
     if (productId) params.append('productId', productId);
+    if (buyerId) params.append('buyerId', buyerId);
     const query = params.toString() ? `?${params.toString()}` : '';
     return this.request<Review[]>(`/reviews${query}`);
   }
@@ -607,6 +615,13 @@ class ApiService {
     });
   }
 
+  async deleteOwnAccount(userId: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/account/delete', {
+      method: 'POST',
+      body: JSON.stringify({ userId, actingUserId: userId })
+    });
+  }
+
   async getFarmerProfile(id: string): Promise<{ farmer: User; products: Product[]; reviews: Review[] }> {
     return this.request<{ farmer: User; products: Product[]; reviews: Review[] }>(`/farmers/${id}`);
   }
@@ -666,7 +681,17 @@ class ApiService {
   uploadMediaFile(
     file: File,
     onProgress?: (percent: number) => void
-  ): Promise<{ url: string; type: 'image' | 'video'; mimeType: string; fileName: string; size: number }> {
+  ): Promise<{
+    url: string;
+    thumbnailUrl?: string;
+    type: 'image' | 'video';
+    mimeType: string;
+    fileName: string;
+    convertedFrom?: string;
+    converted?: boolean;
+    durationSec?: number;
+    size: number;
+  }> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE}/media/upload`, true);

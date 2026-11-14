@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   User as FirebaseUser,
+  EmailAuthProvider,
+  deleteUser,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
@@ -16,6 +19,7 @@ import {
   getDocFromServer,
   setDoc,
   updateDoc,
+  deleteDoc,
   collection,
   query,
   where,
@@ -23,6 +27,8 @@ import {
   onSnapshot,
   serverTimestamp
 } from 'firebase/firestore';
+import { deleteFirebaseStorageFile } from '../services/firebaseStorage';
+import { normalizeOrderStatus } from '../utils/orderUtils';
 import { auth, db } from '../firebase/config';
 import { getFriendlyAuthErrorMessage } from '../firebase/authErrors';
 import { checkFirestoreUserSuspended } from '../services/firebaseUsers';
@@ -122,6 +128,8 @@ interface AuthContextType {
   loading: boolean;
   suspensionNotice: string | null;
   clearSuspensionNotice: () => void;
+  accountDeletionNotice: string | null;
+  clearAccountDeletionNotice: () => void;
   unreadNotifsCount: number;
   unreadMessagesCount: number;
   notifications: Notification[];
@@ -130,6 +138,7 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<User>;
   loginAdmin: (username: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  deleteAccount: (options?: { password?: string }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   register: (userData: Partial<User>) => Promise<void>; // Backward-compatible alias
   switchDemoRole: (role: UserRole | string) => Promise<void>;
@@ -165,11 +174,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(() => initialPersistedUser);
   const [loading, setLoading] = useState<boolean>(!initialPersistedUser);
   const [suspensionNotice, setSuspensionNotice] = useState<string | null>(null);
+  const [accountDeletionNotice, setAccountDeletionNotice] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
 
   const clearSuspensionNotice = () => setSuspensionNotice(null);
+  const clearAccountDeletionNotice = () => setAccountDeletionNotice(null);
 
   const forceRevokeSuspendedSession = async (uid?: string | null, noticeMessage: string = SUSPENDED_ACCOUNT_MESSAGE) => {
     clearPersistedUserSession(uid || undefined);
@@ -187,8 +198,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const enforceNotSuspended = async (uid?: string | null, email?: string | null): Promise<void> => {
     const [fsSuspended, apiStatus] = await Promise.all([
       checkFirestoreUserSuspended(uid, email),
-      api.checkUserStatus({ uid, email }).catch(() => ({ suspended: false, status: 'unknown' }))
+      api.checkUserStatus({ uid, email }).catch(() => ({ suspended: false, deleted: false, status: 'unknown' }))
     ]);
+
+    if (apiStatus?.deleted) {
+      await forceRevokeSuspendedSession(uid, 'This account has been permanently deleted.');
+      throw new Error('This account has been permanently deleted.');
+    }
 
     if (fsSuspended || apiStatus?.suspended) {
       await forceRevokeSuspendedSession(uid);
@@ -253,6 +269,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn(`User ${uid} is suspended in Firestore. Denying access.`);
           await forceRevokeSuspendedSession(uid);
           throw createSuspendedError();
+        }
+        if (fsData.status === 'deleted') {
+          await forceRevokeSuspendedSession(uid, 'This account has been permanently deleted.');
+          throw new Error('This account has been permanently deleted.');
         }
 
         userStatus = fsData.status || 'active';
@@ -935,6 +955,188 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUnreadMessagesCount(0);
   };
 
+  // 5b. Permanent Account Deletion (Firebase Auth + Firestore + Storage + Backend Store)
+  const deleteAccount = async (options?: { password?: string }): Promise<void> => {
+    if (!user) {
+      throw new Error('You must be signed in to delete your account.');
+    }
+
+    const targetUid = user.id;
+    const isSeller = isSellerRole(user.role);
+
+    // 1. Reauthenticate active Firebase Auth user if password was supplied
+    const fbUser = auth.currentUser;
+    if (fbUser && fbUser.email && options?.password) {
+      const credential = EmailAuthProvider.credential(fbUser.email, options.password);
+      try {
+        await reauthenticateWithCredential(fbUser, credential);
+      } catch (reauthErr: any) {
+        if (reauthErr?.code === 'auth/wrong-password' || reauthErr?.code === 'auth/invalid-credential') {
+          throw new Error('Incorrect password. Please re-enter your current password to confirm deletion.');
+        }
+        throw new Error(getFriendlyAuthErrorMessage(reauthErr));
+      }
+    }
+
+    // 2. Farmer safety guard: check Firestore orders as well as backend orders for open transactions
+    if (isSeller) {
+      const farmerOrdersSnap = await getDocs(
+        query(collection(db, 'orders'), where('farmerId', '==', targetUid))
+      ).catch(() => null);
+      if (farmerOrdersSnap && !farmerOrdersSnap.empty) {
+        const activeOrderNumbers: string[] = [];
+        for (const orderDoc of farmerOrdersSnap.docs) {
+          const data = orderDoc.data() as any;
+          const canonical = normalizeOrderStatus(data?.status, data?.deliveryMethod);
+          const pendingPop = data?.paymentStatus === 'pending_verification';
+          if ((canonical !== 'done' && canonical !== 'cancelled') || pendingPop) {
+            activeOrderNumbers.push(data?.orderNumber || orderDoc.id);
+          }
+        }
+        if (activeOrderNumbers.length > 0) {
+          throw new Error(
+            `Account deletion blocked: you still have ${activeOrderNumbers.length} active or unverified order(s) (${activeOrderNumbers.join(', ')}). Complete or cancel active buyer orders before deleting your account.`
+          );
+        }
+      }
+    }
+
+    // 3. Enforce backend deletion + active-order guard + PII anonymization
+    await api.deleteOwnAccount(targetUid);
+
+    // 4. Clean up user's owned content & storage assets in Cloud Firestore & Firebase Storage
+    try {
+      const postsSnap = await getDocs(
+        query(collection(db, 'mediaPosts'), where('farmerId', '==', targetUid))
+      ).catch(() => null);
+      if (postsSnap && !postsSnap.empty) {
+        for (const pDoc of postsSnap.docs) {
+          const mediaArr = (pDoc.data() as any)?.media;
+          if (Array.isArray(mediaArr)) {
+            for (const m of mediaArr) {
+              if (m?.storagePath) {
+                await deleteFirebaseStorageFile(m.storagePath);
+              }
+            }
+          }
+          await deleteDoc(pDoc.ref).catch(() => {});
+        }
+      }
+
+      const collectionsToDelete: [string, string][] = [
+        ['products', 'farmerId'],
+        ['adRequests', 'farmerId'],
+        ['buyerRequests', 'buyerId'],
+        ['notifications', 'userId']
+      ];
+
+      for (const [colName, fieldName] of collectionsToDelete) {
+        const snap = await getDocs(
+          query(collection(db, colName), where(fieldName, '==', targetUid))
+        ).catch(() => null);
+        if (snap && !snap.empty) {
+          for (const d of snap.docs) {
+            await deleteDoc(d.ref).catch(() => {});
+          }
+        }
+      }
+
+      // 5. Anonymize completed/closed orders in Firestore without erasing transaction records
+      const buyerOrdersSnap = await getDocs(
+        query(collection(db, 'orders'), where('buyerId', '==', targetUid))
+      ).catch(() => null);
+      if (buyerOrdersSnap && !buyerOrdersSnap.empty) {
+        for (const oDoc of buyerOrdersSnap.docs) {
+          const data = oDoc.data() as any;
+          await updateDoc(oDoc.ref, sanitizeForFirestore({
+            buyerName: 'Deleted User',
+            buyerEmail: '',
+            buyerPhone: '',
+            deliveryAddress: data?.deliveryAddress ? 'Redacted (Account Deleted)' : '',
+            deliveryLocation: data?.deliveryLocation
+              ? {
+                  mode: data.deliveryLocation.mode || 'manual',
+                  city: data.deliveryLocation.city || '',
+                  formattedAddress: 'Redacted (Account Deleted)'
+                }
+              : null,
+            buyerNotes: '',
+            updatedAt: serverTimestamp()
+          })).catch(() => {});
+        }
+      }
+
+      const sellerOrdersSnap = await getDocs(
+        query(collection(db, 'orders'), where('farmerId', '==', targetUid))
+      ).catch(() => null);
+      if (sellerOrdersSnap && !sellerOrdersSnap.empty) {
+        for (const oDoc of sellerOrdersSnap.docs) {
+          await updateDoc(oDoc.ref, sanitizeForFirestore({
+            farmerName: 'Former Producer',
+            farmerPaymentDetails: null,
+            updatedAt: serverTimestamp()
+          })).catch(() => {});
+        }
+      }
+
+      // 6. Delete user profile document(s) in Cloud Firestore (or anonymize if rule denies)
+      const userDocRef = doc(db, 'users', targetUid);
+      await deleteDoc(userDocRef).catch(async () => {
+        await setDoc(
+          userDocRef,
+          {
+            uid: targetUid,
+            fullName: 'Deleted User',
+            email: '',
+            phone: '',
+            avatar: '',
+            status: 'deleted',
+            deletedAt: serverTimestamp()
+          },
+          { merge: true }
+        ).catch(() => {});
+      });
+
+      const byUidDocs = await getDocs(
+        query(collection(db, 'users'), where('uid', '==', targetUid))
+      ).catch(() => null);
+      if (byUidDocs && !byUidDocs.empty) {
+        for (const d of byUidDocs.docs) {
+          if (d.id !== targetUid) {
+            await deleteDoc(d.ref).catch(() => {});
+          }
+        }
+      }
+    } catch (fsErr) {
+      console.warn('Firestore cleanup partial warning during account deletion:', fsErr);
+    }
+
+    // 7. Delete Firebase Authentication account (handle requires-recent-login cleanly)
+    if (fbUser && fbUser.uid === targetUid) {
+      try {
+        await deleteUser(fbUser);
+      } catch (delAuthErr: any) {
+        if (delAuthErr?.code === 'auth/requires-recent-login') {
+          throw new Error(
+            'For security, please enter your current password to confirm your identity before permanently deleting your Firebase login.'
+          );
+        }
+        console.warn('Firebase Auth deleteUser warning:', delAuthErr);
+      }
+    }
+
+    // 8. Sign out cleanly, clear local state & redirect notice
+    clearPersistedUserSession(targetUid);
+    try {
+      localStorage.removeItem(`agrox_user_profile_${targetUid}`);
+      localStorage.setItem('agrox_current_view', 'marketplace');
+    } catch {}
+    await logout();
+    setAccountDeletionNotice(
+      'Your FarmBridge account has been permanently deleted and your personal profile has been removed.'
+    );
+  };
+
   // 5. Password Reset
   const resetPassword = async (email: string): Promise<void> => {
     if (!email || !email.trim()) {
@@ -1125,6 +1327,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         suspensionNotice,
         clearSuspensionNotice,
+        accountDeletionNotice,
+        clearAccountDeletionNotice,
         unreadNotifsCount,
         unreadMessagesCount,
         notifications,
@@ -1133,6 +1337,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         loginAdmin,
         logout,
+        deleteAccount,
         resetPassword,
         register,
         switchDemoRole,

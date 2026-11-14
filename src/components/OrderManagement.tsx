@@ -7,6 +7,10 @@ import {
   updateFirebaseOrderPayment
 } from '../services/firebaseOrders';
 import { createFirebaseNotification } from '../services/firebaseNotifications';
+import {
+  subscribeToFirebaseReviews,
+  getRatingLabel
+} from '../services/firebaseReviews';
 import { compressImage } from '../utils/imageCompressor';
 import {
   normalizeOrderStatus,
@@ -15,7 +19,7 @@ import {
   getPaymentMethodLabel,
   getPaymentStatusMeta
 } from '../utils/orderUtils';
-import { Order, OrderStatus, PaymentStatus, isSellerRole } from '../types';
+import { Order, OrderStatus, PaymentStatus, Review, isSellerRole } from '../types';
 import {
   FileText,
   CheckCircle,
@@ -74,6 +78,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
 }) => {
   const { user, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [reviewsByOrderId, setReviewsByOrderId] = useState<Record<string, Review>>({});
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialSelectedOrder?.id || null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'received' | 'packaged' | 'in_progress' | 'done'>('all');
   const [loading, setLoading] = useState<boolean>(true);
@@ -152,9 +157,41 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
       }
     );
 
+    const mergeReviews = (list: Review[]) => {
+      setReviewsByOrderId(prev => {
+        const next = { ...prev };
+        for (const rev of list) {
+          if (rev.orderId) next[rev.orderId] = rev;
+        }
+        return next;
+      });
+    };
+
+    const reviewFilter = isSellerRole(user.role)
+      ? { farmerId: user.id }
+      : user.role === 'admin'
+      ? {}
+      : { buyerId: user.id };
+
+    api
+      .getReviews(
+        isSellerRole(user.role) ? user.id : undefined,
+        undefined,
+        user.role === 'buyer' ? user.id : undefined
+      )
+      .then(list => {
+        if (mounted && Array.isArray(list)) mergeReviews(list);
+      })
+      .catch(() => {});
+
+    const unsubReviews = subscribeToFirebaseReviews(reviewFilter, (fbReviews) => {
+      if (mounted) mergeReviews(fbReviews);
+    });
+
     return () => {
       mounted = false;
       unsub();
+      unsubReviews();
     };
   }, [user?.id, user?.role, authLoading]);
 
@@ -535,15 +572,18 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                       Chat with {isFarmerOwner ? 'Buyer' : 'Seller'}
                     </button>
 
-                    {isBuyerOwner && canonical === 'done' && !selectedOrder.isReviewed && (
-                      <button
-                        onClick={() => onOpenReviewModal(selectedOrder)}
-                        className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-stone-900 font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
-                      >
-                        <Star className="w-4 h-4 fill-stone-900" />
-                        Rate &amp; Review
-                      </button>
-                    )}
+                    {isBuyerOwner &&
+                      canonical === 'done' &&
+                      !selectedOrder.isReviewed &&
+                      !reviewsByOrderId[selectedOrder.id] && (
+                        <button
+                          onClick={() => onOpenReviewModal(selectedOrder)}
+                          className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-stone-900 font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+                        >
+                          <Star className="w-4 h-4 fill-stone-900" />
+                          Rate Your Order
+                        </button>
+                      )}
                   </div>
                 </div>
 
@@ -920,6 +960,89 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                     </div>
                   </div>
                 </div>
+
+                {/* Order Rating & Review Card (Buyer "Your Rating" / Farmer Read-Only "Buyer Rating") */}
+                {canonical === 'done' && (() => {
+                  const matchedReview = reviewsByOrderId[selectedOrder.id];
+                  const ratingVal = matchedReview?.rating ?? selectedOrder.rating;
+                  const commentText = matchedReview?.comment ?? selectedOrder.reviewComment ?? '';
+                  const ratedDate = matchedReview?.createdAt ?? selectedOrder.ratedAt;
+                  const hasRating = typeof ratingVal === 'number' && ratingVal >= 1;
+
+                  if (isBuyerOwner && !hasRating) {
+                    return (
+                      <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-stone-900 text-xs flex items-center gap-1.5">
+                            <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+                            <span>Order Completed — Share Your Feedback</span>
+                          </div>
+                          <p className="text-[11px] text-stone-600">
+                            Let {selectedOrder.farmName} and other buyers know how your order went.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onOpenReviewModal(selectedOrder)}
+                          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-stone-900 font-bold text-xs flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+                        >
+                          <Star className="w-3.5 h-3.5 fill-stone-900" />
+                          <span>Rate Your Order</span>
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2 text-xs">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="font-bold text-stone-900 flex items-center gap-1.5">
+                          <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+                          <span>{isBuyerOwner ? 'Your Rating' : 'Buyer Rating'}</span>
+                        </span>
+                        {hasRating ? (
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[11px]">
+                            {getRatingLabel(ratingVal!)}
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded-full bg-stone-200 text-stone-600 font-bold text-[11px]">
+                            Not Yet Rated
+                          </span>
+                        )}
+                      </div>
+                      {hasRating ? (
+                        <>
+                          <div className="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map(st => (
+                              <Star
+                                key={st}
+                                className={`w-4 h-4 ${
+                                  st <= ratingVal! ? 'fill-amber-400 text-amber-400' : 'text-stone-300'
+                                }`}
+                              />
+                            ))}
+                            {ratedDate && (
+                              <span className="text-[11px] text-stone-400 ml-2">
+                                Submitted {new Date(ratedDate).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                          {commentText ? (
+                            <p className="text-stone-700 bg-white p-3 rounded-xl border border-stone-200/80">
+                              "{commentText}"
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-stone-400 italic">No written review provided.</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-[11px] text-stone-500">
+                          The buyer has not rated this completed order yet.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}

@@ -8,10 +8,10 @@
         "uid": { "type": "string", "description": "Unique identifier matching Firebase Auth UID" },
         "fullName": { "type": "string", "description": "Full display name of user" },
         "email": { "type": "string", "description": "User email address" },
-        "role": { "type": "string", "enum": ["farmer", "buyer", "admin"], "description": "Account role" },
+        "role": { "type": "string", "enum": ["farmer", "fodder_supplier", "buyer", "admin"], "description": "Account role" },
         "phone": { "type": "string", "description": "Contact telephone number" },
         "avatar": { "type": "string", "description": "Profile picture URL" },
-        "status": { "type": "string", "enum": ["active", "suspended", "pending_verification"], "description": "User status" },
+        "status": { "type": "string", "enum": ["active", "suspended", "pending_verification", "deleted"], "description": "User status" },
         "location": { "type": "object", "description": "Geographical location in Zimbabwe" },
         "farmerProfile": { "type": "object", "description": "Farm and producer details" },
         "buyerProfile": { "type": "object", "description": "Buyer preferences" },
@@ -43,9 +43,31 @@
         "buyerId": { "type": "string", "description": "Buyer UID" },
         "farmerId": { "type": "string", "description": "Farmer UID" },
         "totalAmount": { "type": "number", "description": "Total order amount" },
-        "status": { "type": "string", "description": "Current order lifecycle status" }
+        "status": { "type": "string", "description": "Current order lifecycle status" },
+        "completedAt": { "type": "string", "description": "Timestamp when order reached done status" },
+        "isReviewed": { "type": "boolean", "description": "Whether buyer submitted an order rating" },
+        "rating": { "type": "number", "description": "Submitted 1-5 star rating" },
+        "reviewComment": { "type": "string", "description": "Optional buyer written review" },
+        "ratedAt": { "type": "string", "description": "Timestamp when rating was submitted" }
       },
       "required": ["buyerId", "farmerId", "totalAmount", "status"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Completed order rating and optional written review from buyer to farmer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Review ID" },
+        "orderId": { "type": "string", "description": "Completed Order ID" },
+        "orderNumber": { "type": "string", "description": "Human-readable order reference" },
+        "buyerId": { "type": "string", "description": "Buyer UID" },
+        "farmerId": { "type": "string", "description": "Farmer UID" },
+        "rating": { "type": "number", "description": "Star rating (1 to 5)" },
+        "ratingLabel": { "type": "string", "description": "Rating label e.g. 5 Stars – Excellent" },
+        "comment": { "type": "string", "description": "Optional written review" },
+        "createdAt": { "type": "string", "description": "Submission timestamp" }
+      },
+      "required": ["orderId", "buyerId", "farmerId", "rating"]
     },
     "Announcement": {
       "title": "Announcement",
@@ -118,6 +140,10 @@
     "/buyerRequests/{requestId}": {
       "schema": "BuyerRequest",
       "description": "Buyer product sourcing requests"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Completed order buyer ratings and optional written reviews"
     }
   }
 }

@@ -1,14 +1,26 @@
 @import "tailwindcss";
 
+:root {
+  --fb-primary: #174B35;
+  --fb-secondary: #77A987;
+  --fb-bg: #F8FAF7;
+  --fb-border: #E8EEE8;
+  --fb-text: #202B24;
+  --fb-surface: #FFFFFF;
+}
+
 @layer base {
   html {
+    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    scroll-behavior: smooth;
   }
+
   body {
-    background-color: #F4F7F5;
-    color: #1A2E1A;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-color: #F8FAF7;
+    color: #202B24;
+    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
@@ -17,23 +29,36 @@
 .pb-safe {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
 }
+
 .pt-safe {
   padding-top: max(env(safe-area-inset-top, 0px), 12px);
 }
 
-/* Professional Polish Custom subtle scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-track {
-  background: #F4F7F5;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+/* Hide scrollbars on horizontal swipe carousels while preserving touch/wheel scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Subtle scrollbar for vertical lists */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F8FAF7;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D5E0D6;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #77A987;
+}
