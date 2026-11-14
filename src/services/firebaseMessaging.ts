@@ -15,6 +15,7 @@ import { db } from '../firebase/config';
 import { handleFirestoreError, OperationType } from '../firebase/errorHandler';
 import { sanitizeForFirestore } from '../context/AuthContext';
 import { parseFirestoreUser } from './firebaseUsers';
+import { createFirebaseNotification } from './firebaseNotifications';
 import { Conversation, Message, User } from '../types';
 
 export function get1on1ConversationId(userAId: string, userBId: string): string {
@@ -56,7 +57,9 @@ export function parseFirestoreMessage(docId: string, data: any): Message {
     createdAt: createdAtStr,
     read: !!data?.read,
     productId: data?.productId,
-    productSnippet: data?.productSnippet
+    productSnippet: data?.productSnippet,
+    postReference: data?.postReference || undefined,
+    requestReference: data?.requestReference || undefined
   };
 }
 
@@ -82,7 +85,9 @@ export function parseFirestoreConversation(docId: string, data: any): Conversati
     unreadCountFor: data?.unreadCountFor || {},
     productId: data?.productId,
     productName: data?.productName,
-    orderId: data?.orderId
+    orderId: data?.orderId,
+    requestId: data?.requestId,
+    postId: data?.postId
   };
 }
 
@@ -209,6 +214,8 @@ export async function sendFirebaseMessage(
       unit: string;
       image: string;
     };
+    postReference?: Message['postReference'];
+    requestReference?: Message['requestReference'];
   }
 ): Promise<Message> {
   const msgId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -232,6 +239,8 @@ export async function sendFirebaseMessage(
     content: cleanText,
     productId: messageData.productId || null,
     productSnippet: messageData.productSnippet || null,
+    postReference: messageData.postReference || null,
+    requestReference: messageData.requestReference || null,
     read: false,
     createdAt: serverTimestamp()
   };
@@ -271,10 +280,38 @@ export async function sendFirebaseMessage(
     lastMessageTime: serverTimestamp(),
     productId: messageData.productId || null,
     productName: messageData.productSnippet?.name || null,
+    postId: messageData.postReference?.postId || null,
+    requestId: messageData.requestReference?.requestId || null,
     updatedAt: serverTimestamp()
   };
 
   await setDoc(convDocRef, sanitizeForFirestore(convPayload), { merge: true });
+
+  // 3. Create real-time notification in Firestore for recipient
+  const notifType = messageData.postReference
+    ? 'post'
+    : messageData.requestReference
+      ? 'request'
+      : 'message';
+
+  const notifTitle = messageData.postReference
+    ? `New Quote Request from ${messageData.sender.name}`
+    : messageData.requestReference
+      ? `Farmer Response: ${messageData.requestReference.productName}`
+      : `New Message from ${messageData.sender.name}`;
+
+  await createFirebaseNotification({
+    userId: messageData.recipient.id,
+    title: notifTitle,
+    message: cleanText.slice(0, 120),
+    type: notifType,
+    link: `/messages?conv=${conversationId}`,
+    metadata: {
+      conversationId,
+      postId: messageData.postReference?.postId,
+      requestId: messageData.requestReference?.requestId
+    }
+  });
 
   return parseFirestoreMessage(msgId, {
     ...rawMsg,

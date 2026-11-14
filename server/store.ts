@@ -13,7 +13,10 @@ import {
   ProductAvailability,
   AdRequest,
   AdRequestStatus,
-  PaymentStatus
+  PaymentStatus,
+  MediaPost,
+  BuyerRequest,
+  BuyerRequestStatus
 } from '../src/types';
 import {
   INITIAL_USERS,
@@ -26,7 +29,9 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_ANNOUNCEMENTS,
   INITIAL_REPORTS,
-  INITIAL_AD_REQUESTS
+  INITIAL_AD_REQUESTS,
+  INITIAL_MEDIA_POSTS,
+  INITIAL_BUYER_REQUESTS
 } from './data';
 
 class MarketplaceStore {
@@ -41,6 +46,8 @@ class MarketplaceStore {
   private announcements: Announcement[] = [...INITIAL_ANNOUNCEMENTS];
   private reports: Report[] = [...INITIAL_REPORTS];
   private adRequests: AdRequest[] = [...INITIAL_AD_REQUESTS];
+  private mediaPosts: MediaPost[] = [...INITIAL_MEDIA_POSTS];
+  private buyerRequests: BuyerRequest[] = [...INITIAL_BUYER_REQUESTS];
   private favorites: Record<string, string[]> = {
     'buyer-1': ['prod-1', 'prod-2', 'prod-5'],
     'buyer-2': ['prod-3', 'prod-4']
@@ -254,14 +261,32 @@ class MarketplaceStore {
   // --- Orders ---
   getOrders(params?: { userId?: string; role?: string; farmerId?: string; status?: string }): Order[] {
     let list = [...this.orders];
+    const requestedFarmerId =
+      params?.farmerId ||
+      (params?.userId && (params?.role === 'farmer' || params?.role === 'fodder_supplier')
+        ? params.userId
+        : undefined);
+
     if (params?.userId && params?.role === 'buyer') {
       list = list.filter(o => o.buyerId === params.userId);
-    } else if (
-      params?.farmerId ||
-      (params?.userId && (params?.role === 'farmer' || params?.role === 'fodder_supplier'))
-    ) {
-      const fId = params.farmerId || params.userId;
-      list = list.filter(o => o.farmerId === fId);
+    } else if (requestedFarmerId) {
+      list = list
+        .filter(
+          o =>
+            o.farmerId === requestedFarmerId ||
+            o.items.some(item => item.farmerId === requestedFarmerId)
+        )
+        .map(o => {
+          const hasExplicitItemFarmers = o.items.some(i => Boolean(i.farmerId));
+          if (!hasExplicitItemFarmers || o.farmerId === requestedFarmerId) {
+            return o;
+          }
+          const scopedItems = o.items.filter(i => !i.farmerId || i.farmerId === requestedFarmerId);
+          return {
+            ...o,
+            items: scopedItems
+          };
+        });
     }
     if (params?.status && params.status !== 'all') {
       list = list.filter(o => o.status === params.status);
@@ -279,6 +304,12 @@ class MarketplaceStore {
       orderNumber?: string;
     }
   ): Order {
+    if (orderData.id) {
+      const existing = this.orders.find(o => o.id === orderData.id);
+      if (existing) {
+        return existing;
+      }
+    }
     const id = orderData.id || `ord-${Date.now()}`;
     const randNum = Math.floor(1000 + Math.random() * 9000);
     const orderNumber = orderData.orderNumber || `AGC-26-${randNum}`;
@@ -588,7 +619,11 @@ class MarketplaceStore {
     text: string;
     productId?: string;
     productSnippet?: any;
+    postReference?: Message['postReference'];
+    requestReference?: Message['requestReference'];
     orderId?: string;
+    requestId?: string;
+    postId?: string;
     senderName?: string;
     senderAvatar?: string;
     senderRole?: string;
@@ -605,7 +640,6 @@ class MarketplaceStore {
     }
 
     if (!conversation) {
-      // Find existing between these 2 users
       conversation = this.conversations.find(c =>
         c.participants.some(p => p.id === params.senderId) &&
         c.participants.some(p => p.id === params.recipientId)
@@ -645,7 +679,9 @@ class MarketplaceStore {
         },
         productId: params.productId,
         productName: params.productSnippet?.name,
-        orderId: params.orderId
+        orderId: params.orderId,
+        requestId: params.requestId || params.requestReference?.requestId,
+        postId: params.postId || params.postReference?.postId
       };
       this.conversations.unshift(conversation);
     } else {
@@ -656,6 +692,12 @@ class MarketplaceStore {
       if (params.productId && !conversation.productId) conversation.productId = params.productId;
       if (params.productSnippet?.name && !conversation.productName) conversation.productName = params.productSnippet.name;
       if (params.orderId && !conversation.orderId) conversation.orderId = params.orderId;
+      if ((params.requestId || params.requestReference?.requestId) && !conversation.requestId) {
+        conversation.requestId = params.requestId || params.requestReference?.requestId;
+      }
+      if ((params.postId || params.postReference?.postId) && !conversation.postId) {
+        conversation.postId = params.postId || params.postReference?.postId;
+      }
     }
 
     const message: Message = {
@@ -668,22 +710,62 @@ class MarketplaceStore {
       createdAt: now,
       read: false,
       productId: params.productId,
-      productSnippet: params.productSnippet
+      productSnippet: params.productSnippet,
+      postReference: params.postReference,
+      requestReference: params.requestReference
     };
 
     this.messages.push(message);
 
-    // Notify recipient
-    this.createNotification({
-      userId: params.recipientId,
-      title: `New Message from ${senderParticipant.name}`,
-      message: params.text.length > 80 ? params.text.substring(0, 80) + '...' : params.text,
-      type: 'message',
-      link: `/messages/${conversation.id}`,
-      read: false,
-      createdAt: now,
-      metadata: { conversationId: conversation.id }
-    });
+    // If quote inquiry on a community post, increment post counter and notify specifically
+    if (params.postReference?.postId) {
+      const post = this.mediaPosts.find(p => p.id === params.postReference?.postId);
+      if (post) {
+        post.quoteRequestsCount = (post.quoteRequestsCount || 0) + 1;
+      }
+      this.createNotification({
+        userId: params.recipientId,
+        title: `Quote Request from ${senderParticipant.name}`,
+        message: `${senderParticipant.name} requested a quote on your community post: "${params.postReference.productName || params.postReference.caption.slice(0, 60)}"`,
+        type: 'post',
+        link: 'messages',
+        read: false,
+        createdAt: now,
+        metadata: { conversationId: conversation.id, postId: params.postReference.postId }
+      });
+    } else if (params.requestReference?.requestId) {
+      // Farmer responding to a buyer request
+      if (senderParticipant.role === 'farmer' || senderParticipant.role === 'fodder_supplier') {
+        this.markBuyerRequestResponded(
+          params.requestReference.requestId,
+          params.senderId,
+          senderParticipant.farmName || senderParticipant.name,
+          false
+        );
+      }
+      this.createNotification({
+        userId: params.recipientId,
+        title: `Response to Your Request: ${params.requestReference.productName}`,
+        message: `${senderParticipant.farmName || senderParticipant.name}: ${params.text.slice(0, 90)}`,
+        type: 'request',
+        link: 'messages',
+        read: false,
+        createdAt: now,
+        metadata: { conversationId: conversation.id, requestId: params.requestReference.requestId }
+      });
+    } else {
+      // Notify recipient for regular 1-on-1 message
+      this.createNotification({
+        userId: params.recipientId,
+        title: `New Message from ${senderParticipant.name}`,
+        message: params.text.length > 80 ? params.text.substring(0, 80) + '...' : params.text,
+        type: 'message',
+        link: `/messages/${conversation.id}`,
+        read: false,
+        createdAt: now,
+        metadata: { conversationId: conversation.id }
+      });
+    }
 
     return { message, conversation };
   }
@@ -1120,6 +1202,272 @@ class MarketplaceStore {
       recentOrders: this.orders.slice(0, 5),
       recentReports: this.reports.slice(0, 5)
     };
+  }
+
+  // --- FarmBridge Community Media Posts ---
+  getMediaPosts(farmerId?: string): MediaPost[] {
+    let list = [...this.mediaPosts];
+    if (farmerId) {
+      list = list.filter(p => p.farmerId === farmerId);
+    }
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  getMediaPostById(id: string): MediaPost | undefined {
+    return this.mediaPosts.find(p => p.id === id);
+  }
+
+  createMediaPost(
+    data: Omit<MediaPost, 'id' | 'likesCount' | 'likedBy' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      likesCount?: number;
+      likedBy?: string[];
+    }
+  ): MediaPost {
+    const now = new Date().toISOString();
+    const id = data.id || `post-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const existingIdx = this.mediaPosts.findIndex(p => p.id === id);
+    const post: MediaPost = {
+      ...data,
+      id,
+      hashtags: Array.isArray(data.hashtags) ? data.hashtags : [],
+      media: Array.isArray(data.media) ? data.media : [],
+      likesCount: data.likesCount ?? 0,
+      likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
+      quoteRequestsCount: data.quoteRequestsCount ?? 0,
+      createdAt: existingIdx >= 0 ? this.mediaPosts[existingIdx].createdAt : now,
+      updatedAt: now
+    };
+    if (existingIdx >= 0) {
+      this.mediaPosts[existingIdx] = post;
+    } else {
+      this.mediaPosts.unshift(post);
+    }
+    return post;
+  }
+
+  updateMediaPost(id: string, farmerId: string | undefined, updates: Partial<MediaPost>): MediaPost | null | undefined {
+    const idx = this.mediaPosts.findIndex(p => p.id === id);
+    if (idx === -1) return undefined;
+    const existing = this.mediaPosts[idx];
+    if (farmerId && existing.farmerId !== farmerId) return null;
+    this.mediaPosts[idx] = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      farmerId: existing.farmerId,
+      updatedAt: new Date().toISOString()
+    };
+    return this.mediaPosts[idx];
+  }
+
+  deleteMediaPost(id: string, farmerId?: string): 'deleted' | 'forbidden' | 'not_found' {
+    const idx = this.mediaPosts.findIndex(p => p.id === id);
+    if (idx === -1) return 'not_found';
+    if (farmerId && this.mediaPosts[idx].farmerId !== farmerId) return 'forbidden';
+    this.mediaPosts.splice(idx, 1);
+    return 'deleted';
+  }
+
+  toggleMediaPostLike(id: string, userId: string): MediaPost | undefined {
+    const post = this.mediaPosts.find(p => p.id === id);
+    if (!post) return undefined;
+    const likedSet = new Set(post.likedBy || []);
+    if (likedSet.has(userId)) {
+      likedSet.delete(userId);
+    } else {
+      likedSet.add(userId);
+    }
+    post.likedBy = Array.from(likedSet);
+    post.likesCount = post.likedBy.length;
+    post.updatedAt = new Date().toISOString();
+    return post;
+  }
+
+  recordMediaPostQuote(id: string, buyerId: string, buyerName: string): MediaPost | undefined {
+    const post = this.mediaPosts.find(p => p.id === id);
+    if (!post) return undefined;
+    post.quoteRequestsCount = (post.quoteRequestsCount || 0) + 1;
+    post.updatedAt = new Date().toISOString();
+    if (post.farmerId && post.farmerId !== buyerId) {
+      this.createNotification({
+        userId: post.farmerId,
+        title: `Quote Request from ${buyerName}`,
+        message: `${buyerName} requested a quote on your community showcase post "${post.productName || post.caption.slice(0, 50)}".`,
+        type: 'post',
+        link: 'messages',
+        metadata: { postId: post.id, buyerId }
+      });
+    }
+    return post;
+  }
+
+  // --- Buyer Product Requests ---
+  getBuyerRequests(filters?: {
+    buyerId?: string;
+    category?: string;
+    location?: string;
+    status?: string;
+  }): BuyerRequest[] {
+    let list = [...this.buyerRequests];
+    if (filters) {
+      if (filters.buyerId) {
+        list = list.filter(r => r.buyerId === filters.buyerId);
+      }
+      if (filters.category && filters.category !== 'all') {
+        list = list.filter(
+          r =>
+            r.category === filters.category ||
+            r.categoryName.toLowerCase() === filters.category!.toLowerCase()
+        );
+      }
+      if (filters.location && filters.location.trim() && filters.location.toLowerCase() !== 'all') {
+        const loc = filters.location.trim().toLowerCase();
+        list = list.filter(r => r.location.toLowerCase().includes(loc));
+      }
+      if (filters.status && filters.status !== 'all') {
+        list = list.filter(r => r.status === filters.status);
+      }
+    }
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  getBuyerRequestById(id: string): BuyerRequest | undefined {
+    return this.buyerRequests.find(r => r.id === id);
+  }
+
+  createBuyerRequest(
+    data: Omit<BuyerRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      status?: BuyerRequestStatus;
+    }
+  ): BuyerRequest {
+    const now = new Date().toISOString();
+    const id = data.id || `req-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const existingIdx = this.buyerRequests.findIndex(r => r.id === id);
+    const reqObj: BuyerRequest = {
+      ...data,
+      id,
+      status: data.status || 'open',
+      respondedFarmerIds: Array.isArray(data.respondedFarmerIds) ? data.respondedFarmerIds : [],
+      responseCount: data.responseCount ?? 0,
+      createdAt: existingIdx >= 0 ? this.buyerRequests[existingIdx].createdAt : now,
+      updatedAt: now
+    };
+
+    if (existingIdx >= 0) {
+      this.buyerRequests[existingIdx] = reqObj;
+    } else {
+      this.buyerRequests.unshift(reqObj);
+      // Notify active farmers and fodder suppliers about new buyer demand
+      this.users
+        .filter(u => (u.role === 'farmer' || u.role === 'fodder_supplier') && u.status === 'active')
+        .forEach(seller => {
+          this.createNotification({
+            userId: seller.id,
+            title: `New Buyer Request: ${reqObj.productName}`,
+            message: `${reqObj.buyerName} needs ${reqObj.quantityRequired} in ${reqObj.location}. Respond to send a quotation.`,
+            type: 'request',
+            link: 'farmer_dashboard',
+            metadata: { requestId: reqObj.id }
+          });
+        });
+    }
+
+    return reqObj;
+  }
+
+  updateBuyerRequest(
+    id: string,
+    buyerId: string | undefined,
+    updates: Partial<BuyerRequest>
+  ): BuyerRequest | null | undefined {
+    const idx = this.buyerRequests.findIndex(r => r.id === id);
+    if (idx === -1) return undefined;
+    const existing = this.buyerRequests[idx];
+    if (buyerId && existing.buyerId !== buyerId) return null;
+    this.buyerRequests[idx] = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      buyerId: existing.buyerId,
+      updatedAt: new Date().toISOString()
+    };
+    return this.buyerRequests[idx];
+  }
+
+  updateBuyerRequestStatus(
+    id: string,
+    status: BuyerRequestStatus,
+    actorId?: string
+  ): BuyerRequest | null | undefined {
+    const idx = this.buyerRequests.findIndex(r => r.id === id);
+    if (idx === -1) return undefined;
+    const existing = this.buyerRequests[idx];
+    if (actorId && existing.buyerId !== actorId) return null;
+
+    const now = new Date().toISOString();
+    existing.status = status;
+    existing.updatedAt = now;
+    if (status === 'handled') {
+      existing.handledAt = now;
+      (existing.respondedFarmerIds || []).forEach(farmerId => {
+        this.createNotification({
+          userId: farmerId,
+          title: `Buyer Request Marked Handled`,
+          message: `${existing.buyerName} marked their request for "${existing.productName}" (${existing.quantityRequired}) as Handled.`,
+          type: 'request',
+          link: 'farmer_dashboard',
+          metadata: { requestId: existing.id, status: 'handled' }
+        });
+      });
+    } else if (status === 'open') {
+      existing.handledAt = undefined;
+    }
+
+    return existing;
+  }
+
+  markBuyerRequestResponded(
+    id: string,
+    farmerId: string,
+    farmerName?: string,
+    notifyBuyer = true
+  ): BuyerRequest | 'closed' | undefined {
+    const reqObj = this.buyerRequests.find(r => r.id === id);
+    if (!reqObj) return undefined;
+    if (reqObj.status === 'handled' || reqObj.status === 'cancelled') return 'closed';
+
+    const now = new Date().toISOString();
+    const responders = new Set(reqObj.respondedFarmerIds || []);
+    responders.add(farmerId);
+    reqObj.respondedFarmerIds = Array.from(responders);
+    reqObj.responseCount = Math.max(reqObj.responseCount || 0, reqObj.respondedFarmerIds.length);
+    if (reqObj.status === 'open') {
+      reqObj.status = 'in_discussion';
+    }
+    reqObj.updatedAt = now;
+
+    if (notifyBuyer) {
+      this.createNotification({
+        userId: reqObj.buyerId,
+        title: `Farmer Responded: ${reqObj.productName}`,
+        message: `${farmerName || 'A local farmer'} responded to your request for ${reqObj.quantityRequired} of ${reqObj.productName}.`,
+        type: 'request',
+        link: 'messages',
+        metadata: { requestId: reqObj.id, farmerId }
+      });
+    }
+
+    return reqObj;
+  }
+
+  deleteBuyerRequest(id: string, buyerId?: string): 'deleted' | 'forbidden' | 'not_found' {
+    const idx = this.buyerRequests.findIndex(r => r.id === id);
+    if (idx === -1) return 'not_found';
+    if (buyerId && this.buyerRequests[idx].buyerId !== buyerId) return 'forbidden';
+    this.buyerRequests.splice(idx, 1);
+    return 'deleted';
   }
 }
 

@@ -1,4 +1,18 @@
-import { User, ProductCategory, Product, Order, Review, Message, Conversation, Notification, Announcement, Report, AdRequest } from '../src/types';
+import {
+  User,
+  ProductCategory,
+  Product,
+  Order,
+  Review,
+  Message,
+  Conversation,
+  Notification,
+  Announcement,
+  Report,
+  AdRequest,
+  MediaPost,
+  BuyerRequest
+} from '../src/types';
 
 export const INITIAL_CATEGORIES: ProductCategory[] = [
   { id: 'cat-breeding', name: 'Breeding (Crossbreeds & Hybrids)', slug: 'breeding', icon: 'Dna', description: 'High-yield crossbred livestock, hybrid poultry, climate-resilient F1 seed varieties, and proven breeding stock' },
@@ -1351,4 +1365,202 @@ export const INITIAL_AD_REQUESTS: AdRequest[] = [
     updatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
   }
 ];
+
+export const INITIAL_MEDIA_POSTS: MediaPost[] = [
+  {
+    id: 'post-101',
+    farmerId: 'farmer-1',
+    farmerName: 'Tendai Moyo',
+    farmerAvatar: 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+    farmName: 'GreenFields Organic Farm',
+    sellerRole: 'farmer',
+    media: [
+      {
+        url: '/images/community/community_tomato_greenhouse.jpg',
+        type: 'image',
+        mimeType: 'image/jpeg',
+        fileName: 'greenhouse_tomato_harvest.jpg'
+      }
+    ],
+    caption: 'Early morning greenhouse picking in Ruzawi Valley — 450kg of crisp organic vine Roma tomatoes packed fresh in sanitized wooden crates for wholesale and family kitchens.',
+    description: 'Drip-irrigated and pesticide-free. Same-day dispatch to Harare or farm-gate collection.',
+    productName: 'Vine-Ripened Roma Tomatoes (Grade A)',
+    price: 1.50,
+    unit: 'kg',
+    hashtags: ['OrganicTomatoes', 'MaronderaHarvest', 'GreenhouseGrown'],
+    taggedProductId: 'prod-1',
+    taggedProductName: 'Vine-Ripened Roma Tomatoes (Grade A)',
+    shareLocation: true,
+    location: 'Marondera, Mashonaland East',
+    likesCount: 24,
+    likedBy: ['buyer-1', 'buyer-2'],
+    quoteRequestsCount: 4,
+    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'post-102',
+    farmerId: 'supplier-1',
+    farmerName: 'Tawanda Gumbo',
+    farmerAvatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=400',
+    farmName: 'GreenBale Fodder & Forage Supply',
+    sellerRole: 'fodder_supplier',
+    media: [
+      {
+        url: '/images/community/community_lucerne_bales.jpg',
+        type: 'image',
+        mimeType: 'image/jpeg',
+        fileName: 'lucerne_barn_stock.jpg'
+      }
+    ],
+    caption: 'Fresh barn batch of sun-cured Lucerne (Alfalfa) hay bales just stacked and moisture-checked! 18%+ crude protein for dairy herds, goats, and horses.',
+    description: 'Flatbed delivery available for bulk ranch orders of 50+ bales across Zimbabwe.',
+    productName: 'Prime Sun-Cured Lucerne Hay Bales',
+    price: 9.50,
+    unit: 'bale',
+    hashtags: ['LucerneHay', 'LivestockFodder', 'DairyNutrition'],
+    taggedProductId: 'prod-fodder-1',
+    taggedProductName: 'Prime Sun-Cured Lucerne (Alfalfa) Hay Bales (18kg–20kg)',
+    shareLocation: true,
+    location: 'Chinhoyi, Mashonaland West',
+    likesCount: 18,
+    likedBy: ['buyer-2'],
+    quoteRequestsCount: 3,
+    createdAt: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'post-103',
+    farmerId: 'farmer-2',
+    farmerName: 'Chipo Sibanda',
+    farmerAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+    farmName: 'Sunrise Pastoral & Poultry',
+    sellerRole: 'farmer',
+    media: [
+      {
+        url: '/images/community/community_pasture_poultry.jpg',
+        type: 'image',
+        mimeType: 'image/jpeg',
+        fileName: 'free_range_flock.jpg'
+      }
+    ],
+    caption: 'Morning turnout on open clover pasture in Thornhill Farmlands! Our Kuroiler × Roadrunner F1 pullets are healthy, active, and producing rich golden-yolk trays daily.',
+    description: 'Vaccinated stock and graded farm egg trays ready for pickup or scheduled Midlands & Harare delivery.',
+    productName: 'Kuroiler x Roadrunner F1 Breeding Pullets',
+    price: 9.50,
+    unit: 'bird',
+    hashtags: ['FreeRangePoultry', 'Roadrunners', 'MidlandsFarming'],
+    taggedProductId: 'prod-13',
+    taggedProductName: 'Kuroiler x Roadrunner F1 Crossbreed Breeding Pullets & Cockerels',
+    shareLocation: true,
+    location: 'Gweru, Midlands',
+    likesCount: 31,
+    likedBy: ['buyer-1'],
+    quoteRequestsCount: 6,
+    createdAt: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'post-104',
+    farmerId: 'farmer-3',
+    farmerName: 'Farai Ndlovu',
+    farmerAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400',
+    farmName: 'Highlands Fruit & Dairy Estate',
+    sellerRole: 'farmer',
+    media: [
+      {
+        url: '/images/community/community_avocado_orchard.jpg',
+        type: 'image',
+        mimeType: 'image/jpeg',
+        fileName: 'vumba_orchard_crates.jpg'
+      }
+    ],
+    caption: 'Cool misty orchard harvest in Vumba! Creamy Hass avocados and sweet orchard oranges packed directly under the canopy for markets and caterers.',
+    description: 'Export-grade fruit size selection available on custom crate quotes.',
+    productName: 'Hass Avocados & Citrus Crates',
+    price: 0.80,
+    unit: 'piece',
+    hashtags: ['VumbaHighlands', 'HassAvocados', 'OrchardFresh'],
+    taggedProductId: 'prod-5',
+    taggedProductName: 'Hass Avocados (Creamy Grade A)',
+    shareLocation: true,
+    location: 'Mutare, Manicaland',
+    likesCount: 15,
+    likedBy: [],
+    quoteRequestsCount: 2,
+    createdAt: new Date(Date.now() - 32 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 32 * 60 * 60 * 1000).toISOString()
+  }
+];
+
+export const INITIAL_BUYER_REQUESTS: BuyerRequest[] = [
+  {
+    id: 'req-101',
+    buyerId: 'buyer-2',
+    buyerName: 'Kudakwashe Mataruse',
+    buyerAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400',
+    buyerPhone: '+263 77 999 1122',
+    productName: 'Fresh Grade-A Tomatoes',
+    category: 'cat-veg',
+    categoryName: 'Vegetables',
+    description: 'Looking for firm, vine-ripened Roma or salad tomatoes packed in crates for weekly restaurant kitchen supply.',
+    quantityRequired: '500 kg',
+    preferredPrice: 1.35,
+    budgetCurrency: 'USD',
+    budgetNotes: '$1.35 / kg target for 500kg bulk order',
+    location: 'Bulawayo',
+    requiredDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    notes: 'Can arrange morning receiving dock offload or regional haulage pickup.',
+    status: 'open',
+    respondedFarmerIds: [],
+    responseCount: 0,
+    createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'req-102',
+    buyerId: 'buyer-1',
+    buyerName: 'Grace Chidzero',
+    buyerAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+    buyerPhone: '+263 77 654 3210',
+    productName: 'Lucerne Hay Bales (Dry Season Reserve)',
+    category: 'cat-fodder',
+    categoryName: 'Fodder & Animal Feed',
+    description: 'Need weed-free dry lucerne bales for our small dairy herd on the outskirts of Harare.',
+    quantityRequired: '80 bales',
+    preferredPrice: 9.00,
+    budgetCurrency: 'USD',
+    budgetNotes: '$9.00 / bale delivered or farm collection',
+    location: 'Harare (Avondale / Mazowe Road)',
+    requiredDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    notes: 'Please include bale weight estimate and transport availability.',
+    status: 'open',
+    respondedFarmerIds: [],
+    responseCount: 0,
+    createdAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'req-103',
+    buyerId: 'buyer-2',
+    buyerName: 'Kudakwashe Mataruse',
+    buyerAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=400',
+    buyerPhone: '+263 77 999 1122',
+    productName: 'Free-Range Farm Table Eggs',
+    category: 'cat-poultry',
+    categoryName: 'Poultry & Eggs',
+    description: 'Standing bi-weekly order of large clean brown table eggs for bakery and breakfast catering.',
+    quantityRequired: '60 trays',
+    preferredPrice: 4.20,
+    budgetCurrency: 'USD',
+    budgetNotes: '$4.20 / tray of 30',
+    location: 'Harare',
+    status: 'in_discussion',
+    respondedFarmerIds: ['farmer-2'],
+    responseCount: 1,
+    createdAt: new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString()
+  }
+];
+
 

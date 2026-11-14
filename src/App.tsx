@@ -26,7 +26,8 @@ import { FarmerProfileModal } from './components/FarmerProfileModal';
 import { AndroidBottomNav } from './components/AndroidBottomNav';
 import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { AndroidDeviceShell } from './components/AndroidDeviceShell';
-import { Product, Order, User, AppNotification, isSellerRole } from './types';
+import { OrderConfirmationModal } from './components/OrderConfirmationModal';
+import { Product, Order, User, AppNotification, MediaPost, BuyerRequest, isSellerRole } from './types';
 import {
   Sprout,
   ShieldCheck,
@@ -59,14 +60,19 @@ export function App() {
   const [chatRecipientUser, setChatRecipientUser] = useState<User | null>(null);
   const [chatProductId, setChatProductId] = useState<string | null>(null);
   const [chatProduct, setChatProduct] = useState<Product | null>(null);
+  const [chatPost, setChatPost] = useState<MediaPost | null>(null);
+  const [chatBuyerRequest, setChatBuyerRequest] = useState<BuyerRequest | null>(null);
   const [messagesChannel, setMessagesChannel] = useState<'direct' | 'announcements'>('direct');
   const [pendingChatProduct, setPendingChatProduct] = useState<Product | null>(null);
   const [pendingChatUser, setPendingChatUser] = useState<User | null>(null);
+  const [pendingChatPost, setPendingChatPost] = useState<MediaPost | null>(null);
+  const [farmerInitialTab, setFarmerInitialTab] = useState<'overview' | 'orders' | 'products' | 'posts' | 'requests' | 'advertising' | 'profile'>('overview');
 
   // Modal States
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+  const [confirmedOrders, setConfirmedOrders] = useState<Order[] | null>(null);
   const [farmerRefreshKey, setFarmerRefreshKey] = useState(0);
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
   const [reportProduct, setReportProduct] = useState<Product | null>(null);
@@ -146,8 +152,84 @@ export function App() {
     setChatRecipientUser(sellerFallback);
     setChatProductId(prod.id);
     setChatProduct(prod);
+    setChatPost(null);
+    setChatBuyerRequest(null);
     setMessagesChannel('direct');
     setSelectedProduct(null);
+    setCurrentView('messages');
+    try {
+      localStorage.setItem('agrox_current_view', 'messages');
+    } catch {}
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openChatWithPost = (post: MediaPost) => {
+    const sellerFallback: User = {
+      id: post.farmerId,
+      name: post.farmerName || 'Farm Seller',
+      email: '',
+      phone: '',
+      role: post.sellerRole || 'farmer',
+      avatar: post.farmerAvatar || '/images/community/community_tomato_greenhouse.jpg',
+      location: {
+        country: 'Zimbabwe',
+        province: 'Harare',
+        city: post.location || 'Harare'
+      },
+      status: 'active',
+      createdAt: post.createdAt || new Date().toISOString(),
+      farmerProfile: {
+        farmName: post.farmName || `${post.farmerName}'s Farm`,
+        isVerified: true
+      }
+    };
+    setChatRecipientId(post.farmerId);
+    setChatRecipientUser(sellerFallback);
+    setChatProductId(post.taggedProductId || null);
+    setChatProduct(null);
+    setChatPost(post);
+    setChatBuyerRequest(null);
+    setMessagesChannel('direct');
+    setCurrentView('messages');
+    try {
+      localStorage.setItem('agrox_current_view', 'messages');
+    } catch {}
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleRequestQuoteFromPost = (post: MediaPost) => {
+    if (!user) {
+      setPendingChatPost(post);
+      setAuthMode('login');
+      setIsAuthOpen(true);
+      return;
+    }
+    openChatWithPost(post);
+  };
+
+  const handleRespondToBuyerRequest = (req: BuyerRequest) => {
+    const buyerFallback: User = {
+      id: req.buyerId,
+      name: req.buyerName || 'Marketplace Buyer',
+      email: '',
+      phone: req.buyerPhone || '',
+      role: 'buyer',
+      avatar: req.buyerAvatar || '',
+      location: {
+        country: 'Zimbabwe',
+        province: 'Harare',
+        city: req.location || 'Harare'
+      },
+      status: 'active',
+      createdAt: req.createdAt || new Date().toISOString()
+    };
+    setChatRecipientId(req.buyerId);
+    setChatRecipientUser(buyerFallback);
+    setChatProductId(null);
+    setChatProduct(null);
+    setChatPost(null);
+    setChatBuyerRequest(req);
+    setMessagesChannel('direct');
     setCurrentView('messages');
     try {
       localStorage.setItem('agrox_current_view', 'messages');
@@ -163,6 +245,11 @@ export function App() {
       setPendingChatProduct(null);
       setIsAuthOpen(false);
       openChatWithProduct(targetProd);
+    } else if (pendingChatPost) {
+      const targetPost = pendingChatPost;
+      setPendingChatPost(null);
+      setIsAuthOpen(false);
+      openChatWithPost(targetPost);
     } else if (pendingChatUser) {
       const targetUser = pendingChatUser;
       setPendingChatUser(null);
@@ -171,11 +258,13 @@ export function App() {
       setChatRecipientUser(targetUser);
       setChatProductId(null);
       setChatProduct(null);
+      setChatPost(null);
+      setChatBuyerRequest(null);
       setMessagesChannel('direct');
       setCurrentView('messages');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [user, pendingChatProduct, pendingChatUser]);
+  }, [user, pendingChatProduct, pendingChatPost, pendingChatUser]);
 
   // Handle navigation
   const handleNavigate = (view: string, data?: any) => {
@@ -253,11 +342,27 @@ export function App() {
   const handleSelectNotification = (notif: AppNotification) => {
     setIsNotificationsOpen(false);
     if (notif.type === 'order') {
-      setCurrentView('orders');
-    } else if (notif.type === 'message') {
+      if (isSellerRole(user?.role)) {
+        setFarmerInitialTab('orders');
+        setCurrentView('farmer_dashboard');
+      } else {
+        setCurrentView('orders');
+      }
+    } else if (notif.type === 'message' || notif.type === 'post') {
       setMessagesChannel('direct');
       setCurrentView('messages');
+    } else if (notif.type === 'request') {
+      if (notif.link?.includes('/messages')) {
+        setMessagesChannel('direct');
+        setCurrentView('messages');
+      } else if (isSellerRole(user?.role)) {
+        setFarmerInitialTab('requests');
+        setCurrentView('farmer_dashboard');
+      } else {
+        setCurrentView('buyer_dashboard');
+      }
     } else if (notif.type === 'inventory' && isSellerRole(user?.role)) {
+      setFarmerInitialTab('products');
       setCurrentView('farmer_dashboard');
     }
   };
@@ -318,12 +423,14 @@ export function App() {
             onSelectProduct={setSelectedProduct}
             onSelectFarmer={handleSelectFarmer}
             onContactFarmer={handleContactFarmerFromProduct}
+            onRequestQuote={handleRequestQuoteFromPost}
           />
         )}
 
         {currentView === 'farmer_dashboard' && (
           <FarmerDashboard
             key={`farmer-dash-${farmerRefreshKey}`}
+            initialTab={farmerInitialTab}
             onOpenAddProduct={() => {
               setEditingProduct(null);
               setIsAddProductOpen(true);
@@ -338,6 +445,7 @@ export function App() {
               setSelectedOrderForTracking(o);
               setCurrentView('orders');
             }}
+            onRespondToRequest={handleRespondToBuyerRequest}
             onNavigate={handleNavigate}
           />
         )}
@@ -346,6 +454,11 @@ export function App() {
           <BuyerDashboard
             onNavigate={handleNavigate}
             onSelectProduct={setSelectedProduct}
+            onOpenMessagesForRequest={() => {
+              setMessagesChannel('direct');
+              setCurrentView('messages');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
           />
         )}
 
@@ -365,6 +478,8 @@ export function App() {
             initialRecipientUser={chatRecipientUser}
             initialProductId={chatProductId}
             initialProduct={chatProduct}
+            initialPost={chatPost}
+            initialBuyerRequest={chatBuyerRequest}
             defaultChannel={messagesChannel}
           />
         )}
@@ -569,10 +684,24 @@ export function App() {
             setAuthMode('login');
             setIsAuthOpen(true);
           }}
-          onOrderSuccess={(order) => {
+          onOrderSuccess={(orders) => {
             closeCheckout();
-            setSelectedOrderForTracking(order);
-            setCurrentView('orders');
+            setConfirmedOrders(orders);
+          }}
+        />
+      )}
+
+      {confirmedOrders && confirmedOrders.length > 0 && (
+        <OrderConfirmationModal
+          orders={confirmedOrders}
+          onViewOrders={(primaryOrder) => {
+            setConfirmedOrders(null);
+            setSelectedOrderForTracking(primaryOrder);
+            handleNavigate('orders', { selectedOrder: primaryOrder });
+          }}
+          onReturnHome={() => {
+            setConfirmedOrders(null);
+            handleNavigate('marketplace');
           }}
         />
       )}
@@ -601,6 +730,7 @@ export function App() {
           onClose={() => {
             setIsAuthOpen(false);
             setPendingChatProduct(null);
+            setPendingChatPost(null);
             setPendingChatUser(null);
           }}
         />

@@ -9,8 +9,9 @@ import {
   getPaymentMethodLabel,
   getPaymentStatusMeta
 } from '../utils/orderUtils';
-import { Product, Order } from '../types';
+import { Product, Order, BuyerRequest } from '../types';
 import { ProductCard } from './ProductCard';
+import { BuyerRequestsPanel } from './BuyerRequestsPanel';
 import {
   Heart,
   MessageSquare,
@@ -29,9 +30,14 @@ import {
 interface BuyerDashboardProps {
   onNavigate: (view: string, data?: any) => void;
   onSelectProduct: (product: Product) => void;
+  onOpenMessagesForRequest?: (request: BuyerRequest) => void;
 }
 
-export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onNavigate, onSelectProduct }) => {
+export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
+  onNavigate,
+  onSelectProduct,
+  onOpenMessagesForRequest
+}) => {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersTab, setOrdersTab] = useState<'active' | 'history' | 'all'>('active');
@@ -341,6 +347,14 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({ onNavigate, onSe
           </div>
         )}
       </section>
+
+      {/* My Requests Section */}
+      {user && (
+        <BuyerRequestsPanel
+          user={user}
+          onOpenMessages={onOpenMessagesForRequest}
+        />
+      )}
 
       {/* Saved Favorites */}
       {favoriteProducts.length > 0 && (

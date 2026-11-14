@@ -10,7 +10,9 @@ import {
   AlertTriangle,
   Radio,
   CheckCheck,
-  Clock
+  Clock,
+  Megaphone,
+  Sparkles
 } from 'lucide-react';
 
 interface NotificationsModalProps {
@@ -30,6 +32,10 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         return <Package className="w-4 h-4 text-blue-600" />;
       case 'message':
         return <MessageSquare className="w-4 h-4 text-emerald-600" />;
+      case 'request':
+        return <Megaphone className="w-4 h-4 text-amber-600" />;
+      case 'post':
+        return <Sparkles className="w-4 h-4 text-emerald-600" />;
       case 'announcement':
         return <Radio className="w-4 h-4 text-purple-600" />;
       case 'inventory':

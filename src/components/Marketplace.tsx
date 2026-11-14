@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Product, ProductCategory, FilterState, AdRequest } from '../types';
+import { Product, ProductCategory, FilterState, AdRequest, MediaPost } from '../types';
 import { api } from '../services/api';
 import { subscribeToFirebaseProducts } from '../services/firebaseProducts';
 import { subscribeToFirebaseAdRequests, expireFirebaseAdRequest } from '../services/firebaseAdRequests';
 import { getAdLifecycle, isAdActiveNow } from '../utils/adLifecycle';
 import { ProductCard } from './ProductCard';
+import { CommunityShowcase } from './CommunityShowcase';
 import {
   Search,
   SlidersHorizontal,
@@ -38,6 +39,7 @@ interface MarketplaceProps {
   onSelectProduct: (product: Product) => void;
   onSelectFarmer: (farmerId: string) => void;
   onContactFarmer?: (product: Product) => void;
+  onRequestQuote?: (post: MediaPost) => void;
 }
 
 const CATEGORY_ICON_MAP: Record<string, React.ReactNode> = {
@@ -70,7 +72,7 @@ const PROVINCES = [
   'Masvingo'
 ];
 
-export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSelectFarmer, onContactFarmer }) => {
+export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSelectFarmer, onContactFarmer, onRequestQuote }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [allAds, setAllAds] = useState<AdRequest[]>([]);
@@ -836,6 +838,18 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
           </div>
         </div>
       </div>
+
+      {/* FarmBridge Community Carousel Showcase */}
+      <CommunityShowcase
+        onSelectFarmer={onSelectFarmer}
+        onRequestQuote={(post) => {
+          if (onRequestQuote) {
+            onRequestQuote(post);
+          } else {
+            onSelectFarmer(post.farmerId);
+          }
+        }}
+      />
     </div>
   );
 };

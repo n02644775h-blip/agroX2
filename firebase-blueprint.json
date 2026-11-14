@@ -63,6 +63,35 @@
         "pinned": { "type": "boolean", "description": "Whether pinned to top of channel" }
       },
       "required": ["title", "content"]
+    },
+    "MediaPost": {
+      "title": "MediaPost",
+      "description": "Farmer photos and videos showcased in the FarmBridge Community section",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Post ID" },
+        "farmerId": { "type": "string", "description": "Farmer UID" },
+        "caption": { "type": "string", "description": "Post caption" },
+        "media": { "type": "array", "description": "Uploaded image and video items" },
+        "likesCount": { "type": "number", "description": "Total likes count" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["farmerId", "caption", "media"]
+    },
+    "BuyerRequest": {
+      "title": "BuyerRequest",
+      "description": "Buyer sourcing request for agricultural produce or livestock",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Request ID" },
+        "buyerId": { "type": "string", "description": "Buyer UID" },
+        "productName": { "type": "string", "description": "Requested product or service" },
+        "category": { "type": "string", "description": "Category ID" },
+        "quantityRequired": { "type": "string", "description": "Required quantity" },
+        "location": { "type": "string", "description": "Delivery or pickup location" },
+        "status": { "type": "string", "enum": ["open", "in_discussion", "handled", "cancelled"], "description": "Request lifecycle status" }
+      },
+      "required": ["buyerId", "productName", "quantityRequired", "status"]
     }
   },
   "firestore": {
@@ -81,6 +110,14 @@
     "/announcements/{announcementId}": {
       "schema": "Announcement",
       "description": "Community broadcast and bulletin announcements channel"
+    },
+    "/mediaPosts/{postId}": {
+      "schema": "MediaPost",
+      "description": "FarmBridge Community farmer media showcase posts"
+    },
+    "/buyerRequests/{requestId}": {
+      "schema": "BuyerRequest",
+      "description": "Buyer product sourcing requests"
     }
   }
 }

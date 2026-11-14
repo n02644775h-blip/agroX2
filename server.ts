@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
@@ -28,8 +29,81 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '20mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  app.use('/uploads', express.static(uploadsDir));
+
+  // Direct binary upload route (mounted before express.json so raw payloads stream cleanly)
+  app.post(
+    '/api/media/upload',
+    express.raw({
+      limit: '28mb',
+      type: ['image/*', 'video/*', 'application/octet-stream']
+    }),
+    (req: Request, res: Response) => {
+      try {
+        const buffer = req.body as Buffer;
+        if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+          return res.status(400).json({ error: 'No media file received.' });
+        }
+
+        const rawHeaderType = String(req.headers['x-file-type'] || req.headers['content-type'] || '').toLowerCase();
+        const rawHeaderName = decodeURIComponent(String(req.headers['x-file-name'] || 'upload'));
+        const extFromName = path.extname(rawHeaderName).toLowerCase();
+
+        const allowedImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        const allowedVideoTypes = ['video/mp4', 'video/webm'];
+        const isImage =
+          allowedImageTypes.includes(rawHeaderType) ||
+          ['.jpg', '.jpeg', '.png', '.webp'].includes(extFromName);
+        const isVideo =
+          allowedVideoTypes.includes(rawHeaderType) ||
+          ['.mp4', '.webm'].includes(extFromName);
+
+        if (!isImage && !isVideo) {
+          return res.status(400).json({
+            error: 'Unsupported media format. Allowed: JPG, PNG, WebP images and MP4, WebM videos.'
+          });
+        }
+
+        if (isImage && buffer.length > 8 * 1024 * 1024) {
+          return res.status(400).json({ error: 'Image size exceeds the 8MB limit.' });
+        }
+        if (isVideo && buffer.length > 25 * 1024 * 1024) {
+          return res.status(400).json({ error: 'Video size exceeds the 25MB limit.' });
+        }
+
+        const safeExt =
+          extFromName && ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.webm'].includes(extFromName)
+            ? extFromName
+            : isVideo
+              ? rawHeaderType.includes('webm') ? '.webm' : '.mp4'
+              : rawHeaderType.includes('png') ? '.png' : rawHeaderType.includes('webp') ? '.webp' : '.jpg';
+
+        const safeBase = path
+          .basename(rawHeaderName, extFromName)
+          .replace(/[^a-zA-Z0-9_-]/g, '_')
+          .slice(0, 40) || 'media';
+        const storedFileName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${safeBase}${safeExt}`;
+        const destPath = path.join(uploadsDir, storedFileName);
+        fs.writeFileSync(destPath, buffer);
+
+        return res.status(201).json({
+          url: `/uploads/${storedFileName}`,
+          type: isVideo ? 'video' : 'image',
+          mimeType: rawHeaderType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+          fileName: rawHeaderName,
+          size: buffer.length
+        });
+      } catch (err: any) {
+        console.error('Media upload failed:', err);
+        return res.status(500).json({ error: err?.message || 'Failed to save uploaded media.' });
+      }
+    }
+  );
+
+  app.use(express.json({ limit: '40mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '40mb' }));
 
   // --- Verification OTP Store (10-min TTL) ---
   const verificationCodes = new Map<string, {
@@ -588,6 +662,7 @@ async function startServer() {
     const {
       id,
       orderNumber,
+      checkoutGroupId,
       buyerId,
       buyerName,
       buyerPhone,
@@ -617,6 +692,13 @@ async function startServer() {
       return res.status(400).json({ error: 'Buyer, Farmer and Order Items are required' });
     }
 
+    if (id) {
+      const existingOrder = store.getOrderById(id);
+      if (existingOrder) {
+        return res.status(200).json(existingOrder);
+      }
+    }
+
     const buyer = store.getUserById(buyerId);
     const farmer = store.getUserById(farmerId);
 
@@ -644,6 +726,7 @@ async function startServer() {
     const newOrder = store.createOrder({
       id,
       orderNumber,
+      checkoutGroupId,
       buyerId,
       buyerName: buyer?.name || buyerName || 'Marketplace Buyer',
       buyerPhone: buyer?.phone || buyerPhone || '',
@@ -651,7 +734,7 @@ async function startServer() {
       farmerId,
       farmerName: resolvedFarmerName,
       farmName: resolvedFarmName,
-      items,
+      items: items.map((item: any) => ({ ...item, farmerId: item.farmerId || farmerId })),
       subtotalAmount: subtotalAmount !== undefined ? parseFloat(subtotalAmount) : undefined,
       deliveryFee: deliveryFee !== undefined ? parseFloat(deliveryFee) : 0,
       totalAmount: parseFloat(totalAmount),
@@ -763,7 +846,11 @@ async function startServer() {
         text,
         productId,
         productSnippet,
+        postReference,
+        requestReference,
         orderId,
+        requestId,
+        postId,
         senderName,
         senderAvatar,
         senderRole,
@@ -783,7 +870,11 @@ async function startServer() {
         text,
         productId,
         productSnippet,
+        postReference,
+        requestReference,
         orderId,
+        requestId,
+        postId,
         senderName,
         senderAvatar,
         senderRole,
@@ -1127,6 +1218,243 @@ async function startServer() {
 
   app.get('/api/stats/admin', (_req: Request, res: Response) => {
     res.json(store.getAdminStats());
+  });
+
+  // --- FarmBridge Community Media Posts ---
+  app.get('/api/posts', (req: Request, res: Response) => {
+    const farmerId = req.query.farmerId as string | undefined;
+    res.json(store.getMediaPosts(farmerId));
+  });
+
+  app.get('/api/posts/:id', (req: Request, res: Response) => {
+    const post = store.getMediaPostById(req.params.id);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    res.json(post);
+  });
+
+  app.post('/api/posts', (req: Request, res: Response) => {
+    try {
+      const {
+        id,
+        farmerId,
+        farmerName,
+        farmerAvatar,
+        farmName,
+        sellerRole,
+        media,
+        caption,
+        description,
+        productName,
+        price,
+        unit,
+        hashtags,
+        taggedProductId,
+        taggedProductName,
+        shareLocation,
+        location
+      } = req.body || {};
+
+      if (!farmerId || !caption || !Array.isArray(media) || media.length === 0) {
+        return res.status(400).json({ error: 'Farmer ID, caption, and at least one photo or video are required.' });
+      }
+
+      const farmer = store.getUserById(farmerId);
+      const parsedPrice = price !== undefined && price !== null && price !== '' ? Number(price) : undefined;
+      const cleanHashtags = Array.isArray(hashtags)
+        ? hashtags.map((h: string) => String(h).replace(/^#/, '').trim()).filter(Boolean)
+        : [];
+
+      const created = store.createMediaPost({
+        id,
+        farmerId,
+        farmerName: farmerName || farmer?.name || 'Local Farmer',
+        farmerAvatar:
+          farmerAvatar ||
+          farmer?.avatar ||
+          'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+        farmName: farmName || farmer?.farmerProfile?.farmName || `${farmerName || 'Local'}'s Farm`,
+        sellerRole: sellerRole || farmer?.role || 'farmer',
+        media,
+        caption: String(caption).trim(),
+        description: description ? String(description).trim() : undefined,
+        productName: productName ? String(productName).trim() : undefined,
+        price: parsedPrice !== undefined && Number.isFinite(parsedPrice) ? parsedPrice : undefined,
+        unit: unit ? String(unit).trim() : undefined,
+        hashtags: cleanHashtags,
+        taggedProductId: taggedProductId || undefined,
+        taggedProductName: taggedProductName || undefined,
+        shareLocation: Boolean(shareLocation),
+        location: shareLocation
+          ? location || (farmer?.location ? `${farmer.location.city}, ${farmer.location.province}` : undefined)
+          : undefined
+      });
+
+      return res.status(201).json(created);
+    } catch (err: any) {
+      console.error('Error creating community post:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to publish post.' });
+    }
+  });
+
+  app.put('/api/posts/:id', (req: Request, res: Response) => {
+    const { farmerId, ...updates } = req.body || {};
+    const result = store.updateMediaPost(req.params.id, farmerId, updates);
+    if (result === null) {
+      return res.status(403).json({ error: 'Only the farmer who created this post can edit it.' });
+    }
+    if (!result) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+    res.json(result);
+  });
+
+  app.delete('/api/posts/:id', (req: Request, res: Response) => {
+    const farmerId = (req.query.farmerId as string | undefined) || req.body?.farmerId;
+    const result = store.deleteMediaPost(req.params.id, farmerId);
+    if (result === 'forbidden') {
+      return res.status(403).json({ error: 'Only the farmer who created this post can delete it.' });
+    }
+    if (result === 'not_found') {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+    res.json({ success: true });
+  });
+
+  app.post('/api/posts/:id/like', (req: Request, res: Response) => {
+    const { userId } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+    const updated = store.toggleMediaPostLike(req.params.id, userId);
+    if (!updated) return res.status(404).json({ error: 'Post not found' });
+    res.json(updated);
+  });
+
+  app.post('/api/posts/:id/quote', (req: Request, res: Response) => {
+    const { buyerId, buyerName } = req.body || {};
+    const updated = store.recordMediaPostQuote(req.params.id, buyerId || 'guest', buyerName || 'Marketplace Buyer');
+    if (!updated) return res.status(404).json({ error: 'Post not found' });
+    res.json(updated);
+  });
+
+  // --- Buyer Product Requests ---
+  app.get('/api/buyer-requests', (req: Request, res: Response) => {
+    const { buyerId, category, location, status } = req.query;
+    res.json(
+      store.getBuyerRequests({
+        buyerId: buyerId as string | undefined,
+        category: category as string | undefined,
+        location: location as string | undefined,
+        status: status as string | undefined
+      })
+    );
+  });
+
+  app.get('/api/buyer-requests/:id', (req: Request, res: Response) => {
+    const item = store.getBuyerRequestById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Buyer request not found' });
+    res.json(item);
+  });
+
+  app.post('/api/buyer-requests', (req: Request, res: Response) => {
+    try {
+      const {
+        id,
+        buyerId,
+        buyerName,
+        buyerAvatar,
+        buyerPhone,
+        productName,
+        category,
+        categoryName,
+        description,
+        quantityRequired,
+        preferredPrice,
+        budgetCurrency,
+        budgetNotes,
+        location,
+        requiredDate,
+        notes,
+        referenceImages
+      } = req.body || {};
+
+      if (!buyerId || !productName || !quantityRequired || !location) {
+        return res.status(400).json({
+          error: 'Buyer ID, product name, quantity required, and preferred location are required.'
+        });
+      }
+
+      const buyer = store.getUserById(buyerId);
+      const parsedPrice =
+        preferredPrice !== undefined && preferredPrice !== null && preferredPrice !== ''
+          ? Number(preferredPrice)
+          : undefined;
+
+      const created = store.createBuyerRequest({
+        id,
+        buyerId,
+        buyerName: buyerName || buyer?.name || 'Marketplace Buyer',
+        buyerAvatar: buyerAvatar || buyer?.avatar,
+        buyerPhone: buyerPhone || buyer?.phone,
+        productName: String(productName).trim(),
+        category: category || 'cat-other',
+        categoryName: categoryName || 'Other Farm Produce',
+        description: description ? String(description).trim() : '',
+        quantityRequired: String(quantityRequired).trim(),
+        preferredPrice: parsedPrice !== undefined && Number.isFinite(parsedPrice) ? parsedPrice : undefined,
+        budgetCurrency: budgetCurrency || 'USD',
+        budgetNotes: budgetNotes ? String(budgetNotes).trim() : undefined,
+        location: String(location).trim(),
+        requiredDate: requiredDate || undefined,
+        notes: notes ? String(notes).trim() : undefined,
+        referenceImages: Array.isArray(referenceImages) ? referenceImages : undefined
+      });
+
+      return res.status(201).json(created);
+    } catch (err: any) {
+      console.error('Error creating buyer request:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to create buyer request.' });
+    }
+  });
+
+  app.put('/api/buyer-requests/:id', (req: Request, res: Response) => {
+    const { buyerId, ...updates } = req.body || {};
+    const result = store.updateBuyerRequest(req.params.id, buyerId, updates);
+    if (result === null) {
+      return res.status(403).json({ error: 'Only the buyer who created this request can edit it.' });
+    }
+    if (!result) return res.status(404).json({ error: 'Buyer request not found' });
+    res.json(result);
+  });
+
+  app.put('/api/buyer-requests/:id/status', (req: Request, res: Response) => {
+    const { status, buyerId } = req.body || {};
+    if (!status) return res.status(400).json({ error: 'Status is required' });
+    const result = store.updateBuyerRequestStatus(req.params.id, status, buyerId);
+    if (result === null) {
+      return res.status(403).json({ error: 'Only the buyer who created this request can change its status.' });
+    }
+    if (!result) return res.status(404).json({ error: 'Buyer request not found' });
+    res.json(result);
+  });
+
+  app.post('/api/buyer-requests/:id/respond', (req: Request, res: Response) => {
+    const { farmerId, farmerName } = req.body || {};
+    if (!farmerId) return res.status(400).json({ error: 'farmerId is required' });
+    const result = store.markBuyerRequestResponded(req.params.id, farmerId, farmerName);
+    if (result === 'closed') {
+      return res.status(409).json({ error: 'This request has already been marked Handled or Cancelled.' });
+    }
+    if (!result) return res.status(404).json({ error: 'Buyer request not found' });
+    res.json(result);
+  });
+
+  app.delete('/api/buyer-requests/:id', (req: Request, res: Response) => {
+    const buyerId = (req.query.buyerId as string | undefined) || req.body?.buyerId;
+    const result = store.deleteBuyerRequest(req.params.id, buyerId);
+    if (result === 'forbidden') {
+      return res.status(403).json({ error: 'Only the creator buyer can remove this request.' });
+    }
+    if (result === 'not_found') return res.status(404).json({ error: 'Buyer request not found' });
+    res.json({ success: true });
   });
 
   // --- Vite Middleware & SPA Serving ---

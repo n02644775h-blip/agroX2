@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   CartItem,
   Product,
@@ -71,6 +71,7 @@ interface CartContextType {
   confirmFarmSwitch: () => void;
   cancelFarmSwitch: () => void;
   checkout: (params: CheckoutPayload) => Promise<Order>;
+  checkoutBatch: (params: CheckoutPayload) => Promise<Order[]>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -91,6 +92,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isOpen, setIsOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [pendingFarmSwitch, setPendingFarmSwitch] = useState<PendingFarmSwitch | null>(null);
+  const checkoutLockRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -195,125 +197,162 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const total = subtotal + deliveryFee;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const checkout = async (params: CheckoutPayload): Promise<Order> => {
+  const checkoutBatch = async (params: CheckoutPayload): Promise<Order[]> => {
+    if (checkoutLockRef.current) {
+      throw new Error('Your order is already being processed. Please wait.');
+    }
     if (!farmerIdInCart || cart.length === 0) {
       throw new Error('Your shopping cart is empty.');
     }
 
-    const firstProd = cart[0].product;
-    const orderItems = cart.map(item => ({
-      productId: item.product.id,
-      productName: item.product.name,
-      productImage: item.product.images?.[0] || '',
-      price: item.product.price,
-      unit: item.product.unit,
-      quantity: item.quantity,
-      subtotal: Number((item.product.price * item.quantity).toFixed(2))
-    }));
-
-    const appliedDeliveryFee = params.deliveryMethod === 'delivery' ? DELIVERY_FLAT_FEE : 0;
-    const finalTotal = Number((subtotal + appliedDeliveryFee).toFixed(2));
-    const generatedId = `ord-${Date.now()}`;
-    const generatedOrderNumber = `AGC-26-${Math.floor(1000 + Math.random() * 9000)}`;
-    const nowIso = new Date().toISOString();
-
-    const hasPop = Boolean(params.proofOfPaymentUrl && params.proofOfPaymentUrl.trim().length > 0);
-    // CRITICAL: Never automatically mark an order as paid simply because POP was uploaded.
-    const resolvedPaymentStatus: PaymentStatus =
-      params.paymentMethod === 'cash_on_delivery'
-        ? 'awaiting_payment'
-        : hasPop
-          ? 'pending_verification'
-          : 'awaiting_payment';
-
-    const orderPayload = {
-      id: generatedId,
-      orderNumber: generatedOrderNumber,
-      buyerId: params.buyerId,
-      buyerName: params.buyerName || 'Marketplace Buyer',
-      buyerPhone: params.buyerPhone || '',
-      buyerEmail: params.buyerEmail || '',
-      farmerId: farmerIdInCart,
-      farmerName: firstProd.farmerName || 'Farmer',
-      farmName: firstProd.farmName || 'Local Farm',
-      items: orderItems,
-      subtotalAmount: Number(subtotal.toFixed(2)),
-      deliveryFee: appliedDeliveryFee,
-      totalAmount: finalTotal,
-      deliveryMethod: params.deliveryMethod,
-      deliveryAddress: params.deliveryAddress || params.deliveryLocation?.formattedAddress,
-      deliveryLocation: params.deliveryLocation,
-      pickupLocation: params.pickupLocation,
-      pickupTimeWindow: params.pickupTimeWindow,
-      pickupInstructions: params.pickupInstructions || params.pickupLocation?.instructions,
-      paymentMethod: params.paymentMethod,
-      paymentStatus: resolvedPaymentStatus,
-      proofOfPaymentUrl: params.proofOfPaymentUrl,
-      proofOfPaymentFileName: params.proofOfPaymentFileName,
-      paymentReference: params.paymentReference,
-      farmerPaymentDetails: params.farmerPaymentDetails,
-      buyerNotes: params.buyerNotes
-    };
-
-    let createdOrder: Order;
+    checkoutLockRef.current = true;
     try {
-      createdOrder = await api.createOrder(orderPayload);
-    } catch (apiErr) {
-      console.warn('Backend order endpoint fallback to Firestore:', apiErr);
-      createdOrder = {
-        ...orderPayload,
-        status: 'received',
-        paymentSubmittedAt: hasPop ? nowIso : undefined,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        statusHistory: [
-          {
+      // Group items by farmerId so if a cart ever spans multiple farmers each receives only their items
+      const groupsMap = new Map<string, CartItem[]>();
+      for (const item of cart) {
+        const fId = item.product.farmerId || farmerIdInCart;
+        const list = groupsMap.get(fId) || [];
+        list.push(item);
+        groupsMap.set(fId, list);
+      }
+
+      const farmerEntries = Array.from(groupsMap.entries());
+      const checkoutGroupId = farmerEntries.length > 1 ? `grp-${Date.now()}` : undefined;
+      const nowIso = new Date().toISOString();
+      const hasPop = Boolean(params.proofOfPaymentUrl && params.proofOfPaymentUrl.trim().length > 0);
+      // CRITICAL: Never automatically mark an order as paid simply because POP was uploaded.
+      const resolvedPaymentStatus: PaymentStatus =
+        params.paymentMethod === 'cash_on_delivery'
+          ? 'awaiting_payment'
+          : hasPop
+            ? 'pending_verification'
+            : 'awaiting_payment';
+
+      const createdOrders: Order[] = [];
+
+      for (let idx = 0; idx < farmerEntries.length; idx++) {
+        const [groupFarmerId, groupItems] = farmerEntries[idx];
+        const firstProd = groupItems[0].product;
+        const orderItems = groupItems.map(item => ({
+          productId: item.product.id,
+          productName: item.product.name,
+          productImage: item.product.images?.[0] || '',
+          farmerId: groupFarmerId,
+          price: item.product.price,
+          unit: item.product.unit,
+          quantity: item.quantity,
+          subtotal: Number((item.product.price * item.quantity).toFixed(2))
+        }));
+
+        const groupSubtotal = Number(
+          orderItems.reduce((sum, it) => sum + it.subtotal, 0).toFixed(2)
+        );
+        const appliedDeliveryFee = params.deliveryMethod === 'delivery' ? DELIVERY_FLAT_FEE : 0;
+        const finalTotal = Number((groupSubtotal + appliedDeliveryFee).toFixed(2));
+        const suffix = `${Date.now()}${farmerEntries.length > 1 ? `-${idx + 1}` : ''}`;
+        const generatedId = `ord-${suffix}`;
+        const generatedOrderNumber = `AGC-26-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        const orderPayload = {
+          id: generatedId,
+          orderNumber: generatedOrderNumber,
+          checkoutGroupId,
+          buyerId: params.buyerId,
+          buyerName: params.buyerName || 'Marketplace Buyer',
+          buyerPhone: params.buyerPhone || '',
+          buyerEmail: params.buyerEmail || '',
+          farmerId: groupFarmerId,
+          farmerName: firstProd.farmerName || 'Farmer',
+          farmName: firstProd.farmName || 'Local Farm',
+          items: orderItems,
+          subtotalAmount: groupSubtotal,
+          deliveryFee: appliedDeliveryFee,
+          totalAmount: finalTotal,
+          deliveryMethod: params.deliveryMethod,
+          deliveryAddress: params.deliveryAddress || params.deliveryLocation?.formattedAddress,
+          deliveryLocation: params.deliveryLocation,
+          pickupLocation: params.pickupLocation,
+          pickupTimeWindow: params.pickupTimeWindow,
+          pickupInstructions: params.pickupInstructions || params.pickupLocation?.instructions,
+          paymentMethod: params.paymentMethod,
+          paymentStatus: resolvedPaymentStatus,
+          proofOfPaymentUrl: params.proofOfPaymentUrl,
+          proofOfPaymentFileName: params.proofOfPaymentFileName,
+          paymentReference: params.paymentReference,
+          farmerPaymentDetails: params.farmerPaymentDetails,
+          buyerNotes: params.buyerNotes
+        };
+
+        let createdOrder: Order;
+        try {
+          createdOrder = await api.createOrder(orderPayload);
+        } catch (apiErr) {
+          console.warn('Backend order endpoint fallback to Firestore:', apiErr);
+          createdOrder = {
+            ...orderPayload,
             status: 'received',
-            timestamp: nowIso,
-            note: hasPop
-              ? 'Order received (POP uploaded — awaiting farmer verification)'
-              : 'Order received by farm'
-          }
-        ]
-      };
+            paymentSubmittedAt: hasPop ? nowIso : undefined,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            statusHistory: [
+              {
+                status: 'received',
+                timestamp: nowIso,
+                note: hasPop
+                  ? 'Order received (POP uploaded — awaiting farmer verification)'
+                  : 'Order received by farm'
+              }
+            ]
+          };
+        }
+
+        // Persist in Firestore so buyer & farmer stay synchronized in real time across devices & reloads
+        await saveFirebaseOrder(createdOrder);
+
+        await Promise.all([
+          createFirebaseNotification({
+            userId: createdOrder.farmerId,
+            title: `New Order Received (${createdOrder.orderNumber})`,
+            message: `${createdOrder.buyerName} placed a ${createdOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${createdOrder.totalAmount.toFixed(2)}.`,
+            type: 'order',
+            link: `/orders/${createdOrder.id}`,
+            metadata: { orderId: createdOrder.id }
+          }),
+          createFirebaseNotification({
+            userId: createdOrder.buyerId,
+            title: `Order Received (${createdOrder.orderNumber})`,
+            message: `Your order with ${createdOrder.farmName} has been received.`,
+            type: 'order',
+            link: `/orders/${createdOrder.id}`,
+            metadata: { orderId: createdOrder.id }
+          })
+        ]);
+
+        createdOrders.push(createdOrder);
+      }
+
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      } catch {
+        // ignore
+      }
+
+      clearCart();
+      setIsOpen(false);
+      setIsCheckoutOpen(false);
+      return createdOrders;
+    } finally {
+      checkoutLockRef.current = false;
     }
+  };
 
-    // Persist in Firestore so buyer & farmer stay synchronized in real time across devices & reloads
-    await saveFirebaseOrder(createdOrder);
-
-    await Promise.all([
-      createFirebaseNotification({
-        userId: createdOrder.farmerId,
-        title: `New Order Received (${createdOrder.orderNumber})`,
-        message: `${createdOrder.buyerName} placed a ${createdOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${createdOrder.totalAmount.toFixed(2)}.`,
-        type: 'order',
-        link: `/orders/${createdOrder.id}`,
-        metadata: { orderId: createdOrder.id }
-      }),
-      createFirebaseNotification({
-        userId: createdOrder.buyerId,
-        title: `Order Received (${createdOrder.orderNumber})`,
-        message: `Your order with ${createdOrder.farmName} has been received.`,
-        type: 'order',
-        link: `/orders/${createdOrder.id}`,
-        metadata: { orderId: createdOrder.id }
-      })
-    ]);
-
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-    } catch {
-      // ignore
-    }
-
-    clearCart();
-    setIsOpen(false);
-    setIsCheckoutOpen(false);
-    return createdOrder;
+  const checkout = async (params: CheckoutPayload): Promise<Order> => {
+    const orders = await checkoutBatch(params);
+    return orders[0];
   };
 
   return (
@@ -341,7 +380,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         pendingFarmSwitch,
         confirmFarmSwitch,
         cancelFarmSwitch,
-        checkout
+        checkout,
+        checkoutBatch
       }}
     >
       {children}

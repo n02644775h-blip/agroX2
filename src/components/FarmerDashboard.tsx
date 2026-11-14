@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { Product, Order, OrderStatus, ProductAvailability, PaymentStatus } from '../types';
+import { Product, Order, OrderStatus, ProductAvailability, PaymentStatus, BuyerRequest } from '../types';
 import { subscribeToFirebaseProducts, deleteProductFromFirebase } from '../services/firebaseProducts';
 import {
   subscribeToFirebaseOrders,
@@ -18,6 +18,8 @@ import {
 } from '../utils/orderUtils';
 import { FarmerProfileModal } from './FarmerProfileModal';
 import { FarmerAdvertModal } from './FarmerAdvertModal';
+import { FarmerPostsTab } from './FarmerPostsTab';
+import { FarmerBuyerRequestsPanel } from './FarmerBuyerRequestsPanel';
 import {
   DollarSign,
   Package,
@@ -72,6 +74,8 @@ interface FarmerDashboardProps {
   onViewFarm: (farmerId: string) => void;
   onViewOrder: (order: Order) => void;
   onNavigate?: (view: string, data?: any) => void;
+  initialTab?: 'overview' | 'orders' | 'products' | 'posts' | 'requests' | 'advertising' | 'profile';
+  onRespondToRequest?: (request: BuyerRequest) => void;
 }
 
 export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
@@ -80,14 +84,16 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   onViewProduct,
   onViewFarm,
   onViewOrder,
-  onNavigate
+  onNavigate,
+  initialTab = 'overview',
+  onRespondToRequest
 }) => {
   const { user } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'products' | 'advertising' | 'profile'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'products' | 'posts' | 'requests' | 'advertising' | 'profile'>(initialTab);
   const [orderFilter, setOrderFilter] = useState<'all' | 'received' | 'packaged' | 'in_progress' | 'done' | 'pending_pop'>('all');
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [viewingPopOrder, setViewingPopOrder] = useState<Order | null>(null);
@@ -97,10 +103,40 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   const [rejectReasonDrafts, setRejectReasonDrafts] = useState<Record<string, string>>({});
   const [confirmDeleteProdId, setConfirmDeleteProdId] = useState<string | null>(null);
   const [orderToast, setOrderToast] = useState<string | null>(null);
+  const [newOrderBanner, setNewOrderBanner] = useState<Order | null>(null);
+
+  const knownOrderIdsRef = useRef<Set<string>>(new Set());
+  const ordersBootstrappedRef = useRef<boolean>(false);
 
   // Modals
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAdvertModal, setShowAdvertModal] = useState(false);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const mergeIncomingOrders = (incoming: Order[]) => {
+    if (ordersBootstrappedRef.current) {
+      const brandNew = incoming.filter(o => !knownOrderIdsRef.current.has(o.id));
+      if (brandNew.length > 0) {
+        setNewOrderBanner(brandNew[0]);
+      }
+    }
+    incoming.forEach(o => knownOrderIdsRef.current.add(o.id));
+    if (incoming.length > 0) {
+      ordersBootstrappedRef.current = true;
+    }
+
+    setOrders(prev => {
+      const map = new Map<string, Order>();
+      prev.forEach(o => map.set(o.id, o));
+      incoming.forEach(o => map.set(o.id, o));
+      return Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+  };
 
   const loadFarmerData = async () => {
     if (!user) return;
@@ -113,14 +149,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
       ]);
       setStats(statsData);
       setProducts(prodsData);
-      setOrders(prev => {
-        const map = new Map<string, Order>();
-        prev.forEach(o => map.set(o.id, o));
-        ordersData.forEach(o => map.set(o.id, o));
-        return Array.from(map.values()).sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-      });
+      mergeIncomingOrders(ordersData);
+      ordersBootstrappedRef.current = true;
     } catch (err) {
       console.error('Failed to load farmer dashboard:', err);
     } finally {
@@ -129,6 +159,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   };
 
   useEffect(() => {
+    knownOrderIdsRef.current = new Set();
+    ordersBootstrappedRef.current = false;
     loadFarmerData();
 
     if (user?.id) {
@@ -152,20 +184,27 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
       const unsubscribeOrders = subscribeToFirebaseOrders(
         { farmerId: user.id },
         (fbOrders) => {
-          setOrders(prev => {
-            const map = new Map<string, Order>();
-            prev.forEach(o => map.set(o.id, o));
-            fbOrders.forEach(o => map.set(o.id, o));
-            return Array.from(map.values()).sort(
-              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-          });
+          mergeIncomingOrders(fbOrders);
+          ordersBootstrappedRef.current = true;
         }
       );
+
+      // Lightweight 5s background API poll alongside Firestore real-time stream
+      const pollId = window.setInterval(() => {
+        api
+          .getOrders({ farmerId: user.id })
+          .then(latestOrders => {
+            if (Array.isArray(latestOrders)) {
+              mergeIncomingOrders(latestOrders);
+            }
+          })
+          .catch(() => {});
+      }, 5000);
 
       return () => {
         unsubscribeProducts();
         unsubscribeOrders();
+        window.clearInterval(pollId);
       };
     }
   }, [user]);
@@ -313,6 +352,46 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
 
   return (
     <div className="space-y-8 pb-16">
+      {newOrderBanner && (
+        <div
+          role="status"
+          className="p-4 rounded-2xl bg-emerald-600 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2"
+        >
+          <div className="flex items-center gap-3 text-xs sm:text-sm font-bold">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <div>New Order Received! ({newOrderBanner.orderNumber})</div>
+              <div className="text-[11px] text-emerald-100 font-medium">
+                {newOrderBanner.buyerName} placed an order for ${newOrderBanner.totalAmount.toFixed(2)} •{' '}
+                {newOrderBanner.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('orders');
+                setNewOrderBanner(null);
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-white text-emerald-800 font-extrabold text-xs hover:bg-emerald-50"
+            >
+              View Orders ({pendingOrders.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setNewOrderBanner(null)}
+              className="p-1.5 rounded-lg hover:bg-white/20 text-white"
+              aria-label="Dismiss new order alert"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {orderToast && (
         <div className="fixed bottom-6 right-6 z-50 bg-stone-900 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-stone-700 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -501,6 +580,30 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
           }`}
         >
           {user?.role === 'fodder_supplier' ? `Manage Fodder & Feed (${products.length})` : `Manage Produce (${products.length})`}
+        </button>
+        <button
+          id="farmer-tab-posts-btn"
+          onClick={() => setActiveTab('posts')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+            activeTab === 'posts'
+              ? 'bg-emerald-700 text-white'
+              : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          <Camera className="w-3.5 h-3.5" />
+          <span>Posts / Showcase</span>
+        </button>
+        <button
+          id="farmer-tab-requests-btn"
+          onClick={() => setActiveTab('requests')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+            activeTab === 'requests'
+              ? 'bg-emerald-700 text-white'
+              : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          <Megaphone className="w-3.5 h-3.5" />
+          <span>Buyer Requests</span>
         </button>
         <button
           onClick={() => setActiveTab('advertising')}
@@ -748,9 +851,11 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                       </div>
                     )}
 
-                    {/* Ordered Items List */}
+                    {/* Ordered Items List (scoped to this farmer's items) */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {order.items.map((item, idx) => (
+                      {order.items
+                        .filter(item => !item.farmerId || !user?.id || item.farmerId === user.id)
+                        .map((item, idx) => (
                         <div key={idx} className="flex items-center gap-2.5 p-2 rounded-xl bg-stone-50 border border-stone-100">
                           <img
                             src={item.productImage}
@@ -1156,6 +1261,25 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB: FARMER POSTS / COMMUNITY SHOWCASE */}
+      {activeTab === 'posts' && user && (
+        <FarmerPostsTab user={user} products={products} />
+      )}
+
+      {/* TAB: BUYER REQUESTS MARKETPLACE */}
+      {activeTab === 'requests' && user && (
+        <FarmerBuyerRequestsPanel
+          user={user}
+          onRespondToRequest={(req) => {
+            if (onRespondToRequest) {
+              onRespondToRequest(req);
+            } else if (onNavigate) {
+              onNavigate('messages');
+            }
+          }}
+        />
       )}
 
       {/* TAB 4: ADVERTISING & HOT DEALS */}

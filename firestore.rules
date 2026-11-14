@@ -49,5 +49,15 @@ service cloud.firestore {
     match /adRequests/{adId} {
       allow read, create, update, delete: if true;
     }
+
+    // FarmBridge Community Farmer Media Posts
+    match /mediaPosts/{postId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // Buyer Product Requests
+    match /buyerRequests/{requestId} {
+      allow read, create, update, delete: if true;
+    }
   }
 }

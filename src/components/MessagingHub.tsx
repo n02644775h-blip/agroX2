@@ -10,7 +10,7 @@ import {
   sendFirebaseMessage,
   markFirebaseConversationRead
 } from '../services/firebaseMessaging';
-import { Message, User, Product, Conversation, isSellerRole } from '../types';
+import { Message, User, Product, Conversation, MediaPost, BuyerRequest, isSellerRole } from '../types';
 import { PublicAnnouncementsChat } from './PublicAnnouncementsChat';
 import {
   Send,
@@ -29,7 +29,8 @@ import {
   Sprout,
   Wheat,
   ShoppingBag,
-  Loader2
+  Loader2,
+  Sparkles
 } from 'lucide-react';
 
 interface MessagingHubProps {
@@ -37,6 +38,8 @@ interface MessagingHubProps {
   initialRecipientUser?: User | null;
   initialProductId?: string | null;
   initialProduct?: Product | null;
+  initialPost?: MediaPost | null;
+  initialBuyerRequest?: BuyerRequest | null;
   defaultChannel?: 'direct' | 'announcements';
 }
 
@@ -105,6 +108,8 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
   initialRecipientUser,
   initialProductId,
   initialProduct,
+  initialPost,
+  initialBuyerRequest,
   defaultChannel = 'direct'
 }) => {
   const { user } = useAuth();
@@ -121,6 +126,8 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
   const [newMessageText, setNewMessageText] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
   const [attachedProduct, setAttachedProduct] = useState<Product | null>(initialProduct || null);
+  const [attachedPost, setAttachedPost] = useState<MediaPost | null>(initialPost || null);
+  const [attachedRequest, setAttachedRequest] = useState<BuyerRequest | null>(initialBuyerRequest || null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -151,7 +158,7 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
     }
   }, [defaultChannel, initialRecipientId]);
 
-  // Attach initial product immediately when passed
+  // Attach initial product/post/request immediately when passed
   useEffect(() => {
     if (initialProduct) {
       setAttachedProduct(initialProduct);
@@ -159,6 +166,28 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
       api.getProduct(initialProductId).then(p => setAttachedProduct(p)).catch(() => {});
     }
   }, [initialProduct, initialProductId]);
+
+  useEffect(() => {
+    if (initialPost) {
+      setAttachedPost(initialPost);
+      setNewMessageText(prev =>
+        prev.trim()
+          ? prev
+          : `Hi! I saw your FarmBridge Community post${initialPost.productName ? ` about ${initialPost.productName}` : ''} and would like to request a quote.`
+      );
+    }
+  }, [initialPost]);
+
+  useEffect(() => {
+    if (initialBuyerRequest) {
+      setAttachedRequest(initialBuyerRequest);
+      setNewMessageText(prev =>
+        prev.trim()
+          ? prev
+          : `Hi ${initialBuyerRequest.buyerName}! I saw your request for ${initialBuyerRequest.quantityRequired} of ${initialBuyerRequest.productName} in ${initialBuyerRequest.location} and can assist.`
+      );
+    }
+  }, [initialBuyerRequest]);
 
   // Real-time conversations subscription + initial users/API load
   useEffect(() => {
@@ -382,6 +411,36 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
         }
       : undefined;
 
+    const postReference = attachedPost
+      ? {
+          postId: attachedPost.id,
+          caption: attachedPost.caption,
+          productName: attachedPost.productName || attachedPost.taggedProductName,
+          price: attachedPost.price,
+          unit: attachedPost.unit,
+          mediaUrl: attachedPost.media?.[0]?.url,
+          mediaType: attachedPost.media?.[0]?.type,
+          farmerName: attachedPost.farmerName,
+          farmName: attachedPost.farmName
+        }
+      : undefined;
+
+    const requestReference = attachedRequest
+      ? {
+          requestId: attachedRequest.id,
+          productName: attachedRequest.productName,
+          categoryName: attachedRequest.categoryName,
+          quantityRequired: attachedRequest.quantityRequired,
+          location: attachedRequest.location,
+          budgetText:
+            attachedRequest.preferredPrice !== undefined
+              ? `$${attachedRequest.preferredPrice.toFixed(2)}`
+              : undefined,
+          status: attachedRequest.status,
+          buyerName: attachedRequest.buyerName
+        }
+      : undefined;
+
     setSending(true);
     setSendError(null);
 
@@ -399,7 +458,9 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
           recipient: activeRecipient,
           text: cleanText,
           productId: attachedProduct?.id,
-          productSnippet
+          productSnippet,
+          postReference,
+          requestReference
         }),
         api.sendMessage({
           conversationId: convId,
@@ -408,6 +469,10 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
           text: cleanText,
           productId: attachedProduct?.id,
           productSnippet,
+          postReference,
+          requestReference,
+          postId: attachedPost?.id,
+          requestId: attachedRequest?.id,
           senderName: user.name,
           senderAvatar: user.avatar,
           senderRole: user.role,
@@ -443,6 +508,8 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
 
       setNewMessageText('');
       setAttachedProduct(null);
+      setAttachedPost(null);
+      setAttachedRequest(null);
     } catch (err: any) {
       console.error('Failed to send message:', err);
       setSendError(err?.message || 'Failed to send message. Please try again.');
@@ -769,6 +836,75 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                     </div>
                   )}
 
+                  {attachedPost && (
+                    <div className="max-w-md mx-auto p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {attachedPost.media?.[0]?.type === 'video' ? (
+                          <div className="w-12 h-12 rounded-xl bg-stone-900 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                            VIDEO
+                          </div>
+                        ) : (
+                          <img
+                            src={attachedPost.media?.[0]?.url || '/images/community/community_tomato_greenhouse.jpg'}
+                            alt=""
+                            className="w-12 h-12 rounded-xl object-cover shrink-0"
+                          />
+                        )}
+                        <div className="truncate text-xs">
+                          <span className="text-[10px] font-bold text-emerald-800 uppercase flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" />
+                            Quote Inquiry — Showcase Post
+                          </span>
+                          <strong className="text-stone-900 block truncate">
+                            {attachedPost.productName || attachedPost.caption}
+                          </strong>
+                          <span className="text-emerald-700 font-bold">
+                            {attachedPost.farmName}
+                            {attachedPost.price !== undefined
+                              ? ` • $${attachedPost.price.toFixed(2)}${attachedPost.unit ? `/${attachedPost.unit}` : ''}`
+                              : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedPost(null)}
+                        className="p-1 rounded-lg hover:bg-emerald-100 text-emerald-700"
+                        title="Remove post card"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {attachedRequest && (
+                    <div className="max-w-md mx-auto p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shadow-xs">
+                      <div className="min-w-0 text-xs space-y-0.5">
+                        <span className="text-[10px] font-bold text-amber-800 uppercase flex items-center gap-1">
+                          <Megaphone className="w-3 h-3" />
+                          Buyer Request Reference
+                        </span>
+                        <strong className="text-stone-900 block truncate">
+                          {attachedRequest.productName} ({attachedRequest.quantityRequired})
+                        </strong>
+                        <span className="text-amber-900 block truncate">
+                          {attachedRequest.location}
+                          {attachedRequest.preferredPrice !== undefined
+                            ? ` • Target $${attachedRequest.preferredPrice.toFixed(2)}`
+                            : ''}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedRequest(null)}
+                        className="p-1 rounded-lg hover:bg-amber-100 text-amber-700 shrink-0"
+                        title="Remove request card"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
                   {messages.length === 0 ? (
                     <div className="py-12 text-center text-xs text-stone-400 space-y-2">
                       <MessageSquare className="w-8 h-8 mx-auto text-stone-300" />
@@ -804,6 +940,60 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                                 <span className="font-semibold truncate">
                                   {msg.productSnippet.name} (${Number(msg.productSnippet.price || 0).toFixed(2)}/{msg.productSnippet.unit})
                                 </span>
+                              </div>
+                            )}
+                            {msg.postReference && (
+                              <div
+                                className={`p-2.5 rounded-xl mb-1.5 flex items-center gap-2.5 text-[11px] ${
+                                  isMe
+                                    ? 'bg-emerald-800/90 text-emerald-50'
+                                    : 'bg-emerald-50 text-stone-800 border border-emerald-200'
+                                }`}
+                              >
+                                {msg.postReference.mediaUrl && msg.postReference.mediaType !== 'video' ? (
+                                  <img
+                                    src={msg.postReference.mediaUrl}
+                                    alt=""
+                                    className="w-9 h-9 rounded-lg object-cover shrink-0"
+                                  />
+                                ) : (
+                                  <Sparkles className="w-4 h-4 shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  <div className="text-[10px] font-bold uppercase opacity-80">
+                                    Community Quote Request
+                                  </div>
+                                  <div className="font-bold truncate">
+                                    {msg.postReference.productName || msg.postReference.caption}
+                                  </div>
+                                  {msg.postReference.price !== undefined && (
+                                    <div className="opacity-90">
+                                      ${Number(msg.postReference.price).toFixed(2)}
+                                      {msg.postReference.unit ? `/${msg.postReference.unit}` : ''}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            {msg.requestReference && (
+                              <div
+                                className={`p-2.5 rounded-xl mb-1.5 text-[11px] space-y-0.5 ${
+                                  isMe
+                                    ? 'bg-emerald-800/90 text-emerald-50'
+                                    : 'bg-amber-50 text-stone-800 border border-amber-200'
+                                }`}
+                              >
+                                <div className="text-[10px] font-bold uppercase opacity-80 flex items-center gap-1">
+                                  <Megaphone className="w-3 h-3" />
+                                  <span>Buyer Request</span>
+                                </div>
+                                <div className="font-bold">
+                                  {msg.requestReference.productName} ({msg.requestReference.quantityRequired})
+                                </div>
+                                <div className="opacity-90">
+                                  {msg.requestReference.location}
+                                  {msg.requestReference.budgetText ? ` • ${msg.requestReference.budgetText}` : ''}
+                                </div>
                               </div>
                             )}
                             <p className="leading-relaxed whitespace-pre-wrap">{messageText}</p>

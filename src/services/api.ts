@@ -14,7 +14,10 @@ import {
   FilterState,
   AdRequest,
   AdRequestStatus,
-  AdStatus
+  AdStatus,
+  MediaPost,
+  BuyerRequest,
+  BuyerRequestStatus
 } from '../types';
 
 const API_BASE = '/api';
@@ -286,6 +289,7 @@ class ApiService {
   async createOrder(orderData: {
     id?: string;
     orderNumber?: string;
+    checkoutGroupId?: string;
     buyerId: string;
     buyerName?: string;
     buyerPhone?: string;
@@ -408,7 +412,11 @@ class ApiService {
     text: string;
     productId?: string;
     productSnippet?: any;
+    postReference?: Message['postReference'];
+    requestReference?: Message['requestReference'];
     orderId?: string;
+    requestId?: string;
+    postId?: string;
     senderName?: string;
     senderAvatar?: string;
     senderRole?: string;
@@ -642,6 +650,145 @@ class ApiService {
 
   async getAdminStats(): Promise<any> {
     return this.request<any>('/stats/admin');
+  }
+
+  // --- Media Upload (Images & Videos with Progress) ---
+  uploadMediaFile(
+    file: File,
+    onProgress?: (percent: number) => void
+  ): Promise<{ url: string; type: 'image' | 'video'; mimeType: string; fileName: string; size: number }> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/media/upload`, true);
+      if (this.token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
+      }
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+      xhr.setRequestHeader('X-File-Type', file.type || 'application/octet-stream');
+      xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+
+      xhr.upload.onprogress = (evt) => {
+        if (evt.lengthComputable && onProgress) {
+          onProgress(Math.min(99, Math.round((evt.loaded / evt.total) * 100)));
+        }
+      };
+
+      xhr.onload = () => {
+        try {
+          const parsed = JSON.parse(xhr.responseText || '{}');
+          if (xhr.status >= 200 && xhr.status < 300) {
+            if (onProgress) onProgress(100);
+            resolve(parsed);
+          } else {
+            reject(new Error(parsed.error || `Upload failed (${xhr.status})`));
+          }
+        } catch {
+          reject(new Error('Failed to parse upload server response.'));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error while uploading media file.'));
+      xhr.send(file);
+    });
+  }
+
+  // --- FarmBridge Community Media Posts ---
+  async getMediaPosts(farmerId?: string): Promise<MediaPost[]> {
+    const query = farmerId ? `?farmerId=${encodeURIComponent(farmerId)}` : '';
+    return this.request<MediaPost[]>(`/posts${query}`);
+  }
+
+  async createMediaPost(post: Partial<MediaPost>): Promise<MediaPost> {
+    return this.request<MediaPost>('/posts', {
+      method: 'POST',
+      body: JSON.stringify(post)
+    });
+  }
+
+  async updateMediaPost(id: string, updates: Partial<MediaPost> & { farmerId?: string }): Promise<MediaPost> {
+    return this.request<MediaPost>(`/posts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+  }
+
+  async deleteMediaPost(id: string, farmerId?: string): Promise<void> {
+    const query = farmerId ? `?farmerId=${encodeURIComponent(farmerId)}` : '';
+    await this.request(`/posts/${id}${query}`, { method: 'DELETE' });
+  }
+
+  async toggleMediaPostLike(id: string, userId: string): Promise<MediaPost> {
+    return this.request<MediaPost>(`/posts/${id}/like`, {
+      method: 'POST',
+      body: JSON.stringify({ userId })
+    });
+  }
+
+  async recordMediaPostQuote(id: string, buyerId: string, buyerName: string): Promise<MediaPost> {
+    return this.request<MediaPost>(`/posts/${id}/quote`, {
+      method: 'POST',
+      body: JSON.stringify({ buyerId, buyerName })
+    });
+  }
+
+  // --- Buyer Product Requests ---
+  async getBuyerRequests(filters?: {
+    buyerId?: string;
+    category?: string;
+    location?: string;
+    status?: string;
+  }): Promise<BuyerRequest[]> {
+    const params = new URLSearchParams();
+    if (filters?.buyerId) params.append('buyerId', filters.buyerId);
+    if (filters?.category && filters.category !== 'all') params.append('category', filters.category);
+    if (filters?.location && filters.location.trim()) params.append('location', filters.location.trim());
+    if (filters?.status && filters.status !== 'all') params.append('status', filters.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.request<BuyerRequest[]>(`/buyer-requests${query}`);
+  }
+
+  async createBuyerRequest(reqData: Partial<BuyerRequest>): Promise<BuyerRequest> {
+    return this.request<BuyerRequest>('/buyer-requests', {
+      method: 'POST',
+      body: JSON.stringify(reqData)
+    });
+  }
+
+  async updateBuyerRequest(
+    id: string,
+    updates: Partial<BuyerRequest> & { buyerId?: string }
+  ): Promise<BuyerRequest> {
+    return this.request<BuyerRequest>(`/buyer-requests/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+  }
+
+  async updateBuyerRequestStatus(
+    id: string,
+    status: BuyerRequestStatus,
+    buyerId?: string
+  ): Promise<BuyerRequest> {
+    return this.request<BuyerRequest>(`/buyer-requests/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, buyerId })
+    });
+  }
+
+  async respondToBuyerRequest(
+    id: string,
+    farmerId: string,
+    farmerName?: string
+  ): Promise<BuyerRequest> {
+    return this.request<BuyerRequest>(`/buyer-requests/${id}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ farmerId, farmerName })
+    });
+  }
+
+  async deleteBuyerRequest(id: string, buyerId?: string): Promise<void> {
+    const query = buyerId ? `?buyerId=${encodeURIComponent(buyerId)}` : '';
+    await this.request(`/buyer-requests/${id}${query}`, { method: 'DELETE' });
   }
 }
 

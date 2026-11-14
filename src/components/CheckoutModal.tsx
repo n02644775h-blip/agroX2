@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
@@ -34,7 +34,7 @@ import {
 
 interface CheckoutModalProps {
   onClose: () => void;
-  onOrderSuccess: (order: Order) => void;
+  onOrderSuccess: (orders: Order[]) => void;
   onRequireAuth?: () => void;
 }
 
@@ -49,10 +49,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     subtotal,
     farmerIdInCart,
     farmNameInCart,
-    checkout,
+    checkoutBatch,
     updateQuantity,
     removeFromCart
   } = useCart();
+  const submitLockRef = useRef(false);
 
   // Fulfillment
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
@@ -347,9 +348,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           }
         : undefined;
 
+    if (submitLockRef.current || isSubmitting) return;
+    submitLockRef.current = true;
     setIsSubmitting(true);
     try {
-      const order = await checkout({
+      const orders = await checkoutBatch({
         buyerId: user.id,
         buyerName: user.name,
         buyerPhone: buyerPhone.trim(),
@@ -367,12 +370,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         farmerPaymentDetails: sellerPaymentInfo,
         buyerNotes: notes.trim() || undefined
       });
-      onOrderSuccess(order);
+      onOrderSuccess(orders);
     } catch (err: any) {
       console.error('Checkout failed:', err);
       setErrorMessage(err?.message || 'Failed to place order. Please try again.');
     } finally {
       setIsSubmitting(false);
+      submitLockRef.current = false;
     }
   };
 

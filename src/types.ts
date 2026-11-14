@@ -179,6 +179,7 @@ export interface OrderItem {
   productId: string;
   productName: string;
   productImage: string;
+  farmerId?: string;
   price: number;
   unit: string;
   quantity: number;
@@ -188,6 +189,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   orderNumber: string;
+  checkoutGroupId?: string;
   buyerId: string;
   buyerName: string;
   buyerPhone: string;
@@ -272,6 +274,27 @@ export interface Message {
     unit: string;
     image: string;
   };
+  postReference?: {
+    postId: string;
+    caption: string;
+    productName?: string;
+    price?: number;
+    unit?: string;
+    mediaUrl?: string;
+    mediaType?: 'image' | 'video';
+    farmerName: string;
+    farmName?: string;
+  };
+  requestReference?: {
+    requestId: string;
+    productName: string;
+    categoryName?: string;
+    quantityRequired: string;
+    location: string;
+    budgetText?: string;
+    status: BuyerRequestStatus;
+    buyerName: string;
+  };
 }
 
 export interface Conversation {
@@ -289,6 +312,8 @@ export interface Conversation {
   productId?: string;
   productName?: string;
   orderId?: string;
+  requestId?: string;
+  postId?: string;
 }
 
 export interface Notification {
@@ -296,7 +321,7 @@ export interface Notification {
   userId: string;
   title: string;
   message: string;
-  type: 'order' | 'message' | 'announcement' | 'stock' | 'inventory' | 'system';
+  type: 'order' | 'message' | 'announcement' | 'stock' | 'inventory' | 'system' | 'request' | 'post';
   link?: string;
   read: boolean;
   createdAt: string;
@@ -426,3 +451,64 @@ export interface FilterState {
   farmerId?: string;
   sortBy: 'newest' | 'price_asc' | 'price_desc' | 'popular' | 'rating';
 }
+
+export interface MediaPostItem {
+  url: string;
+  type: 'image' | 'video';
+  mimeType?: string;
+  fileName?: string;
+}
+
+export interface MediaPost {
+  id: string;
+  farmerId: string;
+  farmerName: string;
+  farmerAvatar: string;
+  farmName: string;
+  sellerRole?: UserRole;
+  media: MediaPostItem[];
+  caption: string;
+  description?: string;
+  productName?: string;
+  price?: number;
+  unit?: string;
+  hashtags: string[];
+  taggedProductId?: string;
+  taggedProductName?: string;
+  shareLocation?: boolean;
+  location?: string;
+  likesCount: number;
+  likedBy: string[];
+  quoteRequestsCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type BuyerRequestStatus = 'open' | 'in_discussion' | 'handled' | 'cancelled';
+
+export interface BuyerRequest {
+  id: string;
+  buyerId: string;
+  buyerName: string;
+  buyerAvatar?: string;
+  buyerPhone?: string;
+  productName: string;
+  category: string;
+  categoryName: string;
+  description: string;
+  quantityRequired: string;
+  preferredPrice?: number;
+  budgetCurrency?: string;
+  budgetNotes?: string;
+  location: string;
+  requiredDate?: string;
+  notes?: string;
+  referenceImages?: string[];
+  status: BuyerRequestStatus;
+  respondedFarmerIds?: string[];
+  responseCount?: number;
+  handledAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
