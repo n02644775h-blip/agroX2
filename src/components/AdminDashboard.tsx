@@ -16,12 +16,14 @@ import {
 import {
   subscribeToFirebaseAdRequests,
   updateFirebaseAdRequestStatus,
-  deleteFirebaseAdRequest
+  deleteFirebaseAdRequest,
+  expireFirebaseAdRequest
 } from '../services/firebaseAdRequests';
 import { db } from '../firebase/config';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { sanitizeForFirestore, useAuth } from '../context/AuthContext';
 import { compressImage } from '../utils/imageCompressor';
+import { getAdLifecycle, getAdStatusBadgeMeta, formatAdDate } from '../utils/adLifecycle';
 import {
   ShieldCheck,
   Users,
@@ -98,6 +100,8 @@ export const AdminDashboard: React.FC = () => {
 
   // Admin Profile Picture Edit Modal
   const [showAdminAvatarModal, setShowAdminAvatarModal] = useState(false);
+  const [pendingDeleteProductId, setPendingDeleteProductId] = useState<string | null>(null);
+  const [pendingDeleteAnnId, setPendingDeleteAnnId] = useState<string | null>(null);
   const [adminAvatarDraft, setAdminAvatarDraft] = useState(
     adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'
   );
@@ -135,9 +139,10 @@ export const AdminDashboard: React.FC = () => {
 
   // Advertisers POP Viewer Modal
   const [viewingPopAd, setViewingPopAd] = useState<AdRequest | null>(null);
-  const [adStatusFilter, setAdStatusFilter] = useState<'all' | 'submitted' | 'under_review' | 'approved' | 'rejected'>('all');
+  const [adStatusFilter, setAdStatusFilter] = useState<'all' | 'pending' | 'approved' | 'active' | 'expired' | 'rejected'>('all');
   const [adminNotesInput, setAdminNotesInput] = useState<{ [key: string]: string }>({});
   const [updatingAdId, setUpdatingAdId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const loadAdminData = async () => {
     setLoading(true);
@@ -206,10 +211,13 @@ export const AdminDashboard: React.FC = () => {
       }
     );
 
+    const adTicker = setInterval(() => setNowMs(Date.now()), 30000);
+
     return () => {
       unsubscribeUsers();
       unsubscribeAnnouncements();
       unsubscribeAds();
+      clearInterval(adTicker);
     };
   }, []);
 
@@ -339,7 +347,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!confirm('Permanently remove this product from marketplace?')) return;
+    setPendingDeleteProductId(null);
     try {
       await api.deleteProduct(productId);
       await loadAdminData();
@@ -397,7 +405,7 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleDeleteAnnouncement = async (annId: string) => {
-    if (!confirm('Remove this announcement broadcast?')) return;
+    setPendingDeleteAnnId(null);
     try {
       setAnnouncementsList(prev => prev.filter(a => a.id !== annId));
       await deleteFirebaseAnnouncement(annId);
@@ -413,17 +421,23 @@ export const AdminDashboard: React.FC = () => {
   const handleUpdateAdStatus = async (adId: string, status: AdStatus) => {
     setUpdatingAdId(adId);
     try {
+      const targetAd = adRequests.find(a => a.id === adId);
+      const durationDays = targetAd ? getAdLifecycle(targetAd, nowMs).durationDays : undefined;
       const notes = adminNotesInput[adId] || '';
-      try {
-        await updateFirebaseAdRequestStatus(adId, status, notes);
-      } catch (fbErr) {
-        console.warn('Firebase ad status update warning:', fbErr);
+      if (status === 'expired') {
+        await expireFirebaseAdRequest(adId).catch(() => {});
+      } else {
+        await updateFirebaseAdRequestStatus(adId, status, notes, adminUser?.name, durationDays).catch(fbErr => {
+          console.warn('Firebase ad status update warning:', fbErr);
+        });
       }
-      await api.updateAdRequestStatus(adId, status, notes);
+      await api.updateAdRequestStatus(adId, status, notes).catch(() => {});
       await loadAdminData();
       if (viewingPopAd && viewingPopAd.id === adId) {
         setViewingPopAd(prev => prev ? { ...prev, status, adminNotes: notes } : null);
       }
+      setSyncToast(`Advertisement status updated to ${status.replace(/_/g, ' ')}.`);
+      setTimeout(() => setSyncToast(null), 3000);
     } catch (err) {
       console.error('Failed to update ad status:', err);
     } finally {
@@ -432,27 +446,30 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleDeleteAd = async (adId: string) => {
-    if (!confirm('Permanently delete this advertisement request?')) return;
     try {
-      try {
-        await deleteFirebaseAdRequest(adId);
-      } catch (fbErr) {
+      await deleteFirebaseAdRequest(adId).catch(fbErr => {
         console.warn('Firebase delete ad request warning:', fbErr);
-      }
-      await api.deleteAdRequest(adId);
+      });
+      await api.deleteAdRequest(adId).catch(() => {});
       await loadAdminData();
       if (viewingPopAd && viewingPopAd.id === adId) {
         setViewingPopAd(null);
       }
+      setSyncToast('Advertisement request deleted.');
+      setTimeout(() => setSyncToast(null), 3000);
     } catch (err) {
       console.error('Failed to delete ad request:', err);
     }
   };
 
-  const pendingAdsCount = adRequests.filter(a => a.status === 'submitted' || a.status === 'sent' || a.status === 'under_review').length;
+  const pendingAdsCount = adRequests.filter(a => getAdLifecycle(a, nowMs).effectiveStatus === 'pending').length;
   const filteredAds = adRequests.filter(a => {
     if (adStatusFilter === 'all') return true;
-    return a.status === adStatusFilter;
+    const eff = getAdLifecycle(a, nowMs).effectiveStatus;
+    if (adStatusFilter === 'approved') {
+      return eff === 'approved' || eff === 'active';
+    }
+    return eff === adStatusFilter;
   });
 
   // Filtered users for table
@@ -1087,10 +1104,11 @@ export const AdminDashboard: React.FC = () => {
             {/* Filter Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto py-1">
               {[
-                { id: 'all', label: 'All Requests' },
-                { id: 'submitted', label: 'Sent / New' },
-                { id: 'under_review', label: 'Under Review' },
-                { id: 'approved', label: 'Approved (Live Deals)' },
+                { id: 'all', label: 'All' },
+                { id: 'pending', label: 'Pending' },
+                { id: 'approved', label: 'Approved' },
+                { id: 'active', label: 'Active' },
+                { id: 'expired', label: 'Expired' },
                 { id: 'rejected', label: 'Rejected' }
               ].map(pill => (
                 <button
@@ -1121,22 +1139,18 @@ export const AdminDashboard: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 gap-4">
               {filteredAds.map(ad => {
-                const isSent = ad.status === 'submitted' || ad.status === 'sent';
-                const isUnderReview = ad.status === 'under_review';
-                const isApproved = ad.status === 'approved';
-                const isRejected = ad.status === 'rejected';
-                const feeVal = Number(ad.totalFee ?? ad.totalAmount ?? (Number(ad.days || ad.durationDays || 7) * 1.00));
-                const daysVal = Number(ad.durationDays ?? ad.days ?? 7);
+                const lifecycle = getAdLifecycle(ad, nowMs);
+                const badge = getAdStatusBadgeMeta(lifecycle.effectiveStatus);
+                const feeVal = Number(ad.totalFee ?? ad.totalAmount ?? (lifecycle.durationDays * 1.00));
+                const daysVal = lifecycle.durationDays;
 
                 return (
                   <div
                     key={ad.id}
                     className={`bg-white rounded-3xl border p-5 sm:p-6 shadow-xs transition-all space-y-4 ${
-                      isSent
-                        ? 'border-blue-300 bg-blue-50/20'
-                        : isUnderReview
-                        ? 'border-amber-300 bg-amber-50/20'
-                        : isApproved
+                      lifecycle.effectiveStatus === 'pending'
+                        ? 'border-amber-300 bg-amber-50/15'
+                        : lifecycle.effectiveStatus === 'active' || lifecycle.effectiveStatus === 'approved'
                         ? 'border-emerald-300'
                         : 'border-stone-200 opacity-90'
                     }`}
@@ -1148,20 +1162,12 @@ export const AdminDashboard: React.FC = () => {
                           <Flame className="w-5 h-5 fill-orange-500 text-orange-600" />
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-extrabold text-stone-900 text-base">{ad.dealHeadline}</h3>
                             <span
-                              className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                isSent
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : isUnderReview
-                                  ? 'bg-amber-100 text-amber-900'
-                                  : isApproved
-                                  ? 'bg-emerald-100 text-emerald-900'
-                                  : 'bg-red-100 text-red-900'
-                              }`}
+                              className={`px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider ${badge.className}`}
                             >
-                              {ad.status.replace(/_/g, ' ')}
+                              {badge.label}
                             </span>
                           </div>
                           <div className="text-xs text-stone-500 mt-0.5">
@@ -1170,7 +1176,7 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-4 text-right">
+                      <div className="flex items-center gap-4 text-right tabular-nums">
                         <div>
                           <div className="text-xs text-stone-400">Campaign Fee</div>
                           <div className="text-base font-black text-emerald-800">${feeVal.toFixed(2)}</div>
@@ -1182,10 +1188,36 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Campaign Schedule Row: Start Date, Expiry Date, Remaining */}
+                    <div className="grid grid-cols-3 gap-3 bg-stone-50 px-4 py-2.5 rounded-2xl border border-stone-200/70 text-xs tabular-nums">
+                      <div>
+                        <span className="text-stone-400 font-semibold block text-[11px]">Start Date</span>
+                        <span className="font-bold text-stone-900">{formatAdDate(lifecycle.startDateIso)}</span>
+                      </div>
+                      <div>
+                        <span className="text-stone-400 font-semibold block text-[11px]">Expiry Date</span>
+                        <span className="font-bold text-stone-900">{formatAdDate(lifecycle.endDateIso)}</span>
+                      </div>
+                      <div>
+                        <span className="text-stone-400 font-semibold block text-[11px]">Remaining Duration</span>
+                        <span className={`font-bold ${
+                          lifecycle.effectiveStatus === 'active'
+                            ? 'text-emerald-700'
+                            : lifecycle.effectiveStatus === 'expired'
+                            ? 'text-stone-500'
+                            : lifecycle.effectiveStatus === 'rejected'
+                            ? 'text-red-600'
+                            : 'text-amber-700'
+                        }`}>
+                          {lifecycle.remainingLabel}
+                        </span>
+                      </div>
+                    </div>
+
                     {/* Body Content */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                       <div className="bg-stone-50 p-3.5 rounded-2xl space-y-1">
-                        <div className="text-stone-400 font-semibold text-[11px]">Product & Discount</div>
+                        <div className="text-stone-400 font-semibold text-[11px]">Product &amp; Discount</div>
                         <div className="font-bold text-stone-900 text-sm">{ad.productName}</div>
                         <div className="text-orange-700 font-bold">Offer: {ad.discountText}</div>
                         <div className="text-stone-500 mt-1 line-clamp-2">{ad.dealDescription}</div>
@@ -1225,8 +1257,8 @@ export const AdminDashboard: React.FC = () => {
                         </div>
 
                         {/* Action buttons */}
-                        <div className="flex items-center gap-2 pt-1">
-                          {ad.status !== 'approved' && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          {lifecycle.effectiveStatus !== 'active' && lifecycle.effectiveStatus !== 'approved' && (
                             <button
                               onClick={() => handleUpdateAdStatus(ad.id, 'approved')}
                               disabled={updatingAdId === ad.id}
@@ -1237,26 +1269,35 @@ export const AdminDashboard: React.FC = () => {
                             </button>
                           )}
 
-                          {ad.status !== 'under_review' && ad.status !== 'approved' && (
+                          {(lifecycle.effectiveStatus === 'active' || lifecycle.effectiveStatus === 'approved') && (
                             <button
-                              onClick={() => handleUpdateAdStatus(ad.id, 'under_review')}
+                              onClick={() => handleUpdateAdStatus(ad.id, 'expired')}
                               disabled={updatingAdId === ad.id}
-                              className="py-1.5 px-2 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                              className="py-1.5 px-3 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-lg font-bold text-xs transition-colors cursor-pointer"
                             >
-                              Review
+                              Mark Expired
                             </button>
                           )}
 
-                          {ad.status !== 'rejected' && (
+                          {lifecycle.effectiveStatus !== 'rejected' && (
                             <button
                               onClick={() => handleUpdateAdStatus(ad.id, 'rejected')}
                               disabled={updatingAdId === ad.id}
                               className="py-1.5 px-3 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
                             >
                               <X className="w-3.5 h-3.5" />
-                              Decline
+                              Reject
                             </button>
                           )}
+
+                          <button
+                            onClick={() => handleDeleteAd(ad.id)}
+                            disabled={updatingAdId === ad.id}
+                            className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="Delete Ad Request"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1376,13 +1417,30 @@ export const AdminDashboard: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleDeleteProduct(prod.id)}
-                        className="p-1.5 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
-                        title="Remove Listing"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {pendingDeleteProductId === prod.id ? (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => handleDeleteProduct(prod.id)}
+                            className="px-2 py-1 rounded-md bg-red-600 text-white text-[10px] font-bold hover:bg-red-700 cursor-pointer"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={() => setPendingDeleteProductId(null)}
+                            className="px-2 py-1 rounded-md bg-stone-100 text-stone-600 text-[10px] font-bold hover:bg-stone-200 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setPendingDeleteProductId(prod.id)}
+                          className="p-1.5 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                          title="Remove Listing"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1524,13 +1582,30 @@ export const AdminDashboard: React.FC = () => {
                       }`}>
                         {ann.priority}
                       </span>
-                      <button
-                        onClick={() => handleDeleteAnnouncement(ann.id)}
-                        className="text-stone-400 hover:text-red-600 p-1 rounded-md hover:bg-red-50"
-                        title="Delete broadcast"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {pendingDeleteAnnId === ann.id ? (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => handleDeleteAnnouncement(ann.id)}
+                            className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold hover:bg-red-700 cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                          <button
+                            onClick={() => setPendingDeleteAnnId(null)}
+                            className="px-2 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-bold hover:bg-stone-200 cursor-pointer"
+                          >
+                            Keep
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setPendingDeleteAnnId(ann.id)}
+                          className="text-stone-400 hover:text-red-600 p-1 rounded-md hover:bg-red-50 cursor-pointer"
+                          title="Delete broadcast"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                   <p className="text-stone-600 line-clamp-2">{ann.content}</p>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
+import { useCart } from './context/CartContext';
 import { mobileService } from './services/mobileService';
 import { Navbar } from './components/Navbar';
 import { AnnouncementsBanner } from './components/AnnouncementsBanner';
@@ -14,6 +15,7 @@ import { FarmProfileView } from './components/FarmProfileView';
 import { FavoritesView } from './components/FavoritesView';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { AddEditProductModal } from './components/AddEditProductModal';
+import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
 import { ReviewModal } from './components/ReviewModal';
 import { ReportModal } from './components/ReportModal';
@@ -41,6 +43,7 @@ import {
 
 export function App() {
   const { user, suspensionNotice, clearSuspensionNotice } = useAuth();
+  const { openCart, isCheckoutOpen, closeCheckout } = useCart();
 
   // Navigation State with persistence across refreshes
   const [currentView, setCurrentView] = useState<string>(() => {
@@ -65,7 +68,6 @@ export function App() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
   const [farmerRefreshKey, setFarmerRefreshKey] = useState(0);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
   const [reportProduct, setReportProduct] = useState<Product | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -84,7 +86,7 @@ export function App() {
       // Close open modals first on hardware back button press
       if (selectedProduct) { setSelectedProduct(null); return true; }
       if (isAddProductOpen) { setIsAddProductOpen(false); return true; }
-      if (isCheckoutOpen) { setIsCheckoutOpen(false); return true; }
+      if (isCheckoutOpen) { closeCheckout(); return true; }
       if (reviewOrder) { setReviewOrder(null); return true; }
       if (reportProduct) { setReportProduct(null); return true; }
       if (isAuthOpen) { setIsAuthOpen(false); return true; }
@@ -282,7 +284,7 @@ export function App() {
             setIsAuthOpen(true);
           }}
           onOpenNotifications={() => setIsNotificationsOpen(true)}
-          onOpenCart={() => setIsCheckoutOpen(true)}
+          onOpenCart={openCart}
           onOpenAddProduct={() => {
             setEditingProduct(null);
             setIsAddProductOpen(true);
@@ -558,11 +560,17 @@ export function App() {
         />
       )}
 
+      <CartDrawer />
+
       {isCheckoutOpen && (
         <CheckoutModal
-          onClose={() => setIsCheckoutOpen(false)}
+          onClose={closeCheckout}
+          onRequireAuth={() => {
+            setAuthMode('login');
+            setIsAuthOpen(true);
+          }}
           onOrderSuccess={(order) => {
-            setIsCheckoutOpen(false);
+            closeCheckout();
             setSelectedOrderForTracking(order);
             setCurrentView('orders');
           }}
@@ -619,7 +627,7 @@ export function App() {
         currentView={currentView}
         onNavigate={handleNavigate}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
-        onOpenCart={() => setIsCheckoutOpen(true)}
+        onOpenCart={openCart}
         onOpenAddProduct={() => {
           setEditingProduct(null);
           setIsAddProductOpen(true);

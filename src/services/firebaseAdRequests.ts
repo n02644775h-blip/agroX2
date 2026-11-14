@@ -220,7 +220,8 @@ export async function updateFirebaseAdRequestStatus(
   id: string,
   status: AdRequestStatus,
   adminFeedback?: string,
-  reviewedBy?: string
+  reviewedBy?: string,
+  durationDaysOverride?: number
 ): Promise<void> {
   try {
     const docRef = doc(db, 'adRequests', id);
@@ -230,15 +231,38 @@ export async function updateFirebaseAdRequestStatus(
     };
     if (adminFeedback !== undefined) updates.adminFeedback = adminFeedback;
     if (reviewedBy !== undefined) updates.reviewedBy = reviewedBy;
-    if (status === 'approved') {
+    if (status === 'approved' || status === 'active') {
       const now = new Date();
+      let days = durationDaysOverride;
+      if (!days) {
+        const snap = await getDoc(docRef).catch(() => null);
+        const existingData = snap?.exists() ? snap.data() : null;
+        days = Number(existingData?.days || existingData?.durationDays || 7);
+      }
+      const safeDays = Number.isFinite(days) && days! > 0 ? Math.min(Math.max(days!, 1), 30) : 7;
       updates.startDate = now.toISOString();
-      updates.endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      updates.endDate = new Date(now.getTime() + safeDays * 24 * 60 * 60 * 1000).toISOString();
       updates.reviewedAt = now.toISOString();
+      updates.days = safeDays;
+      updates.durationDays = safeDays;
+    } else if (status === 'rejected' || status === 'expired') {
+      updates.reviewedAt = new Date().toISOString();
     }
     await updateDoc(docRef, updates);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `adRequests/${id}`);
+  }
+}
+
+export async function expireFirebaseAdRequest(id: string): Promise<void> {
+  try {
+    const docRef = doc(db, 'adRequests', id);
+    await updateDoc(docRef, {
+      status: 'expired',
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.warn('Could not mark Firestore ad expired:', err);
   }
 }
 

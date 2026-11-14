@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Product, ProductCategory, FilterState, AdRequest } from '../types';
 import { api } from '../services/api';
 import { subscribeToFirebaseProducts } from '../services/firebaseProducts';
+import { subscribeToFirebaseAdRequests, expireFirebaseAdRequest } from '../services/firebaseAdRequests';
+import { getAdLifecycle, isAdActiveNow } from '../utils/adLifecycle';
 import { ProductCard } from './ProductCard';
 import {
   Search,
@@ -71,7 +73,9 @@ const PROVINCES = [
 export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSelectFarmer, onContactFarmer }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
-  const [hotDeals, setHotDeals] = useState<AdRequest[]>([]);
+  const [allAds, setAllAds] = useState<AdRequest[]>([]);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const expiredSyncedRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState<boolean>(true);
   const [showFiltersDrawer, setShowFiltersDrawer] = useState<boolean>(false);
 
@@ -107,7 +111,14 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
       ]);
       setProducts(prodsData);
       setCategories(catsData);
-      setHotDeals(hotDealsData);
+      if (hotDealsData && hotDealsData.length > 0) {
+        setAllAds(prev => {
+          const map = new Map<string, AdRequest>();
+          prev.forEach(a => map.set(a.id, a));
+          hotDealsData.forEach(a => map.set(a.id, a));
+          return Array.from(map.values());
+        });
+      }
     } catch (err) {
       console.error('Failed to load marketplace products:', err);
     } finally {
@@ -163,6 +174,55 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
       unsubscribe();
     };
   }, [filters.category, filters.province, filters.availability, filters.isOrganic, filters.sortBy]);
+
+  // Real-time Featured Advertisements listener + 30s auto-expiry ticker
+  useEffect(() => {
+    const unsubAds = subscribeToFirebaseAdRequests(
+      undefined,
+      (fbAds) => {
+        if (fbAds && fbAds.length > 0) {
+          setAllAds(prev => {
+            const map = new Map<string, AdRequest>();
+            // Keep any backend seed ads not present in Firestore yet
+            prev.forEach(a => {
+              if (!fbAds.some(f => f.id === a.id)) {
+                map.set(a.id, a);
+              }
+            });
+            fbAds.forEach(a => map.set(a.id, a));
+            return Array.from(map.values());
+          });
+        }
+      },
+      () => {}
+    );
+
+    const ticker = setInterval(() => {
+      setNowMs(Date.now());
+    }, 30000);
+
+    return () => {
+      unsubAds();
+      clearInterval(ticker);
+    };
+  }, []);
+
+  // Automatically sync past-endDate ads to 'expired' in Firestore & compute live homepage ads
+  useEffect(() => {
+    allAds.forEach(ad => {
+      const lifecycle = getAdLifecycle(ad, nowMs);
+      if (
+        lifecycle.effectiveStatus === 'expired' &&
+        (ad.status === 'approved' || ad.status === 'active') &&
+        !expiredSyncedRef.current.has(ad.id)
+      ) {
+        expiredSyncedRef.current.add(ad.id);
+        expireFirebaseAdRequest(ad.id).catch(() => {});
+      }
+    });
+  }, [allAds, nowMs]);
+
+  const featuredAds = allAds.filter(ad => isAdActiveNow(ad, nowMs));
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -272,130 +332,136 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ onSelectProduct, onSel
         </div>
       </div>
 
-      {/* SECTION: Hot Deals (Approved Advertisements) */}
-      {hotDeals.length > 0 && (
-        <section className="bg-gradient-to-r from-amber-50 via-orange-50 to-emerald-50 rounded-3xl p-6 border border-orange-200/80 shadow-xs space-y-4">
+      {/* SECTION: Featured Advertisements (Approved & Active Ads) */}
+      {featuredAds.length > 0 && (
+        <section
+          id="featured-advertisements-section"
+          className="bg-gradient-to-r from-amber-50 via-orange-50 to-emerald-50 rounded-3xl p-6 border border-orange-200/80 shadow-xs space-y-4"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="p-2 bg-orange-600 rounded-xl text-white shadow-xs">
-                <Flame className="w-5 h-5 fill-amber-300 text-white animate-pulse" />
+                <Flame className="w-5 h-5 fill-amber-300 text-white" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="font-black text-stone-900 text-lg sm:text-xl tracking-tight">
-                    Hot Deals & Farmer Specials
+                    Featured Advertisements
                   </h2>
                   <span className="px-2.5 py-0.5 rounded-full bg-orange-600 text-white font-extrabold text-[10px] uppercase tracking-wider shadow-2xs">
-                    Limited Time
+                    Sponsored Promotions
                   </span>
                 </div>
                 <p className="text-xs text-stone-600">
-                  Exclusive verified harvest promotions directly from our certified producers
+                  Admin-verified harvest &amp; fodder promotions currently active on the marketplace
                 </p>
               </div>
             </div>
-            <div className="text-xs text-orange-900 font-bold bg-white/80 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-orange-200 shrink-0">
-              ⚡ {hotDeals.length} Active {hotDeals.length === 1 ? 'Promotion' : 'Promotions'}
+            <div className="text-xs text-orange-900 font-bold bg-white/80 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-orange-200 shrink-0 tabular-nums">
+              {featuredAds.length} Active {featuredAds.length === 1 ? 'Advertisement' : 'Advertisements'}
             </div>
           </div>
 
-          {/* Deals Cards Grid */}
+          {/* Featured Ads Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
-            {hotDeals.map(deal => (
-              <div
-                key={deal.id}
-                className="bg-white rounded-2xl border border-orange-200/70 p-4 shadow-sm hover:shadow-md hover:border-orange-400 transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group"
-              >
-                {/* Top Badge */}
-                <div className="flex items-start justify-between gap-2">
-                  <span className="px-2.5 py-1 rounded-lg bg-orange-100 text-orange-800 text-[11px] font-extrabold flex items-center gap-1 border border-orange-200">
-                    <Tag className="w-3 h-3 text-orange-600" />
-                    {deal.discountPercentage ? `${deal.discountPercentage}% OFF` : 'PROMO DEAL'}
-                  </span>
-                  <button
-                    onClick={() => onSelectFarmer(deal.farmerId)}
-                    className="text-[11px] font-bold text-stone-500 hover:text-emerald-700 truncate max-w-[140px]"
-                  >
-                    by {deal.farmName || deal.farmerName}
-                  </button>
-                </div>
-
-                {/* Product Image & Info */}
-                <div className="flex items-center gap-3">
-                  {deal.productImage && (
-                    <img
-                      src={deal.productImage}
-                      alt=""
-                      className="w-16 h-16 rounded-xl object-cover bg-stone-100 shrink-0 group-hover:scale-105 transition-transform"
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-extrabold text-stone-900 text-sm leading-snug line-clamp-1">
-                      {deal.dealHeadline}
-                    </h3>
-                    <p className="text-[11px] text-stone-500 line-clamp-1 mt-0.5">
-                      {deal.dealDescription || deal.productName}
-                    </p>
-                    <div className="flex items-baseline gap-2 mt-1">
-                      {deal.specialPrice ? (
-                        <>
-                          <span className="text-base font-black text-orange-700">
-                            ${deal.specialPrice.toFixed(2)}
-                          </span>
-                          {deal.productPrice && (
-                            <span className="text-xs text-stone-400 line-through">
-                              ${deal.productPrice.toFixed(2)}
-                            </span>
-                          )}
-                        </>
-                      ) : deal.productPrice ? (
-                        <span className="text-base font-black text-emerald-800">
-                          ${deal.productPrice.toFixed(2)}
-                        </span>
-                      ) : null}
-                      {deal.productUnit && (
-                        <span className="text-[11px] text-stone-500 font-medium">
-                          / {deal.productUnit}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action CTA */}
-                <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-                  <span className="text-[10px] text-stone-400 font-semibold flex items-center gap-1">
-                    <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                    Verified Farmer POP
-                  </span>
-                  {deal.productId ? (
-                    <button
-                      onClick={() => {
-                        const targetProd = products.find(p => p.id === deal.productId);
-                        if (targetProd) {
-                          onSelectProduct(targetProd);
-                        } else {
-                          // Search for product by name
-                          handleQuickTagClick(deal.productName || deal.dealHeadline);
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
-                    >
-                      <span>Claim Deal</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  ) : (
+            {featuredAds.map(deal => {
+              const lifecycle = getAdLifecycle(deal, nowMs);
+              return (
+                <div
+                  key={deal.id}
+                  className="bg-white rounded-2xl border border-orange-200/70 p-4 shadow-sm hover:shadow-md hover:border-orange-400 transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group"
+                >
+                  {/* Top Row */}
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-orange-100 text-orange-800 text-[11px] font-extrabold flex items-center gap-1 border border-orange-200">
+                      <Tag className="w-3 h-3 text-orange-600" />
+                      {deal.discountPercentage ? `${deal.discountPercentage}% OFF` : deal.discountText || 'FEATURED'}
+                    </span>
                     <button
                       onClick={() => onSelectFarmer(deal.farmerId)}
-                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                      className="text-[11px] font-bold text-stone-500 hover:text-emerald-700 truncate max-w-[140px] cursor-pointer"
                     >
-                      <span>Visit Farm</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      by {deal.farmName || deal.farmerName}
                     </button>
-                  )}
+                  </div>
+
+                  {/* Product Image & Info */}
+                  <div className="flex items-center gap-3">
+                    {deal.productImage && (
+                      <img
+                        src={deal.productImage}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="w-16 h-16 rounded-xl object-cover bg-stone-100 shrink-0 group-hover:scale-105 transition-transform"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-extrabold text-stone-900 text-sm leading-snug line-clamp-1">
+                        {deal.dealHeadline}
+                      </h3>
+                      <p className="text-[11px] text-stone-500 line-clamp-1 mt-0.5">
+                        {deal.dealDescription || deal.productName}
+                      </p>
+                      <div className="flex items-baseline gap-2 mt-1 tabular-nums">
+                        {deal.specialPrice ? (
+                          <>
+                            <span className="text-base font-black text-orange-700">
+                              ${deal.specialPrice.toFixed(2)}
+                            </span>
+                            {deal.productPrice && (
+                              <span className="text-xs text-stone-400 line-through">
+                                ${deal.productPrice.toFixed(2)}
+                              </span>
+                            )}
+                          </>
+                        ) : deal.productPrice ? (
+                          <span className="text-base font-black text-emerald-800">
+                            ${deal.productPrice.toFixed(2)}
+                          </span>
+                        ) : null}
+                        {deal.productUnit && (
+                          <span className="text-[11px] text-stone-500 font-medium">
+                            / {deal.productUnit}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action CTA & Remaining Duration */}
+                  <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-stone-500 font-semibold flex items-center gap-1 tabular-nums">
+                      <Clock className="w-3 h-3 text-emerald-600" />
+                      {lifecycle.remainingLabel}
+                    </span>
+                    {deal.productId ? (
+                      <button
+                        onClick={() => {
+                          const targetProd = products.find(p => p.id === deal.productId);
+                          if (targetProd) {
+                            onSelectProduct(targetProd);
+                          } else {
+                            handleQuickTagClick(deal.productName || deal.dealHeadline);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                      >
+                        <span>Claim Deal</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onSelectFarmer(deal.farmerId)}
+                        className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-colors shadow-2xs cursor-pointer"
+                      >
+                        <span>Visit Farm</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}

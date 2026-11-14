@@ -84,8 +84,13 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
     user?.farmerProfile?.practices || ['100% Organic', 'Same-Day Harvest']
   );
   
+  const [pickupInstructions, setPickupInstructions] = useState(
+    user?.farmerProfile?.pickupInstructions || ''
+  );
+
   // Payment credentials
   const [ecocash, setEcocash] = useState(user?.farmerProfile?.paymentInfo?.ecocash || '');
+  const [onemoney, setOnemoney] = useState(user?.farmerProfile?.paymentInfo?.onemoney || '');
   const [innbucks, setInnbucks] = useState(user?.farmerProfile?.paymentInfo?.innbucks || '');
   const [bankInfo, setBankInfo] = useState(user?.farmerProfile?.paymentInfo?.bankAccount || '');
 
@@ -144,10 +149,12 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
           bio: bio.trim(),
           farmSize: farmSize.trim(),
           address: address.trim(),
+          pickupInstructions: pickupInstructions.trim(),
           whatsapp: whatsapp.trim(),
           practices: selectedPractices,
           paymentInfo: {
             ecocash: ecocash.trim(),
+            onemoney: onemoney.trim(),
             innbucks: innbucks.trim(),
             bankAccount: bankInfo.trim()
           }
@@ -454,6 +461,17 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
                 className="w-full px-3.5 py-2 bg-white rounded-xl border border-stone-300 text-stone-900"
               />
             </div>
+
+            <div>
+              <label className="font-semibold text-stone-700 block mb-1">Default Farm Pickup Instructions (for buyers collecting at farm)</label>
+              <textarea
+                rows={2}
+                value={pickupInstructions}
+                onChange={e => setPickupInstructions(e.target.value)}
+                placeholder="e.g. Gate opens 7:00 AM – 5:00 PM Mon–Sat. Call 15 mins before arrival at the main shed."
+                className="w-full px-3.5 py-2 bg-white rounded-xl border border-stone-300 text-stone-900"
+              />
+            </div>
           </div>
 
           {/* 6. Farming Practices & Badges */}
@@ -488,14 +506,25 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
               <span>Receiving Payout Credentials</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div>
                 <label className="font-semibold text-stone-700 block mb-1">EcoCash Merchant / No.</label>
                 <input
                   type="text"
                   value={ecocash}
                   onChange={e => setEcocash(e.target.value)}
-                  placeholder="e.g. 0772 123 456 / EC-994"
+                  placeholder="e.g. 0772 123 456"
+                  className="w-full px-3 py-2 bg-white rounded-xl border border-stone-300 text-stone-900"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">OneMoney No.</label>
+                <input
+                  type="text"
+                  value={onemoney}
+                  onChange={e => setOnemoney(e.target.value)}
+                  placeholder="e.g. 0712 345 678"
                   className="w-full px-3 py-2 bg-white rounded-xl border border-stone-300 text-stone-900"
                 />
               </div>
@@ -512,7 +541,7 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({ onClose,
               </div>
 
               <div>
-                <label className="font-semibold text-stone-700 block mb-1">Bank Name & Acc No.</label>
+                <label className="font-semibold text-stone-700 block mb-1">Bank Name &amp; Acc No.</label>
                 <input
                   type="text"
                   value={bankInfo}

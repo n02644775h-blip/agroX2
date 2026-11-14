@@ -26,6 +26,11 @@ import {
 import { auth, db } from '../firebase/config';
 import { getFriendlyAuthErrorMessage } from '../firebase/authErrors';
 import { checkFirestoreUserSuspended } from '../services/firebaseUsers';
+import {
+  subscribeToFirebaseNotifications,
+  markFirebaseNotificationRead,
+  markAllFirebaseNotificationsRead
+} from '../services/firebaseNotifications';
 import { User, UserRole, Notification, isSellerRole } from '../types';
 import { api } from '../services/api';
 
@@ -557,6 +562,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.id, user?.email]);
 
+  // Real-time synchronization of user notifications (order updates, POP reviews, broadcasts)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const unsubNotifs = subscribeToFirebaseNotifications(user.id, (fbNotifs) => {
+      setNotifications(prev => {
+        const map = new Map<string, Notification>();
+        prev.forEach(n => map.set(n.id, n));
+        fbNotifs.forEach(n => {
+          const existing = map.get(n.id);
+          map.set(n.id, {
+            ...n,
+            read: Boolean(n.read || existing?.read)
+          });
+        });
+        return Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      });
+    });
+
+    return () => {
+      unsubNotifs();
+    };
+  }, [user?.id]);
+
   // 1. User Registration / Signup
   const signup = async (
     fullName: string,
@@ -1067,14 +1098,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const markNotificationAsRead = async (id: string) => {
-    await api.markNotificationRead(id);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    await Promise.all([
+      api.markNotificationRead(id).catch(() => {}),
+      markFirebaseNotificationRead(id).catch(() => {})
+    ]);
   };
 
   const markAllNotificationsAsRead = async () => {
     if (!user) return;
-    await api.markAllNotificationsRead(user.id);
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    await Promise.all([
+      api.markAllNotificationsRead(user.id).catch(() => {}),
+      markAllFirebaseNotificationsRead(user.id).catch(() => {})
+    ]);
   };
 
   const unreadNotifsCount = notifications.filter(n => !n.read).length;

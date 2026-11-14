@@ -43,7 +43,14 @@ export const INITIAL_USERS: User[] = [
       totalReviews: 28,
       verified: true,
       coverImage: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&q=80&w=1200',
-      contactPreferences: ['phone', 'chat', 'whatsapp']
+      contactPreferences: ['phone', 'chat', 'whatsapp'],
+      address: 'Plot 14 GreenFields Estate, Ruzawi Valley, Marondera',
+      pickupInstructions: 'Collect at the GreenFields Packhouse Gate (Plot 14, Ruzawi Valley) between 08:00 and 17:00. Ask for Tendai at Dispatch.',
+      paymentInfo: {
+        ecocash: '077 212 3456 (Tendai Moyo)',
+        onemoney: '071 212 3456 (GreenFields Farm)',
+        bankAccount: 'CBZ Bank • Acc 01122334455 • Marondera Branch'
+      }
     }
   },
   {
@@ -72,7 +79,15 @@ export const INITIAL_USERS: User[] = [
       totalReviews: 42,
       verified: true,
       coverImage: 'https://images.unsplash.com/photo-1548550023-2bdb3c5beed7?auto=format&fit=crop&q=80&w=1200',
-      contactPreferences: ['chat', 'phone']
+      contactPreferences: ['chat', 'phone'],
+      address: 'Stand 5B Sunrise Lane, Thornhill Farmlands, Gweru',
+      pickupInstructions: 'Collect at Sunrise Farm Cold-Room Stand (Stand 5B Sunrise Lane). Bring a cooler box for dressed poultry.',
+      paymentInfo: {
+        ecocash: '077 889 0123 (Chipo Sibanda)',
+        onemoney: '071 889 0123 (Sunrise Poultry)',
+        innbucks: '071 889 0123',
+        bankAccount: 'FBC Bank • Acc 4490128831 • Gweru Branch'
+      }
     }
   },
   {
@@ -101,7 +116,14 @@ export const INITIAL_USERS: User[] = [
       totalReviews: 19,
       verified: true,
       coverImage: 'https://images.unsplash.com/photo-1618160702438-9b02ab6515c9?auto=format&fit=crop&q=80&w=1200',
-      contactPreferences: ['chat', 'phone', 'whatsapp']
+      contactPreferences: ['chat', 'phone', 'whatsapp'],
+      address: 'Farm Road 9, Vumba Valley, Mutare',
+      pickupInstructions: 'Drive through Main Orchard Gate on Farm Road 9 and check in at the Dairy Reception Desk.',
+      paymentInfo: {
+        ecocash: '078 456 7890 (Farai Ndlovu)',
+        onemoney: '071 456 7890 (Highlands Estate)',
+        bankAccount: 'Stanbic Bank • Acc 9140002918 • Mutare'
+      }
     }
   },
   {
@@ -174,7 +196,14 @@ export const INITIAL_USERS: User[] = [
       totalReviews: 17,
       verified: true,
       coverImage: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&q=80&w=1200',
-      contactPreferences: ['phone', 'chat', 'whatsapp']
+      contactPreferences: ['phone', 'chat', 'whatsapp'],
+      address: 'Plot 8 GreenBale Forage Works, Lomagundi Valley, Chinhoyi',
+      pickupInstructions: 'Weighbridge and loading bay open Monday–Saturday 07:00–16:30 at Plot 8 Lomagundi Valley.',
+      paymentInfo: {
+        ecocash: '077 321 9876 (Tawanda Gumbo)',
+        onemoney: '071 321 9876 (GreenBale Forage)',
+        bankAccount: 'NMB Bank • Acc 2201948120 • Chinhoyi'
+      }
     }
   },
   {
@@ -810,20 +839,32 @@ export const INITIAL_ORDERS: Order[] = [
         subtotal: 16.00
       }
     ],
+    subtotalAmount: 31.00,
+    deliveryFee: 0,
     totalAmount: 31.00,
-    status: 'completed',
+    status: 'done',
     deliveryMethod: 'delivery',
     deliveryAddress: '22 King George Road, Avondale, Harare',
+    deliveryLocation: {
+      mode: 'manual',
+      street: '22 King George Road',
+      suburb: 'Avondale',
+      city: 'Harare',
+      instructions: 'Please ring the front gate bell on arrival.',
+      formattedAddress: '22 King George Road, Avondale, Harare'
+    },
+    paymentMethod: 'ecocash',
+    paymentStatus: 'paid',
+    paymentReference: 'EC-8801-GC',
     buyerNotes: 'Please ring the front gate bell on arrival.',
     farmerNotes: 'Freshly harvested this morning and packed with care.',
     createdAt: '2026-08-22T10:15:00Z',
     updatedAt: '2026-08-23T15:30:00Z',
     statusHistory: [
-      { status: 'pending', timestamp: '2026-08-22T10:15:00Z', note: 'Order placed by buyer' },
-      { status: 'accepted', timestamp: '2026-08-22T11:00:00Z', note: 'Farmer accepted the order' },
-      { status: 'preparing', timestamp: '2026-08-23T06:30:00Z', note: 'Harvesting and packing' },
-      { status: 'out_for_delivery', timestamp: '2026-08-23T12:00:00Z', note: 'Dispatched via AgriRoute Express' },
-      { status: 'completed', timestamp: '2026-08-23T15:30:00Z', note: 'Delivered and received in good condition' }
+      { status: 'received', timestamp: '2026-08-22T10:15:00Z', note: 'Order received by GreenFields Organic Farm' },
+      { status: 'packaged', timestamp: '2026-08-23T06:30:00Z', note: 'Harvesting and packing complete' },
+      { status: 'delivering', timestamp: '2026-08-23T12:00:00Z', note: 'Dispatched via AgriRoute Express' },
+      { status: 'done', timestamp: '2026-08-23T15:30:00Z', note: 'Delivered and received in good condition' }
     ],
     isReviewed: true
   },
@@ -857,18 +898,31 @@ export const INITIAL_ORDERS: Order[] = [
         subtotal: 13.00
       }
     ],
+    subtotalAmount: 31.00,
+    deliveryFee: 0,
     totalAmount: 31.00,
-    status: 'ready_for_collection',
+    status: 'ready_for_pickup',
     deliveryMethod: 'pickup',
     pickupTimeWindow: 'Today between 14:00 - 17:00 at Thornhill Farm gate',
+    pickupInstructions: 'Collect at Sunrise Farm Cold-Room Stand (Stand 5B Sunrise Lane). Bring a cooler box for dressed poultry.',
+    pickupLocation: {
+      farmName: 'Sunrise Pastoral & Poultry',
+      address: 'Stand 5B Sunrise Lane, Thornhill Farmlands, Gweru',
+      city: 'Gweru',
+      province: 'Midlands',
+      instructions: 'Collect at Sunrise Farm Cold-Room Stand (Stand 5B Sunrise Lane). Bring a cooler box for dressed poultry.',
+      phone: '+263 71 889 0123',
+      readyAt: 'Today between 14:00 - 17:00 at Thornhill Farm gate'
+    },
+    paymentMethod: 'cash_on_delivery',
+    paymentStatus: 'awaiting_payment',
     buyerNotes: 'Collecting in a chilled cooler box in my car.',
     createdAt: '2026-08-25T14:00:00Z',
     updatedAt: '2026-08-26T04:30:00Z',
     statusHistory: [
-      { status: 'pending', timestamp: '2026-08-25T14:00:00Z', note: 'Order placed by buyer' },
-      { status: 'accepted', timestamp: '2026-08-25T14:45:00Z', note: 'Farmer accepted order' },
-      { status: 'preparing', timestamp: '2026-08-26T03:00:00Z', note: 'Packing eggs and chilling broilers' },
-      { status: 'ready_for_collection', timestamp: '2026-08-26T04:30:00Z', note: 'Order ready at pickup stand' }
+      { status: 'received', timestamp: '2026-08-25T14:00:00Z', note: 'Order received by farm' },
+      { status: 'packaged', timestamp: '2026-08-26T03:00:00Z', note: 'Packing eggs and chilling broilers' },
+      { status: 'ready_for_pickup', timestamp: '2026-08-26T04:30:00Z', note: 'Order ready at farm pickup stand' }
     ]
   },
   {
@@ -901,15 +955,31 @@ export const INITIAL_ORDERS: Order[] = [
         subtotal: 33.00
       }
     ],
-    totalAmount: 93.00,
-    status: 'pending',
+    subtotalAmount: 93.00,
+    deliveryFee: 3.00,
+    totalAmount: 96.00,
+    status: 'received',
     deliveryMethod: 'delivery',
     deliveryAddress: 'Shop 12 Borrowdale Village, Harare',
+    deliveryLocation: {
+      mode: 'manual',
+      street: 'Shop 12, Sam Levy Precinct',
+      suburb: 'Borrowdale',
+      city: 'Harare',
+      instructions: 'Early morning delivery preferred at rear kitchen entrance.',
+      formattedAddress: 'Shop 12, Sam Levy Precinct, Borrowdale, Harare'
+    },
+    paymentMethod: 'bank_transfer',
+    paymentStatus: 'pending_verification',
+    proofOfPaymentUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=800',
+    proofOfPaymentFileName: 'CBZ_Transfer_POP_AGC268803.jpg',
+    paymentReference: 'CBZ-993218',
+    paymentSubmittedAt: '2026-08-26T04:05:00Z',
     buyerNotes: 'For restaurant weekend prep. Early morning delivery preferred.',
     createdAt: '2026-08-26T04:00:00Z',
-    updatedAt: '2026-08-26T04:00:00Z',
+    updatedAt: '2026-08-26T04:05:00Z',
     statusHistory: [
-      { status: 'pending', timestamp: '2026-08-26T04:00:00Z', note: 'Awaiting farmer acceptance' }
+      { status: 'received', timestamp: '2026-08-26T04:00:00Z', note: 'Order received — POP awaiting farmer verification' }
     ]
   }
 ];
@@ -1196,6 +1266,7 @@ export const INITIAL_AD_REQUESTS: AdRequest[] = [
     discountPercentage: 25,
     specialPrice: 1.12,
     days: 14,
+    durationDays: 14,
     dailyRate: 1.00,
     totalAmount: 14.00,
     proofOfPaymentUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=800',
@@ -1203,13 +1274,13 @@ export const INITIAL_AD_REQUESTS: AdRequest[] = [
     paymentMethod: 'ecocash',
     paymentReference: 'EC88912-7741',
     status: 'approved',
-    adminFeedback: 'Proof of payment verified via EcoCash Merchant. Campaign is active and featured on the Hot Deals banner!',
+    adminFeedback: 'Proof of payment verified via EcoCash Merchant. Campaign is active and featured on the homepage!',
     reviewedBy: 'Admin - agroX Team',
-    reviewedAt: '2026-08-25T10:00:00Z',
-    startDate: '2026-08-25T00:00:00Z',
-    endDate: '2026-09-08T23:59:59Z',
-    createdAt: '2026-08-24T16:00:00Z',
-    updatedAt: '2026-08-25T10:00:00Z'
+    reviewedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    startDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    endDate: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
   },
   {
     id: 'ad-102',
@@ -1231,20 +1302,21 @@ export const INITIAL_AD_REQUESTS: AdRequest[] = [
     discountPercentage: 15,
     specialPrice: 8.00,
     days: 7,
+    durationDays: 7,
     dailyRate: 1.00,
     totalAmount: 7.00,
     proofOfPaymentUrl: 'https://images.unsplash.com/photo-1554224154-26032ffc0d07?auto=format&fit=crop&q=80&w=800',
-    proofOfPaymentFileName: 'InnBucks_Receipt_INB990412.png',
-    paymentMethod: 'innbucks',
-    paymentReference: 'INB990412-CS',
+    proofOfPaymentFileName: 'EcoCash_Receipt_EC990412.png',
+    paymentMethod: 'ecocash',
+    paymentReference: 'EC990412-CS',
     status: 'approved',
-    adminFeedback: 'Approved! Verified by InnBucks statement.',
+    adminFeedback: 'Approved! Verified by EcoCash statement.',
     reviewedBy: 'Admin - agroX Team',
-    reviewedAt: '2026-08-28T09:30:00Z',
-    startDate: '2026-08-28T00:00:00Z',
-    endDate: '2026-09-04T23:59:59Z',
-    createdAt: '2026-08-27T14:30:00Z',
-    updatedAt: '2026-08-28T09:30:00Z'
+    reviewedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    startDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    endDate: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString()
   },
   {
     id: 'ad-103',
@@ -1266,16 +1338,17 @@ export const INITIAL_AD_REQUESTS: AdRequest[] = [
     discountPercentage: 20,
     specialPrice: 1.76,
     days: 5,
+    durationDays: 5,
     dailyRate: 1.00,
     totalAmount: 5.00,
     proofOfPaymentUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=800',
     proofOfPaymentFileName: 'EcoCash_Txn_EC91244.jpg',
     paymentMethod: 'ecocash',
     paymentReference: 'EC91244-88',
-    status: 'under_review',
+    status: 'pending',
     adminFeedback: 'Proof of payment is being checked with the finance department.',
-    createdAt: '2026-08-30T11:00:00Z',
-    updatedAt: '2026-08-30T11:30:00Z'
+    createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+    updatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
   }
 ];
 

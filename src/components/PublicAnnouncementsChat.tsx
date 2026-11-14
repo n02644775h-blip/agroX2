@@ -59,6 +59,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
   const [showAdminComposer, setShowAdminComposer] = useState(false);
   const [postSuccessMessage, setPostSuccessMessage] = useState(false);
   const [postErrorMessage, setPostErrorMessage] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -157,7 +158,7 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
   };
 
   const handleDelete = async (annId: string) => {
-    if (!confirm('Are you sure you want to remove this bulletin post?')) return;
+    setPendingDeleteId(null);
     try {
       setAnnouncements(prev => prev.filter(a => a.id !== annId));
       await deleteFirebaseAnnouncement(annId);
@@ -492,13 +493,30 @@ export const PublicAnnouncementsChat: React.FC<PublicAnnouncementsChatProps> = (
                     )}
 
                     {isAdmin && (
-                      <button
-                        onClick={() => handleDelete(ann.id)}
-                        className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
-                        title="Delete Announcement"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      pendingDeleteId === ann.id ? (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => handleDelete(ann.id)}
+                            className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-bold hover:bg-rose-700 cursor-pointer"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            onClick={() => setPendingDeleteId(null)}
+                            className="px-2 py-1 rounded-lg bg-stone-100 text-stone-600 text-[10px] font-bold hover:bg-stone-200 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setPendingDeleteId(ann.id)}
+                          className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Delete Announcement"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )
                     )}
                   </div>
                 </div>

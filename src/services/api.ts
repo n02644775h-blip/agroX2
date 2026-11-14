@@ -284,13 +284,30 @@ class ApiService {
   }
 
   async createOrder(orderData: {
+    id?: string;
+    orderNumber?: string;
     buyerId: string;
+    buyerName?: string;
+    buyerPhone?: string;
+    buyerEmail?: string;
     farmerId: string;
+    farmerName?: string;
+    farmName?: string;
     items: any[];
+    subtotalAmount?: number;
+    deliveryFee?: number;
     totalAmount: number;
     deliveryMethod: 'pickup' | 'delivery';
     deliveryAddress?: string;
+    deliveryLocation?: any;
+    pickupLocation?: any;
     pickupTimeWindow?: string;
+    pickupInstructions?: string;
+    paymentMethod?: string;
+    proofOfPaymentUrl?: string;
+    proofOfPaymentFileName?: string;
+    paymentReference?: string;
+    farmerPaymentDetails?: any;
     buyerNotes?: string;
   }): Promise<Order> {
     return this.request<Order>('/orders', {
@@ -299,10 +316,37 @@ class ApiService {
     });
   }
 
-  async updateOrderStatus(id: string, status: OrderStatus, note?: string): Promise<Order> {
+  async updateOrderStatus(
+    id: string,
+    status: OrderStatus,
+    note?: string,
+    pickupTimeWindow?: string,
+    pickupInstructions?: string
+  ): Promise<Order> {
     return this.request<Order>(`/orders/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status, note })
+      body: JSON.stringify({ status, note, pickupTimeWindow, pickupInstructions })
+    });
+  }
+
+  async updateOrderPaymentStatus(
+    id: string,
+    paymentStatus: 'awaiting_payment' | 'pending_verification' | 'paid' | 'rejected',
+    reason?: string
+  ): Promise<Order> {
+    return this.request<Order>(`/orders/${id}/payment`, {
+      method: 'PUT',
+      body: JSON.stringify({ paymentStatus, reason })
+    });
+  }
+
+  async submitOrderPop(
+    id: string,
+    payload: { proofOfPaymentUrl: string; proofOfPaymentFileName?: string; paymentReference?: string }
+  ): Promise<Order> {
+    return this.request<Order>(`/orders/${id}/pop`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
     });
   }
 

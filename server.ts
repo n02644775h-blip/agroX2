@@ -586,13 +586,30 @@ async function startServer() {
 
   app.post('/api/orders', (req: Request, res: Response) => {
     const {
+      id,
+      orderNumber,
       buyerId,
+      buyerName,
+      buyerPhone,
+      buyerEmail,
       farmerId,
+      farmerName,
+      farmName,
       items,
+      subtotalAmount,
+      deliveryFee,
       totalAmount,
       deliveryMethod,
       deliveryAddress,
+      deliveryLocation,
+      pickupLocation,
       pickupTimeWindow,
+      pickupInstructions,
+      paymentMethod,
+      proofOfPaymentUrl,
+      proofOfPaymentFileName,
+      paymentReference,
+      farmerPaymentDetails,
       buyerNotes
     } = req.body;
 
@@ -603,37 +620,57 @@ async function startServer() {
     const buyer = store.getUserById(buyerId);
     const farmer = store.getUserById(farmerId);
 
-    if (!buyer || !farmer) {
-      return res.status(404).json({ error: 'Buyer or Farmer account not found' });
-    }
-
-    // Verify stock availability
+    // Verify stock availability where product exists in backend store
     for (const item of items) {
       const prod = store.getProductById(item.productId);
-      if (!prod) {
-        return res.status(400).json({ error: `Product ${item.productName} is no longer available` });
-      }
-      if (prod.quantityAvailable < item.quantity) {
+      if (prod && prod.quantityAvailable < item.quantity) {
         return res.status(400).json({
           error: `Insufficient stock for ${prod.name}. Available: ${prod.quantityAvailable} ${prod.unit}, Requested: ${item.quantity}`
         });
       }
     }
 
+    const resolvedFarmerName = farmer?.name || farmerName || 'Local Producer';
+    const resolvedFarmName = farmer?.farmerProfile?.farmName || farmName || `${resolvedFarmerName}'s Farm`;
+    const resolvedPickupLocation = pickupLocation || (deliveryMethod === 'pickup' ? {
+      farmName: resolvedFarmName,
+      address: farmer?.farmerProfile?.address || farmer?.location?.address || `${farmer?.location?.city || 'Local'}, ${farmer?.location?.province || 'Zimbabwe'}`,
+      city: farmer?.location?.city,
+      province: farmer?.location?.province,
+      instructions: farmer?.farmerProfile?.pickupInstructions || pickupInstructions || 'Collect at the farm gate dispatch point.',
+      phone: farmer?.phone || farmer?.farmerProfile?.whatsapp
+    } : undefined);
+
     const newOrder = store.createOrder({
+      id,
+      orderNumber,
       buyerId,
-      buyerName: buyer.name,
-      buyerPhone: buyer.phone,
-      buyerEmail: buyer.email,
+      buyerName: buyer?.name || buyerName || 'Marketplace Buyer',
+      buyerPhone: buyer?.phone || buyerPhone || '',
+      buyerEmail: buyer?.email || buyerEmail || '',
       farmerId,
-      farmerName: farmer.name,
-      farmName: farmer.farmerProfile?.farmName || `${farmer.name}'s Farm`,
+      farmerName: resolvedFarmerName,
+      farmName: resolvedFarmName,
       items,
+      subtotalAmount: subtotalAmount !== undefined ? parseFloat(subtotalAmount) : undefined,
+      deliveryFee: deliveryFee !== undefined ? parseFloat(deliveryFee) : 0,
       totalAmount: parseFloat(totalAmount),
-      status: 'pending',
-      deliveryMethod,
-      deliveryAddress: deliveryAddress || buyer.location?.address,
+      status: 'received',
+      deliveryMethod: deliveryMethod === 'pickup' ? 'pickup' : 'delivery',
+      deliveryAddress: deliveryAddress || deliveryLocation?.formattedAddress || buyer?.location?.address,
+      deliveryLocation,
+      pickupLocation: resolvedPickupLocation,
       pickupTimeWindow,
+      pickupInstructions: pickupInstructions || resolvedPickupLocation?.instructions,
+      paymentMethod: paymentMethod || 'cash_on_delivery',
+      paymentStatus: 'awaiting_payment',
+      proofOfPaymentUrl,
+      proofOfPaymentFileName,
+      paymentReference,
+      farmerPaymentDetails: farmerPaymentDetails || {
+        ...(farmer?.farmerProfile?.paymentInfo || {}),
+        phone: farmer?.phone
+      },
       buyerNotes
     });
 
@@ -641,10 +678,34 @@ async function startServer() {
   });
 
   app.put('/api/orders/:id/status', (req: Request, res: Response) => {
-    const { status, note } = req.body;
+    const { status, note, pickupTimeWindow, pickupInstructions } = req.body;
     if (!status) return res.status(400).json({ error: 'Status is required' });
 
-    const order = store.updateOrderStatus(req.params.id, status, note);
+    const order = store.updateOrderStatus(req.params.id, status, note, pickupTimeWindow, pickupInstructions);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    res.json(order);
+  });
+
+  app.put('/api/orders/:id/payment', (req: Request, res: Response) => {
+    const { paymentStatus, reason } = req.body || {};
+    if (!paymentStatus) return res.status(400).json({ error: 'paymentStatus is required' });
+
+    const order = store.updateOrderPaymentStatus(req.params.id, paymentStatus, reason);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    res.json(order);
+  });
+
+  app.put('/api/orders/:id/pop', (req: Request, res: Response) => {
+    const { proofOfPaymentUrl, proofOfPaymentFileName, paymentReference } = req.body || {};
+    if (!proofOfPaymentUrl) return res.status(400).json({ error: 'Proof of payment file is required' });
+
+    const order = store.submitOrderPop(req.params.id, {
+      proofOfPaymentUrl,
+      proofOfPaymentFileName,
+      paymentReference
+    });
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     res.json(order);
@@ -938,6 +999,7 @@ async function startServer() {
     res.json(store.getActiveHotDeals());
   };
   app.get('/api/ads/hot-deals', handleGetHotDeals);
+  app.get('/api/ads/featured', handleGetHotDeals);
   app.get('/api/hot-deals', handleGetHotDeals);
   app.get('/hot-deals', handleGetHotDeals);
 

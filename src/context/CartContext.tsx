@@ -1,28 +1,76 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { CartItem, Product, Order } from '../types';
+import {
+  CartItem,
+  Product,
+  Order,
+  DeliveryLocation,
+  PickupLocation,
+  PaymentMethod,
+  PaymentStatus
+} from '../types';
 import { api } from '../services/api';
+import { saveFirebaseOrder } from '../services/firebaseOrders';
+import { createFirebaseNotification } from '../services/firebaseNotifications';
 import confetti from 'canvas-confetti';
+
+export const DELIVERY_FLAT_FEE = 3.0;
+
+export interface CheckoutPayload {
+  buyerId: string;
+  buyerName?: string;
+  buyerPhone?: string;
+  buyerEmail?: string;
+  deliveryMethod: 'pickup' | 'delivery';
+  deliveryAddress?: string;
+  deliveryLocation?: DeliveryLocation;
+  pickupLocation?: PickupLocation;
+  pickupTimeWindow?: string;
+  pickupInstructions?: string;
+  paymentMethod: PaymentMethod;
+  proofOfPaymentUrl?: string;
+  proofOfPaymentFileName?: string;
+  paymentReference?: string;
+  farmerPaymentDetails?: {
+    ecocash?: string;
+    onemoney?: string;
+    bankAccount?: string;
+    innbucks?: string;
+    phone?: string;
+  };
+  buyerNotes?: string;
+}
+
+interface PendingFarmSwitch {
+  product: Product;
+  quantity: number;
+  notes?: string;
+  currentFarmName: string;
+}
 
 interface CartContextType {
   cart: CartItem[];
+  items: CartItem[];
   isOpen: boolean;
   openCart: () => void;
   closeCart: () => void;
+  isCheckoutOpen: boolean;
+  openCheckout: () => void;
+  closeCheckout: () => void;
   addToCart: (product: Product, quantity?: number, notes?: string) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
   totalAmount: number;
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
   totalItems: number;
   farmerIdInCart: string | null;
   farmNameInCart: string | null;
-  checkout: (params: {
-    buyerId: string;
-    deliveryMethod: 'pickup' | 'delivery';
-    deliveryAddress?: string;
-    pickupTimeWindow?: string;
-    buyerNotes?: string;
-  }) => Promise<Order>;
+  pendingFarmSwitch: PendingFarmSwitch | null;
+  confirmFarmSwitch: () => void;
+  cancelFarmSwitch: () => void;
+  checkout: (params: CheckoutPayload) => Promise<Order>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -32,40 +80,61 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const saved = localStorage.getItem('agriconnect_cart');
     if (saved) {
       try {
-        return JSON.parse(saved);
-      } catch (e) {
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
         return [];
       }
     }
     return [];
   });
   const [isOpen, setIsOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [pendingFarmSwitch, setPendingFarmSwitch] = useState<PendingFarmSwitch | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('agriconnect_cart', JSON.stringify(cart));
+    try {
+      localStorage.setItem('agriconnect_cart', JSON.stringify(cart));
+    } catch {
+      // ignore storage quota errors
+    }
   }, [cart]);
 
   const openCart = () => setIsOpen(true);
   const closeCart = () => setIsOpen(false);
+  const openCheckout = () => {
+    setIsOpen(false);
+    setIsCheckoutOpen(true);
+  };
+  const closeCheckout = () => setIsCheckoutOpen(false);
 
   const farmerIdInCart = cart.length > 0 ? cart[0].product.farmerId : null;
   const farmNameInCart = cart.length > 0 ? cart[0].product.farmName : null;
 
   const addToCart = (product: Product, quantity = 1, notes?: string) => {
+    const existingFarmer = cart.length > 0 ? cart[0].product.farmerId : null;
+    if (existingFarmer && existingFarmer !== product.farmerId) {
+      setPendingFarmSwitch({
+        product,
+        quantity,
+        notes,
+        currentFarmName: cart[0].product.farmName || 'another farm'
+      });
+      setIsOpen(true);
+      return;
+    }
+
     setCart(prev => {
-      // If adding from a different farmer, we can support replacing or warning
-      const existingFarmer = prev.length > 0 ? prev[0].product.farmerId : null;
-      if (existingFarmer && existingFarmer !== product.farmerId) {
-        if (!confirm(`Your cart already contains items from ${prev[0].product.farmName}. Clear cart and add items from ${product.farmName} instead?`)) {
-          return prev;
-        }
-        return [{ product, quantity: Math.max(product.minOrderQuantity, quantity), notes }];
+      const prevFarmer = prev.length > 0 ? prev[0].product.farmerId : null;
+      if (prevFarmer && prevFarmer !== product.farmerId) {
+        return prev;
       }
 
       const existingIndex = prev.findIndex(item => item.product.id === product.id);
+      const maxAvail = Math.max(1, product.quantityAvailable || 999);
       if (existingIndex > -1) {
         const updated = [...prev];
-        const newQty = Math.min(product.quantityAvailable, updated[existingIndex].quantity + quantity);
+        const newQty = Math.min(maxAvail, updated[existingIndex].quantity + quantity);
         updated[existingIndex] = {
           ...updated[existingIndex],
           quantity: newQty,
@@ -74,10 +143,24 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return updated;
       } else {
         const initialQty = Math.max(product.minOrderQuantity || 1, quantity);
-        return [...prev, { product, quantity: Math.min(product.quantityAvailable, initialQty), notes }];
+        return [...prev, { product, quantity: Math.min(maxAvail, initialQty), notes }];
       }
     });
     setIsOpen(true);
+  };
+
+  const confirmFarmSwitch = () => {
+    if (!pendingFarmSwitch) return;
+    const { product, quantity, notes } = pendingFarmSwitch;
+    const maxAvail = Math.max(1, product.quantityAvailable || 999);
+    const initialQty = Math.max(product.minOrderQuantity || 1, quantity);
+    setCart([{ product, quantity: Math.min(maxAvail, initialQty), notes }]);
+    setPendingFarmSwitch(null);
+    setIsOpen(true);
+  };
+
+  const cancelFarmSwitch = () => {
+    setPendingFarmSwitch(null);
   };
 
   const removeFromCart = (productId: string) => {
@@ -92,7 +175,8 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCart(prev =>
       prev.map(item => {
         if (item.product.id === productId) {
-          const clampedQty = Math.min(item.product.quantityAvailable, quantity);
+          const maxAvail = Math.max(1, item.product.quantityAvailable || 999);
+          const clampedQty = Math.min(maxAvail, quantity);
           return { ...item, quantity: clampedQty };
         }
         return item;
@@ -102,42 +186,119 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearCart = () => {
     setCart([]);
+    setPendingFarmSwitch(null);
   };
 
   const totalAmount = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+  const subtotal = totalAmount;
+  const deliveryFee = cart.length > 0 ? DELIVERY_FLAT_FEE : 0;
+  const total = subtotal + deliveryFee;
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const checkout = async (params: {
-    buyerId: string;
-    deliveryMethod: 'pickup' | 'delivery';
-    deliveryAddress?: string;
-    pickupTimeWindow?: string;
-    buyerNotes?: string;
-  }): Promise<Order> => {
+  const checkout = async (params: CheckoutPayload): Promise<Order> => {
     if (!farmerIdInCart || cart.length === 0) {
-      throw new Error('Cart is empty');
+      throw new Error('Your shopping cart is empty.');
     }
 
+    const firstProd = cart[0].product;
     const orderItems = cart.map(item => ({
       productId: item.product.id,
       productName: item.product.name,
-      productImage: item.product.images[0] || '',
+      productImage: item.product.images?.[0] || '',
       price: item.product.price,
       unit: item.product.unit,
       quantity: item.quantity,
-      subtotal: item.product.price * item.quantity
+      subtotal: Number((item.product.price * item.quantity).toFixed(2))
     }));
 
-    const newOrder = await api.createOrder({
+    const appliedDeliveryFee = params.deliveryMethod === 'delivery' ? DELIVERY_FLAT_FEE : 0;
+    const finalTotal = Number((subtotal + appliedDeliveryFee).toFixed(2));
+    const generatedId = `ord-${Date.now()}`;
+    const generatedOrderNumber = `AGC-26-${Math.floor(1000 + Math.random() * 9000)}`;
+    const nowIso = new Date().toISOString();
+
+    const hasPop = Boolean(params.proofOfPaymentUrl && params.proofOfPaymentUrl.trim().length > 0);
+    // CRITICAL: Never automatically mark an order as paid simply because POP was uploaded.
+    const resolvedPaymentStatus: PaymentStatus =
+      params.paymentMethod === 'cash_on_delivery'
+        ? 'awaiting_payment'
+        : hasPop
+          ? 'pending_verification'
+          : 'awaiting_payment';
+
+    const orderPayload = {
+      id: generatedId,
+      orderNumber: generatedOrderNumber,
       buyerId: params.buyerId,
+      buyerName: params.buyerName || 'Marketplace Buyer',
+      buyerPhone: params.buyerPhone || '',
+      buyerEmail: params.buyerEmail || '',
       farmerId: farmerIdInCart,
+      farmerName: firstProd.farmerName || 'Farmer',
+      farmName: firstProd.farmName || 'Local Farm',
       items: orderItems,
-      totalAmount,
+      subtotalAmount: Number(subtotal.toFixed(2)),
+      deliveryFee: appliedDeliveryFee,
+      totalAmount: finalTotal,
       deliveryMethod: params.deliveryMethod,
-      deliveryAddress: params.deliveryAddress,
+      deliveryAddress: params.deliveryAddress || params.deliveryLocation?.formattedAddress,
+      deliveryLocation: params.deliveryLocation,
+      pickupLocation: params.pickupLocation,
       pickupTimeWindow: params.pickupTimeWindow,
+      pickupInstructions: params.pickupInstructions || params.pickupLocation?.instructions,
+      paymentMethod: params.paymentMethod,
+      paymentStatus: resolvedPaymentStatus,
+      proofOfPaymentUrl: params.proofOfPaymentUrl,
+      proofOfPaymentFileName: params.proofOfPaymentFileName,
+      paymentReference: params.paymentReference,
+      farmerPaymentDetails: params.farmerPaymentDetails,
       buyerNotes: params.buyerNotes
-    });
+    };
+
+    let createdOrder: Order;
+    try {
+      createdOrder = await api.createOrder(orderPayload);
+    } catch (apiErr) {
+      console.warn('Backend order endpoint fallback to Firestore:', apiErr);
+      createdOrder = {
+        ...orderPayload,
+        status: 'received',
+        paymentSubmittedAt: hasPop ? nowIso : undefined,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        statusHistory: [
+          {
+            status: 'received',
+            timestamp: nowIso,
+            note: hasPop
+              ? 'Order received (POP uploaded — awaiting farmer verification)'
+              : 'Order received by farm'
+          }
+        ]
+      };
+    }
+
+    // Persist in Firestore so buyer & farmer stay synchronized in real time across devices & reloads
+    await saveFirebaseOrder(createdOrder);
+
+    await Promise.all([
+      createFirebaseNotification({
+        userId: createdOrder.farmerId,
+        title: `New Order Received (${createdOrder.orderNumber})`,
+        message: `${createdOrder.buyerName} placed a ${createdOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${createdOrder.totalAmount.toFixed(2)}.`,
+        type: 'order',
+        link: `/orders/${createdOrder.id}`,
+        metadata: { orderId: createdOrder.id }
+      }),
+      createFirebaseNotification({
+        userId: createdOrder.buyerId,
+        title: `Order Received (${createdOrder.orderNumber})`,
+        message: `Your order with ${createdOrder.farmName} has been received.`,
+        type: 'order',
+        link: `/orders/${createdOrder.id}`,
+        metadata: { orderId: createdOrder.id }
+      })
+    ]);
 
     try {
       confetti({
@@ -145,30 +306,41 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         spread: 70,
         origin: { y: 0.6 }
       });
-    } catch (e) {
+    } catch {
       // ignore
     }
 
     clearCart();
     setIsOpen(false);
-    return newOrder;
+    setIsCheckoutOpen(false);
+    return createdOrder;
   };
 
   return (
     <CartContext.Provider
       value={{
         cart,
+        items: cart,
         isOpen,
         openCart,
         closeCart,
+        isCheckoutOpen,
+        openCheckout,
+        closeCheckout,
         addToCart,
         removeFromCart,
         updateQuantity,
         clearCart,
         totalAmount,
+        subtotal,
+        deliveryFee,
+        total,
         totalItems,
         farmerIdInCart,
         farmNameInCart,
+        pendingFarmSwitch,
+        confirmFarmSwitch,
+        cancelFarmSwitch,
         checkout
       }}
     >

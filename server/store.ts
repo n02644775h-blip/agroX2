@@ -12,7 +12,8 @@ import {
   OrderStatus,
   ProductAvailability,
   AdRequest,
-  AdRequestStatus
+  AdRequestStatus,
+  PaymentStatus
 } from '../src/types';
 import {
   INITIAL_USERS,
@@ -272,21 +273,47 @@ class MarketplaceStore {
     return this.orders.find(o => o.id === id);
   }
 
-  createOrder(orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'statusHistory'>): Order {
-    const id = `ord-${Date.now()}`;
+  createOrder(
+    orderData: Omit<Order, 'id' | 'orderNumber' | 'createdAt' | 'updatedAt' | 'statusHistory'> & {
+      id?: string;
+      orderNumber?: string;
+    }
+  ): Order {
+    const id = orderData.id || `ord-${Date.now()}`;
     const randNum = Math.floor(1000 + Math.random() * 9000);
-    const orderNumber = `AGC-26-${randNum}`;
+    const orderNumber = orderData.orderNumber || `AGC-26-${randNum}`;
     const now = new Date().toISOString();
+
+    const paymentMethod = orderData.paymentMethod || 'cash_on_delivery';
+    const hasPop = Boolean(orderData.proofOfPaymentUrl && orderData.proofOfPaymentUrl.trim().length > 0);
+    // CRITICAL: Never automatically mark an order as 'paid' just because a POP was uploaded.
+    const paymentStatus: PaymentStatus =
+      paymentMethod === 'cash_on_delivery'
+        ? 'awaiting_payment'
+        : hasPop
+          ? 'pending_verification'
+          : 'awaiting_payment';
 
     const newOrder: Order = {
       ...orderData,
       id,
       orderNumber,
+      paymentMethod,
+      paymentStatus,
+      paymentSubmittedAt: hasPop ? (orderData.paymentSubmittedAt || now) : undefined,
       createdAt: now,
       updatedAt: now,
-      status: 'pending',
+      status: 'received',
       statusHistory: [
-        { status: 'pending', timestamp: now, note: 'Order placed by buyer' }
+        {
+          status: 'received',
+          timestamp: now,
+          note: paymentMethod === 'cash_on_delivery'
+            ? 'Order received (Cash on Delivery — payment pending until delivery)'
+            : hasPop
+              ? 'Order received (Proof of payment uploaded — awaiting farmer verification)'
+              : 'Order received (Awaiting electronic payment & proof of payment)'
+        }
       ]
     };
 
@@ -311,7 +338,7 @@ class MarketplaceStore {
     this.createNotification({
       userId: newOrder.farmerId,
       title: `New Order Received (${newOrder.orderNumber})`,
-      message: `${newOrder.buyerName} placed an order for $${newOrder.totalAmount.toFixed(2)}.`,
+      message: `${newOrder.buyerName} placed a ${newOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${newOrder.totalAmount.toFixed(2)}.`,
       type: 'order',
       link: `/orders/${newOrder.id}`,
       read: false,
@@ -322,8 +349,8 @@ class MarketplaceStore {
     // Notify buyer
     this.createNotification({
       userId: newOrder.buyerId,
-      title: `Order Submitted (${newOrder.orderNumber})`,
-      message: `Your order with ${newOrder.farmName} has been submitted and is pending farmer confirmation.`,
+      title: `Order Received (${newOrder.orderNumber})`,
+      message: `Your order with ${newOrder.farmName} has been received and is being tracked.`,
       type: 'order',
       link: `/orders/${newOrder.id}`,
       read: false,
@@ -334,7 +361,13 @@ class MarketplaceStore {
     return newOrder;
   }
 
-  updateOrderStatus(orderId: string, status: OrderStatus, note?: string): Order | undefined {
+  updateOrderStatus(
+    orderId: string,
+    status: OrderStatus,
+    note?: string,
+    pickupTimeWindow?: string,
+    pickupInstructions?: string
+  ): Order | undefined {
     const index = this.orders.findIndex(o => o.id === orderId);
     if (index === -1) return undefined;
 
@@ -344,6 +377,19 @@ class MarketplaceStore {
 
     order.status = status;
     order.updatedAt = now;
+    if (pickupTimeWindow !== undefined) {
+      order.pickupTimeWindow = pickupTimeWindow;
+      if (order.pickupLocation) {
+        order.pickupLocation = { ...order.pickupLocation, readyAt: pickupTimeWindow };
+      }
+    }
+    if (pickupInstructions !== undefined) {
+      order.pickupInstructions = pickupInstructions;
+      if (order.pickupLocation) {
+        order.pickupLocation = { ...order.pickupLocation, instructions: pickupInstructions };
+      }
+    }
+
     order.statusHistory.push({
       status,
       timestamp: now,
@@ -366,21 +412,99 @@ class MarketplaceStore {
 
     // Status notification map
     const statusTitles: Record<OrderStatus, string> = {
+      received: 'Order Received',
+      packaged: 'Order Packaged!',
+      delivering: 'Order Out for Delivery!',
+      ready_for_pickup: 'Order Ready for Pickup!',
+      done: 'Order Done!',
       pending: 'Order Pending',
       accepted: 'Order Accepted!',
       rejected: 'Order Declined',
       preparing: 'Order Being Prepared',
-      ready_for_collection: 'Ready for Collection!',
+      ready_for_collection: 'Ready for Pickup!',
       out_for_delivery: 'Out for Delivery!',
       completed: 'Order Completed',
       cancelled: 'Order Cancelled'
     };
 
+    const statusLabel = statusTitles[status] || `Order ${status.replace(/_/g, ' ')}`;
+
     // Notify buyer
     this.createNotification({
       userId: order.buyerId,
-      title: `${statusTitles[status]} (${order.orderNumber})`,
-      message: `${order.farmName} updated your order to "${status.replace(/_/g, ' ')}". ${note ? `Note: ${note}` : ''}`,
+      title: `${statusLabel} (${order.orderNumber})`,
+      message: `${order.farmName} updated your order status to "${status.replace(/_/g, ' ')}". ${pickupTimeWindow ? `Pickup time: ${pickupTimeWindow}. ` : ''}${note ? `Note: ${note}` : ''}`,
+      type: 'order',
+      link: `/orders/${order.id}`,
+      read: false,
+      createdAt: now,
+      metadata: { orderId: order.id }
+    });
+
+    return order;
+  }
+
+  submitOrderPop(
+    orderId: string,
+    payload: { proofOfPaymentUrl: string; proofOfPaymentFileName?: string; paymentReference?: string }
+  ): Order | undefined {
+    const order = this.orders.find(o => o.id === orderId);
+    if (!order) return undefined;
+    const now = new Date().toISOString();
+
+    order.proofOfPaymentUrl = payload.proofOfPaymentUrl;
+    order.proofOfPaymentFileName = payload.proofOfPaymentFileName || 'Proof_of_Payment';
+    if (payload.paymentReference !== undefined) {
+      order.paymentReference = payload.paymentReference;
+    }
+    order.paymentSubmittedAt = now;
+    // Never automatically mark as paid upon POP upload!
+    order.paymentStatus = 'pending_verification';
+    order.paymentRejectionReason = undefined;
+    order.updatedAt = now;
+
+    this.createNotification({
+      userId: order.farmerId,
+      title: `Proof of Payment Uploaded (${order.orderNumber})`,
+      message: `${order.buyerName} uploaded Proof of Payment for $${order.totalAmount.toFixed(2)}. Please review and confirm.`,
+      type: 'order',
+      link: `/orders/${order.id}`,
+      read: false,
+      createdAt: now,
+      metadata: { orderId: order.id }
+    });
+
+    return order;
+  }
+
+  updateOrderPaymentStatus(
+    orderId: string,
+    paymentStatus: PaymentStatus,
+    reason?: string
+  ): Order | undefined {
+    const order = this.orders.find(o => o.id === orderId);
+    if (!order) return undefined;
+    const now = new Date().toISOString();
+
+    order.paymentStatus = paymentStatus;
+    order.updatedAt = now;
+    if (paymentStatus === 'paid') {
+      order.paymentVerifiedAt = now;
+      order.paymentRejectionReason = undefined;
+    } else if (paymentStatus === 'rejected') {
+      order.paymentRejectionReason = reason || 'Proof of payment could not be verified.';
+    }
+
+    const label = paymentStatus === 'paid' ? 'Payment Confirmed' : paymentStatus === 'rejected' ? 'Payment Proof Rejected' : 'Payment Status Updated';
+    this.createNotification({
+      userId: order.buyerId,
+      title: `${label} (${order.orderNumber})`,
+      message:
+        paymentStatus === 'paid'
+          ? `${order.farmName} verified and confirmed your payment of $${order.totalAmount.toFixed(2)}.`
+          : paymentStatus === 'rejected'
+            ? `${order.farmName} declined your proof of payment.${reason ? ` Reason: ${reason}` : ' Please upload a valid receipt.'}`
+            : `Payment status updated to ${paymentStatus.replace(/_/g, ' ')}.`,
       type: 'order',
       link: `/orders/${order.id}`,
       read: false,
@@ -752,7 +876,21 @@ class MarketplaceStore {
   }
 
   // --- Advertisement Requests & Hot Deals ---
+  private syncExpiredAds(): void {
+    const now = Date.now();
+    this.adRequests.forEach(ad => {
+      if ((ad.status === 'approved' || ad.status === 'active') && ad.endDate) {
+        const endMs = new Date(ad.endDate).getTime();
+        if (Number.isFinite(endMs) && now > endMs) {
+          ad.status = 'expired';
+          ad.updatedAt = new Date(now).toISOString();
+        }
+      }
+    });
+  }
+
   getAdRequests(farmerId?: string, status?: string): AdRequest[] {
+    this.syncExpiredAds();
     let list = [...this.adRequests];
     if (farmerId) {
       list = list.filter(a => a.farmerId === farmerId);
@@ -764,12 +902,20 @@ class MarketplaceStore {
   }
 
   getAdRequestById(id: string): AdRequest | undefined {
+    this.syncExpiredAds();
     return this.adRequests.find(a => a.id === id);
   }
 
   getActiveHotDeals(): AdRequest[] {
+    this.syncExpiredAds();
+    const now = Date.now();
     return this.adRequests
-      .filter(a => a.status === 'approved')
+      .filter(a => {
+        if (a.status !== 'approved' && a.status !== 'active') return false;
+        if (!a.endDate) return true;
+        const endMs = new Date(a.endDate).getTime();
+        return !Number.isFinite(endMs) || now <= endMs;
+      })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
@@ -859,17 +1005,20 @@ class MarketplaceStore {
     if (reviewedBy) ad.reviewedBy = reviewedBy;
     ad.reviewedAt = new Date().toISOString();
 
-    if (status === 'approved') {
+    if (status === 'approved' || status === 'active') {
       const now = new Date();
+      const durationDays = Math.min(Math.max(Number(ad.days || ad.durationDays || 7), 1), 30);
+      ad.days = durationDays;
+      ad.durationDays = durationDays;
       ad.startDate = now.toISOString();
-      const end = new Date(now.getTime() + ad.days * 24 * 60 * 60 * 1000);
+      const end = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
       ad.endDate = end.toISOString();
 
       // Notify farmer of approval
       this.createNotification({
         userId: ad.farmerId,
-        title: '🎉 Advertisement Request APPROVED!',
-        message: `Your ad "${ad.dealHeadline}" has been approved and is now live on the Hot Deals banner for ${ad.days} days.`,
+        title: 'Advertisement Request APPROVED!',
+        message: `Your ad "${ad.dealHeadline}" has been approved and is now live on the Featured Advertisements homepage section for ${durationDays} days.`,
         type: 'announcement',
         metadata: { adRequestId: ad.id }
       });

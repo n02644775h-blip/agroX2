@@ -6,6 +6,7 @@ import {
   subscribeToFirebaseAdRequests
 } from '../services/firebaseAdRequests';
 import { compressImage } from '../utils/imageCompressor';
+import { getAdLifecycle, getAdStatusBadgeMeta, formatAdDate } from '../utils/adLifecycle';
 import { Product, AdRequest } from '../types';
 import {
   X,
@@ -72,8 +73,9 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
   const [discountPercentage, setDiscountPercentage] = useState<number>(20);
   const [specialPrice, setSpecialPrice] = useState<string>('');
   const [days, setDays] = useState<number>(7); // Default 7 days
-  const [paymentMethod, setPaymentMethod] = useState<'ecocash' | 'innbucks' | 'bank_transfer' | 'cash'>('ecocash');
+  const [paymentMethod, setPaymentMethod] = useState<'ecocash' | 'onemoney' | 'innbucks' | 'bank_transfer' | 'cash'>('ecocash');
   const [paymentReference, setPaymentReference] = useState('');
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [popUrl, setPopUrl] = useState<string>(SAMPLE_POP_RECEIPTS[0].url);
   const [popFileName, setPopFileName] = useState<string>('EcoCash_POP_Payment_Receipt.jpg');
   const [isCompressingPop, setIsCompressingPop] = useState(false);
@@ -161,8 +163,11 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
     // Initial load from API store
     loadMyAds();
 
+    const ticker = setInterval(() => setNowMs(Date.now()), 30000);
+
     return () => {
       unsubscribe();
+      clearInterval(ticker);
     };
   }, [farmerId]);
 
@@ -718,6 +723,7 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 bg-white"
                   >
                     <option value="ecocash">EcoCash Mobile Money</option>
+                    <option value="onemoney">OneMoney Mobile Wallet</option>
                     <option value="innbucks">InnBucks Remittance</option>
                     <option value="bank_transfer">Bank Transfer / Zipit</option>
                     <option value="cash">AgriConnect Cash Depot</option>
@@ -869,12 +875,15 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
             ) : (
               <div className="space-y-4">
                 {myAds.map(ad => {
-                  const isSent = ad.status === 'sent' || ad.status === 'submitted';
-                  const isUnderReview = ad.status === 'under_review';
-                  const isApproved = ad.status === 'approved';
-                  const isRejected = ad.status === 'rejected';
-                  const daysCount = ad.days ?? ad.durationDays ?? 7;
+                  const lifecycle = getAdLifecycle(ad, nowMs);
+                  const badge = getAdStatusBadgeMeta(lifecycle.effectiveStatus);
+                  const daysCount = lifecycle.durationDays;
                   const totalCost = Number(ad.totalAmount ?? ad.totalFee ?? (daysCount * 1.00));
+
+                  const isApprovedOrActive = lifecycle.effectiveStatus === 'approved' || lifecycle.effectiveStatus === 'active';
+                  const isExpired = lifecycle.effectiveStatus === 'expired';
+                  const isRejected = lifecycle.effectiveStatus === 'rejected';
+                  const isUnderReview = ad.status === 'under_review';
 
                   return (
                     <div
@@ -887,71 +896,79 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
                             <img
                               src={ad.productImage}
                               alt=""
+                              referrerPolicy="no-referrer"
                               className="w-12 h-12 rounded-xl object-cover bg-stone-100"
                             />
                           )}
                           <div>
                             <div className="font-bold text-stone-900 text-sm">{ad.dealHeadline}</div>
-                            <div className="text-[11px] text-stone-500">
+                            <div className="text-[11px] text-stone-500 tabular-nums">
                               {ad.productName} • {daysCount} Days • Total: <strong>${totalCost.toFixed(2)}</strong>
                             </div>
                           </div>
                         </div>
 
-                        {/* State Tracker Badge */}
+                        {/* Status Badge */}
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-flex items-center gap-1.5 self-start sm:self-center ${badge.className}`}>
+                          {isApprovedOrActive ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          ) : isRejected ? (
+                            <AlertCircle className="w-3.5 h-3.5" />
+                          ) : (
+                            <Clock className="w-3.5 h-3.5" />
+                          )}
+                          {badge.label}
+                        </span>
+                      </div>
+
+                      {/* Start Date, Expiry Date, Remaining Duration */}
+                      <div className="grid grid-cols-3 gap-2 bg-stone-50 p-3 rounded-xl border border-stone-100 text-[11px] tabular-nums">
                         <div>
-                          {isSent && (
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200 flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5" />
-                              State: Sent (Pending Review)
-                            </span>
-                          )}
-                          {isUnderReview && (
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5" />
-                              State: Under Review
-                            </span>
-                          )}
-                          {isApproved && (
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 flex items-center gap-1.5">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                              State: Approved & Live
-                            </span>
-                          )}
-                          {isRejected && (
-                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-900 border border-red-200 flex items-center gap-1.5">
-                              <AlertCircle className="w-3.5 h-3.5" />
-                              State: Rejected
-                            </span>
-                          )}
+                          <div className="text-stone-400 font-medium">Start Date</div>
+                          <div className="font-bold text-stone-800">{formatAdDate(lifecycle.startDateIso)}</div>
+                        </div>
+                        <div>
+                          <div className="text-stone-400 font-medium">Expiry Date</div>
+                          <div className="font-bold text-stone-800">{formatAdDate(lifecycle.endDateIso)}</div>
+                        </div>
+                        <div>
+                          <div className="text-stone-400 font-medium">Remaining</div>
+                          <div className={`font-bold ${
+                            lifecycle.effectiveStatus === 'active'
+                              ? 'text-emerald-700'
+                              : isExpired
+                              ? 'text-stone-500'
+                              : isRejected
+                              ? 'text-red-600'
+                              : 'text-amber-700'
+                          }`}>
+                            {lifecycle.remainingLabel}
+                          </div>
                         </div>
                       </div>
 
                       {/* State Tracker Flow Bar */}
                       <div className="p-3 bg-stone-50 rounded-xl space-y-2">
                         <div className="flex items-center justify-between text-[11px] font-bold">
-                          <span className={isSent || isUnderReview || isApproved ? 'text-emerald-700' : 'text-stone-400'}>
-                            1. Sent
+                          <span className="text-emerald-700">1. Pending</span>
+                          <span className={isUnderReview || isApprovedOrActive || isExpired ? 'text-emerald-700' : 'text-stone-400'}>
+                            2. Approved / Active
                           </span>
-                          <span className={isUnderReview || isApproved ? 'text-emerald-700' : 'text-stone-400'}>
-                            2. Under Review
-                          </span>
-                          <span className={isApproved ? 'text-emerald-700' : isRejected ? 'text-red-700' : 'text-stone-400'}>
-                            3. {isRejected ? 'Rejected' : 'Approved'}
+                          <span className={isExpired ? 'text-stone-700' : isRejected ? 'text-red-700' : 'text-stone-400'}>
+                            3. {isRejected ? 'Rejected' : 'Expired'}
                           </span>
                         </div>
 
-                        {/* Progress Line */}
                         <div className="w-full bg-stone-200 h-2 rounded-full overflow-hidden">
                           <div
                             className={`h-full transition-all ${
-                              isApproved
-                                ? 'w-full bg-emerald-600'
-                                : isUnderReview
-                                ? 'w-2/3 bg-amber-500'
-                                : isRejected
+                              isRejected
                                 ? 'w-full bg-red-500'
-                                : 'w-1/3 bg-blue-500'
+                                : isExpired
+                                ? 'w-full bg-stone-400'
+                                : isApprovedOrActive
+                                ? 'w-2/3 bg-emerald-600'
+                                : 'w-1/3 bg-amber-500'
                             }`}
                           />
                         </div>
@@ -963,9 +980,9 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
                           <strong>POP Reference:</strong> {ad.paymentReference || 'Direct Receipt'} ({ad.paymentMethod})
                           {ad.proofOfPaymentFileName && ` • ${ad.proofOfPaymentFileName}`}
                         </div>
-                        {ad.adminFeedback && (
+                        {(ad.adminNotes || ad.adminFeedback) && (
                           <div className="p-2 rounded-lg bg-stone-100 text-stone-800 italic w-full border border-stone-200">
-                            <strong>Admin Feedback:</strong> "{ad.adminFeedback}"
+                            <strong>Admin Feedback:</strong> "{ad.adminNotes || ad.adminFeedback}"
                           </div>
                         )}
                       </div>

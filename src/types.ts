@@ -27,6 +27,11 @@ export type ProductUnit =
   | 'bird';
 
 export type OrderStatus =
+  | 'received'
+  | 'packaged'
+  | 'delivering'
+  | 'ready_for_pickup'
+  | 'done'
   | 'pending'
   | 'accepted'
   | 'rejected'
@@ -37,6 +42,33 @@ export type OrderStatus =
   | 'cancelled';
 
 export type DeliveryMethod = 'pickup' | 'delivery';
+
+export type PaymentMethod = 'cash_on_delivery' | 'bank_transfer' | 'ecocash' | 'onemoney';
+
+export type PaymentStatus = 'awaiting_payment' | 'pending_verification' | 'paid' | 'rejected';
+
+export interface DeliveryLocation {
+  mode: 'gps' | 'manual';
+  lat?: number;
+  lng?: number;
+  accuracy?: number;
+  street?: string;
+  suburb?: string;
+  city?: string;
+  instructions?: string;
+  formattedAddress: string;
+  confirmedAt?: string;
+}
+
+export interface PickupLocation {
+  farmName: string;
+  address: string;
+  city?: string;
+  province?: string;
+  instructions?: string;
+  phone?: string;
+  readyAt?: string;
+}
 
 export interface User {
   id: string;
@@ -74,8 +106,10 @@ export interface FarmerProfile {
   farmingMethods?: string[];
   practices?: string[];
   whatsapp?: string;
+  pickupInstructions?: string;
   paymentInfo?: {
     ecocash?: string;
+    onemoney?: string;
     innbucks?: string;
     bankAccount?: string;
   };
@@ -162,11 +196,31 @@ export interface Order {
   farmerName: string;
   farmName: string;
   items: OrderItem[];
+  subtotalAmount?: number;
+  deliveryFee?: number;
   totalAmount: number;
   status: OrderStatus;
   deliveryMethod: DeliveryMethod;
   deliveryAddress?: string;
+  deliveryLocation?: DeliveryLocation;
+  pickupLocation?: PickupLocation;
   pickupTimeWindow?: string;
+  pickupInstructions?: string;
+  paymentMethod?: PaymentMethod;
+  paymentStatus?: PaymentStatus;
+  proofOfPaymentUrl?: string;
+  proofOfPaymentFileName?: string;
+  paymentReference?: string;
+  paymentSubmittedAt?: string;
+  paymentVerifiedAt?: string;
+  paymentRejectionReason?: string;
+  farmerPaymentDetails?: {
+    ecocash?: string;
+    onemoney?: string;
+    bankAccount?: string;
+    innbucks?: string;
+    phone?: string;
+  };
   buyerNotes?: string;
   farmerNotes?: string;
   createdAt: string;
@@ -302,7 +356,7 @@ export type ReportReason =
   | 'out_of_stock_unresponsive'
   | 'fraud';
 
-export type AdRequestStatus = 'submitted' | 'sent' | 'under_review' | 'approved' | 'rejected' | 'expired';
+export type AdRequestStatus = 'pending' | 'submitted' | 'sent' | 'under_review' | 'approved' | 'active' | 'rejected' | 'expired';
 export type AdStatus = AdRequestStatus;
 
 export interface AdRequest {
