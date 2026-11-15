@@ -5,24 +5,18 @@ import { mobileService } from '../services/mobileService';
 import { compressImage } from '../utils/imageCompressor';
 import { saveProductToFirebase } from '../services/firebaseProducts';
 import { Product, ProductCategory, ProductUnit } from '../types';
+import { LiquidGlassModal, LiquidGlassButton } from './glass';
 import {
-  X,
   Package,
   Leaf,
-  Calendar,
   Image as ImageIcon,
-  DollarSign,
-  Layers,
   CheckCircle2,
   AlertCircle,
-  Plus,
   Camera as CameraIcon,
   Upload,
   Sparkles,
   ChevronDown,
-  Loader2,
-  RefreshCw,
-  Info
+  Loader2
 } from 'lucide-react';
 
 interface AddEditProductModalProps {
@@ -70,9 +64,15 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
 
   const isFodderSupplier = user?.role === 'fodder_supplier';
   const [name, setName] = useState(product?.name || '');
-  const [category, setCategory] = useState(product?.category || (isFodderSupplier ? 'cat-fodder' : 'cat-veg'));
-  const [price, setPrice] = useState<string>(product?.price !== undefined ? product.price.toString() : '');
-  const [unit, setUnit] = useState<ProductUnit>(product?.unit || (isFodderSupplier ? 'bale' : 'kg'));
+  const [category, setCategory] = useState(
+    product?.category || (isFodderSupplier ? 'cat-fodder' : 'cat-veg')
+  );
+  const [price, setPrice] = useState<string>(
+    product?.price !== undefined ? product.price.toString() : ''
+  );
+  const [unit, setUnit] = useState<ProductUnit>(
+    product?.unit || (isFodderSupplier ? 'bale' : 'kg')
+  );
   const [quantityAvailable, setQuantityAvailable] = useState<string>(
     product?.quantityAvailable !== undefined ? product.quantityAvailable.toString() : '50'
   );
@@ -87,9 +87,10 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
   const [expiryDate, setExpiryDate] = useState(
     product?.expiryDate ? product.expiryDate.split('T')[0] : ''
   );
-  const [additionalNotes, setAdditionalNotes] = useState(product?.additionalNotes || '');
+  const [additionalNotes] = useState(product?.additionalNotes || '');
   const [imageUrl, setImageUrl] = useState(
-    product?.images?.[0] || (isFodderSupplier ? SAMPLE_AGRI_IMAGES[1].url : SAMPLE_AGRI_IMAGES[0].url)
+    product?.images?.[0] ||
+      (isFodderSupplier ? SAMPLE_AGRI_IMAGES[1].url : SAMPLE_AGRI_IMAGES[0].url)
   );
   const [isDragging, setIsDragging] = useState(false);
 
@@ -97,16 +98,19 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
 
   useEffect(() => {
     let isMounted = true;
-    api.getCategories()
-      .then(cats => {
+    api
+      .getCategories()
+      .then((cats) => {
         if (isMounted && cats && cats.length > 0) {
           setCategories(cats);
         }
       })
-      .catch(err => {
+      .catch((err) => {
         console.warn('Using default categories fallback:', err);
       });
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleProcessFile = async (file: File) => {
@@ -136,7 +140,6 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
       }
     } catch (err: any) {
       console.warn('Camera capture error:', err);
-      // Fallback: trigger file input
       fileInputRef.current?.click();
     } finally {
       setIsCompressingImg(false);
@@ -184,12 +187,16 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
     setErrorMsg('');
 
     try {
-      const selectedCategoryObj = categories.find(c => c.id === category) || DEFAULT_CATEGORIES.find(c => c.id === category);
-      
+      const selectedCategoryObj =
+        categories.find((c) => c.id === category) ||
+        DEFAULT_CATEGORIES.find((c) => c.id === category);
+
       const farmerId = user?.id || 'farmer-1';
       const farmerName = user?.name || 'Chiredzi Green Harvest';
       const farmName = user?.farmerProfile?.farmName || `${farmerName}'s Farm`;
-      const farmerAvatar = user?.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400';
+      const farmerAvatar =
+        user?.avatar ||
+        'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400';
       const location = {
         province: user?.location?.province || 'Harare',
         city: user?.location?.city || 'Harare',
@@ -202,7 +209,8 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
         name: name.trim(),
         category: category || 'cat-veg',
         categoryName: selectedCategoryObj?.name || 'Vegetables',
-        description: description.trim() || `${name.trim()} freshly harvested from ${farmName}`,
+        description:
+          description.trim() || `${name.trim()} freshly harvested from ${farmName}`,
         price: numPrice,
         unit,
         quantityAvailable: numQty,
@@ -221,10 +229,8 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
         availability: numQty <= 0 ? 'out_of_stock' : numQty <= 10 ? 'low_stock' : 'available'
       };
 
-      // 1. Save directly to Firebase Firestore
       const savedFbProduct = await saveProductToFirebase(payload);
 
-      // 2. Also sync to backend API store
       let resultProduct: Product = savedFbProduct;
       try {
         if (product?.id) {
@@ -243,374 +249,370 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
       }, 600);
     } catch (err: any) {
       console.error('Failed to save product listing:', err);
-      setErrorMsg(err?.message || 'Failed to save product listing. Please check the form and try again.');
+      setErrorMsg(
+        err?.message || 'Failed to save product listing. Please check the form and try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-      <div
-        id="add-edit-product-dialog"
-        className="relative bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden my-6 border border-stone-200 flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-6 py-4 bg-linear-to-r from-emerald-900 to-teal-900 text-white flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-700/60 border border-emerald-400/40 flex items-center justify-center text-emerald-200">
-              <Package className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="font-extrabold text-white text-base sm:text-lg">
-                {product
-                  ? 'Edit Agricultural Listing'
-                  : isFodderSupplier
-                  ? 'List Fodder, Hay Bales & Animal Feed'
-                  : 'List New Farm Produce / Livestock'}
-              </h2>
-              <p className="text-[11px] text-emerald-200/90">
-                Direct farm gate listing with instant photo upload &amp; real-time buyer visibility
-              </p>
+    <LiquidGlassModal
+      id="add-edit-product-dialog"
+      isOpen
+      onClose={onClose}
+      maxWidthClass="max-w-2xl"
+      icon={<Package className="w-5 h-5 text-[#A8E635]" />}
+      title={
+        product
+          ? 'Edit Agricultural Listing'
+          : isFodderSupplier
+            ? 'List Fodder, Hay Bales & Animal Feed'
+            : 'List New Farm Produce / Livestock'
+      }
+      subtitle="Direct farm gate listing with instant photo upload & real-time buyer visibility"
+    >
+      <form onSubmit={handleSubmit} className="p-6 space-y-5 text-xs">
+        {successNotice && (
+          <div className="p-3.5 rounded-2xl bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] font-bold flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-[#145A38] shrink-0" />
+            <span>
+              Listing uploaded and published successfully! Syncing live across the marketplace...
+            </span>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">
+              Produce / Variety Name *
+            </label>
+            <input
+              id="product-name-input"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Fresh Red Roma Tomatoes, Boer Goat Buck"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25 font-medium"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">Category *</label>
+            <div className="relative">
+              <select
+                id="product-category-select"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#0B3D2B]/20 text-[#062B1F] bg-white/85 focus:outline-none focus:ring-2 focus:ring-[#145A38]/25 font-medium appearance-none pr-8 cursor-pointer"
+              >
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-[#0B3D2B]/55 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full text-emerald-200 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1 text-xs">
-          {successNotice && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 font-bold flex items-center gap-2.5 animate-in fade-in">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-              <span>Listing uploaded and published successfully! Syncing live across the marketplace...</span>
-            </div>
-          )}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">Price ($ USD) *</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="1.50"
+              className="w-full px-3 py-2 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F] font-bold"
+              required
+            />
+          </div>
 
-          {errorMsg && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 font-semibold flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">Unit of Measure *</label>
+            <select
+              value={unit}
+              onChange={(e) => setUnit(e.target.value as ProductUnit)}
+              className="w-full px-3 py-2 rounded-xl border border-[#0B3D2B]/20 text-[#062B1F] bg-white/85 font-medium"
+            >
+              <option value="kg">Kilogram (kg)</option>
+              <option value="bale">Bale (Hay / Lucerne / Straw)</option>
+              <option value="ton">Metric Ton (t)</option>
+              <option value="bundle">Fodder Bundle</option>
+              <option value="head">Head (Livestock / Sires)</option>
+              <option value="animal">Animal (Individual)</option>
+              <option value="pair">Breeding Pair (Male &amp; Female)</option>
+              <option value="bird">Bird (Poultry / Pullet / Cockerel)</option>
+              <option value="bag_50kg">50kg Seed / Grain Bag</option>
+              <option value="bag">Standard Bag</option>
+              <option value="tray">Egg Tray (30pk)</option>
+              <option value="bunch">Fresh Bunch</option>
+              <option value="crate">Crate (Wooden/Plastic)</option>
+              <option value="litre">Litre (L)</option>
+              <option value="piece">Per Piece</option>
+              <option value="dozen">Per Dozen</option>
+              <option value="box">Per Box</option>
+            </select>
+          </div>
 
-          {/* Product Name & Category */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">Available Quantity *</label>
+            <input
+              type="number"
+              min="0"
+              value={quantityAvailable}
+              onChange={(e) => setQuantityAvailable(e.target.value)}
+              placeholder="50"
+              className="w-full px-3 py-2 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F] font-bold"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">Min Order Qty</label>
+            <input
+              type="number"
+              min="1"
+              value={minOrderQuantity}
+              onChange={(e) => setMinOrderQuantity(e.target.value)}
+              placeholder="1"
+              className="w-full px-3 py-2 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F]"
+            />
+          </div>
+        </div>
+
+        {category === 'cat-breeding' && (
+          <div className="p-3.5 rounded-2xl bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] text-xs flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 text-[#145A38] shrink-0 mt-0.5" />
             <div>
-              <label className="font-bold text-stone-700 block mb-1">Produce / Variety Name *</label>
-              <input
-                id="product-name-input"
-                type="text"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="e.g. Fresh Red Roma Tomatoes, Boer Goat Buck"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-medium"
-                required
+              <strong className="block font-bold">Crossbreed &amp; Hybrid Listing Advice</strong>
+              <span>
+                Highlight parent genetics (e.g. Kuroiler × Roadrunner, Boer × Matabele),
+                age/stage, vaccination status, and expected hybrid performance.
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="font-bold text-[#062B1F] block mb-1">
+            Product Description &amp; Harvest / Lineage Notes
+          </label>
+          <textarea
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe breed characteristics, pedigree, vaccinations, growth rate, soil/organic practices, and collection details..."
+            className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+          />
+        </div>
+
+        <div className="space-y-3 bg-[#DFF4E4]/45 p-4 rounded-2xl border border-[#145A38]/15">
+          <div className="flex items-center justify-between">
+            <label className="font-bold text-[#062B1F] block">
+              Product Photo (Mobile Camera &amp; Gallery Upload)
+            </label>
+            <span className="text-[11px] text-[#145A38] font-semibold flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5" /> Auto-compressed &amp; optimized
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="relative group shrink-0">
+              <img
+                src={imageUrl}
+                alt="Produce preview"
+                className="w-24 h-24 rounded-2xl object-cover border-2 border-[#145A38] bg-white shadow-md"
               />
+              {isCompressingImg && (
+                <div className="absolute inset-0 bg-[#062B1F]/70 rounded-2xl flex flex-col items-center justify-center text-white text-[10px] font-bold">
+                  <Loader2 className="w-5 h-5 animate-spin mb-1 text-[#A8E635]" />
+                  <span>Compressing...</span>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Category *</label>
-              <div className="relative">
-                <select
-                  id="product-category-select"
-                  value={category}
-                  onChange={e => setCategory(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-medium appearance-none pr-8 cursor-pointer"
+            <div className="flex-1 space-y-2.5 w-full">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleCaptureCamera}
+                  disabled={isCompressingImg}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-[#145A38] hover:bg-[#0B3D2B] disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer"
                 >
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <CameraIcon className="w-3.5 h-3.5" />
+                  <span>Take Photo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCapturePhotos}
+                  disabled={isCompressingImg}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-[#062B1F] hover:bg-[#0B3D2B] disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-[#A8E635]" />
+                  <span>Gallery</span>
+                </button>
+
+                <label className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-[#0B3D2B]/20 hover:bg-[#DFF4E4]/50 text-[#062B1F] rounded-xl font-bold text-xs cursor-pointer shadow-xs transition-all">
+                  <Upload className="w-3.5 h-3.5 text-[#145A38]" />
+                  <span>Upload File</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleProcessFile(file);
+                    }}
+                  />
+                </label>
               </div>
-            </div>
-          </div>
 
-          {/* Price, Unit, Stock & Min Order */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Price ($ USD) *</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={price}
-                onChange={e => setPrice(e.target.value)}
-                placeholder="1.50"
-                className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 font-bold"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Unit of Measure *</label>
-              <select
-                value={unit}
-                onChange={e => setUnit(e.target.value as ProductUnit)}
-                className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 bg-white font-medium"
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) handleProcessFile(file);
+                }}
+                className={`border-2 border-dashed rounded-xl p-2.5 text-center transition-all cursor-pointer ${
+                  isDragging
+                    ? 'border-[#145A38] bg-[#DFF4E4] text-[#062B1F]'
+                    : 'border-[#0B3D2B]/20 hover:border-[#145A38] bg-white/75 text-[#0B3D2B]/70'
+                }`}
+                onClick={() => fileInputRef.current?.click()}
               >
-                <option value="kg">Kilogram (kg)</option>
-                <option value="bale">Bale (Hay / Lucerne / Straw)</option>
-                <option value="ton">Metric Ton (t)</option>
-                <option value="bundle">Fodder Bundle</option>
-                <option value="head">Head (Livestock / Sires)</option>
-                <option value="animal">Animal (Individual)</option>
-                <option value="pair">Breeding Pair (Male & Female)</option>
-                <option value="bird">Bird (Poultry / Pullet / Cockerel)</option>
-                <option value="bag_50kg">50kg Seed / Grain Bag</option>
-                <option value="bag">Standard Bag</option>
-                <option value="tray">Egg Tray (30pk)</option>
-                <option value="bunch">Fresh Bunch</option>
-                <option value="crate">Crate (Wooden/Plastic)</option>
-                <option value="litre">Litre (L)</option>
-                <option value="piece">Per Piece</option>
-                <option value="dozen">Per Dozen</option>
-                <option value="box">Per Box</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Available Quantity *</label>
-              <input
-                type="number"
-                min="0"
-                value={quantityAvailable}
-                onChange={e => setQuantityAvailable(e.target.value)}
-                placeholder="50"
-                className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 font-bold"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Min Order Qty</label>
-              <input
-                type="number"
-                min="1"
-                value={minOrderQuantity}
-                onChange={e => setMinOrderQuantity(e.target.value)}
-                placeholder="1"
-                className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900"
-              />
-            </div>
-          </div>
-
-          {/* Special Breeding & Hybrid Genetics Guidance */}
-          {category === 'cat-breeding' && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex items-start gap-2.5">
-              <Sparkles className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-              <div>
-                <strong className="block font-bold">Crossbreed & Hybrid Listing Advice</strong>
-                <span>
-                  Highlight parent genetics (e.g. Kuroiler × Roadrunner, Boer × Matabele), age/stage, vaccination status, and expected hybrid performance (egg yield, drought resilience, growth rate).
+                <span className="text-[11px] font-medium">
+                  Drag &amp; drop high-res image here or click to browse (JPG, PNG, WebP)
                 </span>
               </div>
-            </div>
-          )}
 
-          {/* Description */}
-          <div>
-            <label className="font-bold text-stone-700 block mb-1">Product Description & Harvest / Lineage Notes</label>
-            <textarea
-              rows={3}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Describe breed characteristics, pedigree, vaccinations, growth rate, soil/organic practices, and collection details..."
-              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            />
+              <input
+                type="url"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="Or paste direct image URL (e.g. https://...)"
+                className="w-full px-3 py-1.5 rounded-xl border border-[#0B3D2B]/20 bg-white text-[#062B1F] text-xs focus:outline-none focus:ring-1 focus:ring-[#145A38]"
+              />
+            </div>
           </div>
 
-          {/* Image Selection with Native Camera, Gallery & Drag-and-Drop Auto-Compression */}
-          <div className="space-y-3 bg-stone-50 p-4 rounded-2xl border border-stone-200">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-stone-800 block">Product Photo (Mobile Camera & Gallery Upload)</label>
-              <span className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" /> Auto-compressed & optimized
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="relative group shrink-0">
-                <img
-                  src={imageUrl}
-                  alt="Produce preview"
-                  className="w-24 h-24 rounded-2xl object-cover border-2 border-emerald-600 bg-stone-100 shadow-md"
-                />
-                {isCompressingImg && (
-                  <div className="absolute inset-0 bg-black/50 rounded-2xl flex flex-col items-center justify-center text-white text-[10px] font-bold">
-                    <Loader2 className="w-5 h-5 animate-spin mb-1" />
-                    <span>Compressing...</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1 space-y-2.5 w-full">
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleCaptureCamera}
-                    disabled={isCompressingImg}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-xs transition-all active:scale-95"
-                  >
-                    <CameraIcon className="w-3.5 h-3.5" />
-                    <span>Take Photo</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCapturePhotos}
-                    disabled={isCompressingImg}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-800 hover:bg-stone-900 disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-xs transition-all active:scale-95"
-                  >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>Gallery</span>
-                  </button>
-
-                  <label className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-stone-300 hover:bg-stone-100 text-stone-700 rounded-xl font-bold text-xs cursor-pointer shadow-xs transition-all active:scale-95">
-                    <Upload className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Upload File</span>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) handleProcessFile(file);
-                      }}
-                    />
-                  </label>
-                </div>
-
-                {/* Drag and Drop Zone */}
-                <div
-                  onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={e => {
-                    e.preventDefault();
-                    setIsDragging(false);
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) handleProcessFile(file);
+          <div className="pt-1">
+            <span className="text-[11px] font-bold text-[#0B3D2B]/80 block mb-1.5">
+              Quick Sample Produce Images:
+            </span>
+            <div className="flex gap-2 overflow-x-auto pb-1.5">
+              {SAMPLE_AGRI_IMAGES.map((img, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  title={img.label}
+                  onClick={() => {
+                    setImageUrl(img.url);
+                    mobileService.triggerHaptic('light');
                   }}
-                  className={`border-2 border-dashed rounded-xl p-2.5 text-center transition-all cursor-pointer ${
-                    isDragging
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                      : 'border-stone-300 hover:border-emerald-400 bg-white/50 text-stone-500'
+                  className={`relative w-12 h-12 rounded-xl overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
+                    imageUrl === img.url
+                      ? 'border-[#145A38] ring-2 ring-[#A8E635] scale-105'
+                      : 'border-white/70 opacity-75 hover:opacity-100'
                   }`}
-                  onClick={() => fileInputRef.current?.click()}
                 >
-                  <span className="text-[11px] font-medium">
-                    Drag & drop high-res image here or click to browse (JPG, PNG, WebP)
-                  </span>
-                </div>
-
-                <input
-                  type="url"
-                  value={imageUrl}
-                  onChange={e => setImageUrl(e.target.value)}
-                  placeholder="Or paste direct image URL (e.g. https://...)"
-                  className="w-full px-3 py-1.5 rounded-xl border border-stone-300 bg-white text-stone-900 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-            </div>
-
-            {/* Presets */}
-            <div className="pt-1">
-              <span className="text-[11px] font-bold text-stone-600 block mb-1.5">
-                Quick Sample Produce Images:
-              </span>
-              <div className="flex gap-2 overflow-x-auto pb-1.5">
-                {SAMPLE_AGRI_IMAGES.map((img, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    title={img.label}
-                    onClick={() => {
-                      setImageUrl(img.url);
-                      mobileService.triggerHaptic('light');
-                    }}
-                    className={`relative w-12 h-12 rounded-xl overflow-hidden border-2 shrink-0 transition-all ${
-                      imageUrl === img.url ? 'border-emerald-600 ring-2 ring-emerald-600/30 scale-105' : 'border-stone-200 opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    <img src={img.url} alt={img.label} className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
+                  <img src={img.url} alt={img.label} className="w-full h-full object-cover" />
+                </button>
+              ))}
             </div>
           </div>
+        </div>
 
-          {/* Harvest & Expiry Dates */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Harvest / Collection Date</label>
-              <input
-                type="date"
-                value={harvestDate}
-                onChange={e => setHarvestDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900"
-              />
-            </div>
-
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Best Before / Expiry (Optional)</label>
-              <input
-                type="date"
-                value={expiryDate}
-                onChange={e => setExpiryDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900"
-              />
-            </div>
-          </div>
-
-          {/* Organic Certified Toggle */}
-          <label className="flex items-center gap-3 p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 cursor-pointer">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">
+              Harvest / Collection Date
+            </label>
             <input
-              type="checkbox"
-              checked={isOrganic}
-              onChange={e => setIsOrganic(e.target.checked)}
-              className="w-4 h-4 text-emerald-600 rounded-sm focus:ring-emerald-500"
+              type="date"
+              value={harvestDate}
+              onChange={(e) => setHarvestDate(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F]"
             />
-            <div>
-              <span className="font-bold text-stone-900 text-xs flex items-center gap-1">
-                <Leaf className="w-3.5 h-3.5 text-emerald-600" />
-                100% Organic Certified / Grown without Synthetic Chemicals
-              </span>
-              <p className="text-[11px] text-stone-500">Adds the verified green organic badge to your listing</p>
-            </div>
-          </label>
-
-          {/* Submit */}
-          <div className="pt-2">
-            <button
-              id="save-product-listing-btn"
-              type="submit"
-              disabled={isSubmitting || isCompressingImg}
-              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-stone-300 text-white font-bold text-sm rounded-2xl shadow-md transition-all flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Publishing Listing to Firestore...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{product ? 'Update Product Listing' : 'Publish Product to Marketplace'}</span>
-                </>
-              )}
-            </button>
           </div>
-        </form>
-      </div>
-    </div>
+
+          <div>
+            <label className="font-bold text-[#062B1F] block mb-1">
+              Best Before / Expiry (Optional)
+            </label>
+            <input
+              type="date"
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F]"
+            />
+          </div>
+        </div>
+
+        <label className="flex items-center gap-3 p-3.5 rounded-2xl bg-[#DFF4E4]/65 border border-[#145A38]/20 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isOrganic}
+            onChange={(e) => setIsOrganic(e.target.checked)}
+            className="w-4 h-4 text-[#145A38] rounded-sm focus:ring-[#145A38]"
+          />
+          <div>
+            <span className="font-bold text-[#062B1F] text-xs flex items-center gap-1">
+              <Leaf className="w-3.5 h-3.5 text-[#145A38]" />
+              100% Organic Certified / Grown without Synthetic Chemicals
+            </span>
+            <p className="text-[11px] text-[#0B3D2B]/70">
+              Adds the verified green organic badge to your listing
+            </p>
+          </div>
+        </label>
+
+        <div className="pt-2">
+          <LiquidGlassButton
+            id="save-product-listing-btn"
+            type="submit"
+            variant="lime"
+            size="lg"
+            disabled={isSubmitting || isCompressingImg}
+            className="w-full"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Publishing Listing to Firestore...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>
+                  {product ? 'Update Product Listing' : 'Publish Product to Marketplace'}
+                </span>
+              </>
+            )}
+          </LiquidGlassButton>
+        </div>
+      </form>
+    </LiquidGlassModal>
   );
 };

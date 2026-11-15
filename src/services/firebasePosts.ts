@@ -10,6 +10,7 @@ import {
   increment
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { handleFirestoreError, OperationType } from '../firebase/errorHandler';
 import { sanitizeForFirestore } from '../context/AuthContext';
 import { MediaPost, MediaPostItem } from '../types';
 
@@ -88,6 +89,12 @@ export function subscribeToFirebasePosts(
 }
 
 export async function saveFirebasePost(post: MediaPost): Promise<void> {
+  if (!post?.id || !post?.farmerId) {
+    throw new Error('Cannot save showcase post without a valid post ID and farmer ID.');
+  }
+  if (!Array.isArray(post.media) || post.media.length === 0) {
+    throw new Error('Cannot save showcase post without at least one uploaded media item.');
+  }
   try {
     const docRef = doc(db, 'mediaPosts', post.id);
     await setDoc(
@@ -99,7 +106,7 @@ export async function saveFirebasePost(post: MediaPost): Promise<void> {
       { merge: true }
     );
   } catch (err) {
-    console.warn('Could not save post to Firestore:', err);
+    handleFirestoreError(err, OperationType.WRITE, `mediaPosts/${post.id}`);
   }
 }
 

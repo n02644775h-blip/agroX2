@@ -706,13 +706,24 @@ class ApiService {
     size: number;
   }> {
     return new Promise((resolve, reject) => {
+      if (!file) {
+        reject(new Error('No media file selected.'));
+        return;
+      }
+      if (file.size === 0) {
+        reject(new Error(`File "${file.name}" is empty (0 bytes). Please choose a valid image or video.`));
+        return;
+      }
+
+      const baseMime = (file.type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE}/media/upload`, true);
+      xhr.timeout = 180000;
       if (this.token) {
         xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
       }
-      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-      xhr.setRequestHeader('X-File-Type', file.type || 'application/octet-stream');
+      xhr.setRequestHeader('Content-Type', baseMime || 'application/octet-stream');
+      xhr.setRequestHeader('X-File-Type', baseMime || 'application/octet-stream');
       xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
 
       xhr.upload.onprogress = (evt) => {
@@ -721,21 +732,83 @@ class ApiService {
         }
       };
 
-      xhr.onload = () => {
+      const parseJsonSafe = (rawText: string, contentTypeHeader: string): any | null => {
+        const trimmed = (rawText || '').trim();
+        if (!trimmed) return null;
+        const looksLikeJson =
+          trimmed.startsWith('{') ||
+          trimmed.startsWith('[') ||
+          contentTypeHeader.toLowerCase().includes('application/json');
+        if (!looksLikeJson) return null;
         try {
-          const parsed = JSON.parse(xhr.responseText || '{}');
-          if (xhr.status >= 200 && xhr.status < 300) {
-            if (onProgress) onProgress(100);
-            resolve(parsed);
-          } else {
-            reject(new Error(parsed.error || `Upload failed (${xhr.status})`));
-          }
+          return JSON.parse(trimmed);
         } catch {
-          reject(new Error('Failed to parse upload server response.'));
+          return null;
         }
       };
 
-      xhr.onerror = () => reject(new Error('Network error while uploading media file.'));
+      const extractPlainMessage = (rawText: string): string => {
+        const stripped = (rawText || '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!stripped) return '';
+        return stripped.length > 180 ? `${stripped.slice(0, 177)}...` : stripped;
+      };
+
+      xhr.onload = () => {
+        const contentTypeHeader = xhr.getResponseHeader('content-type') || '';
+        const rawText = xhr.responseText || '';
+        const parsed = parseJsonSafe(rawText, contentTypeHeader);
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          if (!parsed || typeof parsed.url !== 'string' || !parsed.url.trim()) {
+            reject(
+              new Error(
+                'Upload endpoint returned an unexpected non-JSON response. Please check that the media server is running and try again.'
+              )
+            );
+            return;
+          }
+          if (onProgress) onProgress(100);
+          resolve(parsed);
+          return;
+        }
+
+        const serverError = parsed?.error || parsed?.message || parsed?.detail;
+        if (serverError) {
+          reject(new Error(String(serverError)));
+          return;
+        }
+
+        if (xhr.status === 413) {
+          reject(
+            new Error(
+              'Media file exceeds the server request size limit. Use JPG/PNG/WebP (≤15MB) or MP4/WebM (≤50MB).'
+            )
+          );
+          return;
+        }
+        if (xhr.status === 401 || xhr.status === 403) {
+          reject(new Error('Permission denied while uploading media. Please sign in again as a farmer.'));
+          return;
+        }
+        if (xhr.status === 408 || xhr.status === 504) {
+          reject(new Error('Upload timed out while processing media. Try a smaller file or shorter video clip.'));
+          return;
+        }
+        if (xhr.status === 502 || xhr.status === 503) {
+          reject(new Error('Media upload service is temporarily unavailable. Please try again in a moment.'));
+          return;
+        }
+
+        const plain = extractPlainMessage(rawText);
+        reject(new Error(plain || `Media upload failed (HTTP ${xhr.status || 'unknown'}).`));
+      };
+
+      xhr.onerror = () => reject(new Error('Network error while uploading media file. Please check your connection.'));
+      xhr.ontimeout = () =>
+        reject(new Error('Upload timed out while processing the media file. Try a smaller file or shorter clip.'));
       xhr.send(file);
     });
   }

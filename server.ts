@@ -62,18 +62,26 @@ async function startServer() {
     '/api/media/upload',
     express.raw({
       limit: '60mb',
-      type: ['image/*', 'video/*', 'application/octet-stream']
+      type: () => true
     }),
     async (req: Request, res: Response) => {
       const tempFiles: string[] = [];
       try {
         const buffer = req.body as Buffer;
         if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
-          return res.status(400).json({ error: 'No media file received.' });
+          return res.status(400).json({ error: 'No media file received or file is empty.' });
         }
 
-        const rawHeaderType = String(req.headers['x-file-type'] || req.headers['content-type'] || '').toLowerCase();
-        const rawHeaderName = decodeURIComponent(String(req.headers['x-file-name'] || 'upload'));
+        const rawHeaderType = String(req.headers['x-file-type'] || req.headers['content-type'] || '')
+          .split(';')[0]
+          .trim()
+          .toLowerCase();
+        let rawHeaderName = 'upload';
+        try {
+          rawHeaderName = decodeURIComponent(String(req.headers['x-file-name'] || 'upload'));
+        } catch {
+          rawHeaderName = String(req.headers['x-file-name'] || 'upload');
+        }
         const extFromName = path.extname(rawHeaderName).toLowerCase();
 
         const allowedImageTypes = [
@@ -344,6 +352,19 @@ async function startServer() {
       }
     }
   );
+
+  // Ensure /api/media/upload body-parser errors (e.g., PayloadTooLargeError) always return JSON, never HTML
+  app.use('/api/media/upload', (err: any, _req: Request, res: Response, next: express.NextFunction) => {
+    if (!err) return next();
+    if (err.type === 'entity.too.large' || err.status === 413) {
+      return res.status(413).json({
+        error: 'Uploaded file exceeds the maximum upload limit (15MB for images, 50MB for videos).'
+      });
+    }
+    return res.status(err.status || 400).json({
+      error: err.message || 'Invalid media upload request.'
+    });
+  });
 
   app.use(express.json({ limit: '40mb' }));
   app.use(express.urlencoded({ extended: true, limit: '40mb' }));

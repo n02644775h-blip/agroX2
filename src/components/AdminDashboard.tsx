@@ -26,47 +26,39 @@ import { sanitizeForFirestore, useAuth } from '../context/AuthContext';
 import { compressImage } from '../utils/imageCompressor';
 import { getAdLifecycle, getAdStatusBadgeMeta, formatAdDate } from '../utils/adLifecycle';
 import {
+  LiquidGlassCard,
+  LiquidGlassButton,
+  LiquidGlassModal,
+  LiquidGlassSidebar,
+  type SidebarNavItem
+} from './glass';
+import heroFarmlandSunrise from '../assets/images/hero_farmland_sunrise_1794742072298.jpg';
+import {
   ShieldCheck,
   Users,
-  Sprout,
   ShoppingBag,
-  DollarSign,
   AlertTriangle,
   Send,
   CheckCircle,
-  XCircle,
-  Plus,
   Trash2,
-  Lock,
-  Unlock,
-  Layers,
-  FileText,
-  TrendingUp,
   Tag,
   Flame,
-  Clock,
-  Eye,
   Check,
   X,
-  ExternalLink,
   Receipt,
   FileCheck,
-  CreditCard,
-  MessageSquare,
   AlertCircle,
-  Radio,
   RefreshCw,
   Search,
-  Filter,
   UserPlus,
-  UserCheck,
   Sparkles,
   ArrowUpRight,
-  Wifi,
   Database,
   Camera,
   Upload,
-  Wheat
+  LayoutDashboard,
+  Megaphone,
+  Menu
 } from 'lucide-react';
 import {
   BarChart,
@@ -87,6 +79,15 @@ const ADMIN_PRESET_AVATARS = [
   { label: 'Governance Lead', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=400' }
 ];
 
+type AdminTabId =
+  | 'overview'
+  | 'users'
+  | 'advertisers'
+  | 'products'
+  | 'reports'
+  | 'announcements'
+  | 'categories';
+
 export const AdminDashboard: React.FC = () => {
   const { user: adminUser, updateUserProfile } = useAuth();
   const [stats, setStats] = useState<any>(null);
@@ -96,8 +97,8 @@ export const AdminDashboard: React.FC = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [adRequests, setAdRequests] = useState<AdRequest[]>([]);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'products' | 'reports' | 'announcements' | 'categories' | 'advertisers'>('overview');
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<AdminTabId>('overview');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Admin Profile Picture Edit Modal
   const [showAdminAvatarModal, setShowAdminAvatarModal] = useState(false);
@@ -133,16 +134,11 @@ export const AdminDashboard: React.FC = () => {
   const [annContent, setAnnContent] = useState('');
   const [annPriority, setAnnPriority] = useState<'normal' | 'urgent'>('normal');
   const [annTarget, setAnnTarget] = useState<'all' | 'farmers' | 'buyers'>('all');
-  const [annCategory, setAnnCategory] = useState<'general' | 'logistics' | 'subsidy' | 'weather' | 'platform' | 'market_update'>('general');
   const [annPinned, setAnnPinned] = useState(false);
   const [annSuccess, setAnnSuccess] = useState(false);
   const [annError, setAnnError] = useState<string | null>(null);
   const [isPublishingAnn, setIsPublishingAnn] = useState(false);
   const [announcementsList, setAnnouncementsList] = useState<Announcement[]>([]);
-
-  // Category State
-  const [newCatName, setNewCatName] = useState('');
-  const [newCatDesc, setNewCatDesc] = useState('');
 
   // Advertisers POP Viewer Modal
   const [viewingPopAd, setViewingPopAd] = useState<AdRequest | null>(null);
@@ -152,7 +148,6 @@ export const AdminDashboard: React.FC = () => {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   const loadAdminData = async () => {
-    setLoading(true);
     try {
       const [statsData, apiUsersData, prodsData, repsData, catsData, annsData, adsData] = await Promise.all([
         api.getAdminStats(),
@@ -170,23 +165,18 @@ export const AdminDashboard: React.FC = () => {
       setAnnouncementsList(annsData);
       setAdRequests(adsData);
 
-      // If Firestore users haven't populated yet, initialize with API users
       if (users.length === 0 && apiUsersData.length > 0) {
         setUsers(apiUsersData);
         setSignupStats(calculateSignupStats(apiUsersData, true));
       }
     } catch (err) {
       console.error('Failed to load admin data:', err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  // Real-time Firestore subscription on `users` and `announcements` collections
   useEffect(() => {
     loadAdminData();
 
-    // Attach real-time snapshot listener for users
     const unsubscribeUsers = subscribeToFirebaseUsers(
       (fbUsers, fbStats) => {
         setUsers(fbUsers);
@@ -200,12 +190,10 @@ export const AdminDashboard: React.FC = () => {
       }
     );
 
-    // Attach real-time snapshot listener for announcements
     const unsubscribeAnnouncements = subscribeToFirebaseAnnouncements('admin', (anns) => {
       setAnnouncementsList(anns);
     });
 
-    // Attach real-time snapshot listener for ad requests
     const unsubscribeAds = subscribeToFirebaseAdRequests(
       undefined,
       (fbAds) => {
@@ -236,7 +224,7 @@ export const AdminDashboard: React.FC = () => {
       setSignupStats(calculateSignupStats(fbUsers, true));
       setIsLiveConnected(true);
       setLastSyncTime(new Date().toLocaleTimeString());
-      setSyncToast(`Successfully synced ${fbUsers.length} live users from Firebase!`);
+      setSyncToast(`Successfully synced ${fbUsers.length} live users from Firebase.`);
       setTimeout(() => setSyncToast(null), 4000);
     } catch (err) {
       console.error('Manual sync failed:', err);
@@ -247,7 +235,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Seed sample verified accounts to Firebase if user wants to populate initial test records
   const handleSeedDefaultUsersToFirebase = async () => {
     setIsSeedingUsers(true);
     try {
@@ -313,7 +300,7 @@ export const AdminDashboard: React.FC = () => {
         }), { merge: true });
       }
 
-      setSyncToast('Seeded verified platform users into Firebase Firestore!');
+      setSyncToast('Seeded verified platform users into Firebase Firestore.');
       setTimeout(() => setSyncToast(null), 4000);
     } catch (err) {
       console.error('Failed to seed users:', err);
@@ -327,16 +314,19 @@ export const AdminDashboard: React.FC = () => {
   const handleToggleUserStatus = async (userId: string, currentStatus: string, userEmail?: string) => {
     const next = currentStatus === 'active' ? 'suspended' : 'active';
     try {
-      // 1. Update in Firebase Firestore (by ID and matching email) for instant real-time sync
       await updateFirebaseUserStatus(userId, next as any, userEmail).catch((err) => {
         console.warn('Firestore status update warning:', err);
       });
-      // 2. Also update in backend store (by ID and matching email)
       await api.toggleUserStatus(userId, next, userEmail).catch((err) => {
         console.warn('API status update warning:', err);
       });
-      // 3. Optimistic local update
-      setUsers(prev => prev.map(u => (u.id === userId || (userEmail && u.email?.toLowerCase() === userEmail.toLowerCase())) ? { ...u, status: next as any } : u));
+      setUsers(prev =>
+        prev.map(u =>
+          u.id === userId || (userEmail && u.email?.toLowerCase() === userEmail.toLowerCase())
+            ? { ...u, status: next as any }
+            : u
+        )
+      );
       setSyncToast(`Account ${next === 'suspended' ? 'suspended — login access revoked' : 'reactivated'}.`);
       setTimeout(() => setSyncToast(null), 3500);
     } catch (err) {
@@ -369,7 +359,6 @@ export const AdminDashboard: React.FC = () => {
     setDeleteBlockingOrders([]);
 
     try {
-      // 1. Delete from backend store & record email/ID blocklist
       try {
         await api.adminDeleteUser(target.id, {
           actingAdminId: adminUser.id,
@@ -379,7 +368,6 @@ export const AdminDashboard: React.FC = () => {
         });
       } catch (apiErr: any) {
         const msg = apiErr?.message || '';
-        // If backend blocked because of active seller orders, surface orders & allow force toggle
         if (msg.toLowerCase().includes('active or unverified order')) {
           const matchOrders = msg.match(/\(([^)]+)\)/);
           if (matchOrders?.[1]) {
@@ -387,14 +375,12 @@ export const AdminDashboard: React.FC = () => {
           }
           throw apiErr;
         }
-        // Only ignore if user didn't exist in in-memory backend store; otherwise rethrow auth/validation errors
         if (msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('cannot delete your own')) {
           throw apiErr;
         }
         console.warn('Backend admin delete warning (continuing Firebase deletion):', msg);
       }
 
-      // 2. Delete from Cloud Firestore, Firebase Storage, anonymize orders/conversations, & write tombstone
       await deleteFirebaseUserAccount({
         userId: target.id,
         email: target.email,
@@ -404,7 +390,6 @@ export const AdminDashboard: React.FC = () => {
         reason: deleteReason.trim()
       });
 
-      // 3. Immediately update local AdminDashboard lists
       const targetEmailLower = target.email?.trim().toLowerCase();
       setUsers(prev => {
         const nextUsers = prev.filter(
@@ -446,7 +431,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Fixed Announcement Publication
   const handleSendAnnouncement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!annTitle.trim() || !annContent.trim()) {
@@ -462,10 +446,12 @@ export const AdminDashboard: React.FC = () => {
         content: annContent.trim(),
         priority: annPriority,
         targetAudience: annTarget,
-        author: adminUser?.name || 'agroX Admin Team',
+        author: adminUser?.name || 'FarmBridge Admin Team',
         authorRole: 'admin',
-        authorAvatar: adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
-        category: annCategory,
+        authorAvatar:
+          adminUser?.avatar ||
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+        category: 'general',
         pinned: annPinned,
         reactions: { '👍': 1 },
         likesCount: 1
@@ -507,7 +493,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // Advertisers Approval / Status Handlers
   const handleUpdateAdStatus = async (adId: string, status: AdStatus) => {
     setUpdatingAdId(adId);
     try {
@@ -553,6 +538,8 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const pendingAdsCount = adRequests.filter(a => getAdLifecycle(a, nowMs).effectiveStatus === 'pending').length;
+  const pendingReportsCount = reports.filter(r => r.status === 'pending').length;
+
   const filteredAds = adRequests.filter(a => {
     if (adStatusFilter === 'all') return true;
     const eff = getAdLifecycle(a, nowMs).effectiveStatus;
@@ -562,9 +549,7 @@ export const AdminDashboard: React.FC = () => {
     return eff === adStatusFilter;
   });
 
-  // Filtered users for table
   const filteredUsers = users.filter(u => {
-    // Search
     if (userSearch.trim()) {
       const q = userSearch.toLowerCase().trim();
       const matchName = u.name?.toLowerCase().includes(q);
@@ -577,17 +562,14 @@ export const AdminDashboard: React.FC = () => {
       }
     }
 
-    // Role
     if (userRoleFilter !== 'all' && u.role !== userRoleFilter) {
       return false;
     }
 
-    // Status
     if (userStatusFilter !== 'all' && u.status !== userStatusFilter) {
       return false;
     }
 
-    // Time
     if (userTimeFilter !== 'all') {
       const created = new Date(u.createdAt);
       const now = new Date();
@@ -605,8 +587,12 @@ export const AdminDashboard: React.FC = () => {
   });
 
   const totalSignups = users.length;
-  const farmersCount = signupStats ? signupStats.farmersCount : users.filter(u => u.role === 'farmer' || u.role === 'fodder_supplier').length;
-  const buyersCount = signupStats ? signupStats.buyersCount : users.filter(u => u.role === 'buyer').length;
+  const farmersCount = signupStats
+    ? signupStats.farmersCount
+    : users.filter(u => u.role === 'farmer' || u.role === 'fodder_supplier').length;
+  const buyersCount = signupStats
+    ? signupStats.buyersCount
+    : users.filter(u => u.role === 'buyer').length;
   const signupsToday = signupStats ? signupStats.signupsToday : 0;
   const signupsThisWeek = signupStats ? signupStats.signupsThisWeek : 0;
 
@@ -649,7 +635,7 @@ export const AdminDashboard: React.FC = () => {
     try {
       await updateUserProfile({ avatar: adminAvatarDraft.trim() });
       setShowAdminAvatarModal(false);
-      setSyncToast('Admin profile picture updated!');
+      setSyncToast('Admin profile picture updated.');
       setTimeout(() => setSyncToast(null), 3500);
     } catch (err: any) {
       setAvatarError(err?.message || 'Failed to update profile picture.');
@@ -658,795 +644,1123 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const sidebarItems: SidebarNavItem[] = [
+    { id: 'overview', label: 'Platform Analytics', icon: <LayoutDashboard className="w-4 h-4" /> },
+    { id: 'users', label: 'Users & Signups', icon: <Users className="w-4 h-4" />, badge: users.length },
+    {
+      id: 'advertisers',
+      label: 'Advertisements',
+      icon: <Flame className="w-4 h-4" />,
+      badge: pendingAdsCount || adRequests.length,
+      buttonId: 'admin-sidebar-advertisers-btn'
+    },
+    { id: 'products', label: 'Catalog Moderation', icon: <ShoppingBag className="w-4 h-4" />, badge: products.length },
+    { id: 'reports', label: 'Reports', icon: <AlertTriangle className="w-4 h-4" />, badge: pendingReportsCount },
+    { id: 'announcements', label: 'Broadcasts', icon: <Megaphone className="w-4 h-4" />, badge: announcementsList.length },
+    { id: 'categories', label: 'Categories', icon: <Tag className="w-4 h-4" />, badge: categories.length }
+  ];
+
   return (
-    <div className="space-y-8 pb-16">
+    <div className="flex flex-col lg:flex-row gap-6 pb-16">
       {/* Toast Notification */}
       {syncToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-stone-900 text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-stone-700 flex items-center gap-2 animate-in slide-in-from-bottom-5">
-          <Sparkles className="w-4 h-4 text-emerald-400" />
+        <div className="fixed bottom-6 right-6 z-50 lg-glass-dark text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-[#A8E635]/40 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[#A8E635]" />
           <span>{syncToast}</span>
         </div>
       )}
 
-      {/* Header */}
-      <div className="bg-purple-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-        <div className="flex items-start gap-4">
-          <div className="relative group shrink-0">
-            <img
-              src={adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'}
-              alt={adminUser?.name || 'Admin'}
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-purple-300 shadow-lg bg-purple-800"
-            />
-            <button
-              id="admin-avatar-overlay-btn"
-              type="button"
-              onClick={handleOpenAdminAvatarModal}
-              className="absolute inset-0 bg-black/45 rounded-2xl flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-              title="Edit Admin Profile Picture"
-            >
-              <Camera className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/30 text-purple-200 text-xs font-semibold backdrop-blur-xs">
-              <ShieldCheck className="w-4 h-4 text-purple-300" />
-              Platform Administration & Governance
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              agroX Executive Controls
-            </h1>
-            <p className="text-purple-200 text-xs sm:text-sm">
-              Signed in as <strong>{adminUser?.name || 'Administrator'}</strong> • Live Firebase analytics, ad requests, and platform broadcasts.
-            </p>
-          </div>
-        </div>
+      {/* Left Deep Forest Liquid Glass Sidebar */}
+      <LiquidGlassSidebar
+        brandTitle="FarmBridge Admin"
+        sectionTitle="GOVERNANCE HUB"
+        items={sidebarItems}
+        activeId={activeTab}
+        onSelect={(id) => setActiveTab(id as AdminTabId)}
+        mobileOpen={mobileSidebarOpen}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
+        layoutNamespace="admin-sidebar"
+        userSummary={{
+          name: adminUser?.name || 'Administrator',
+          subtitle: 'Platform Governance',
+          avatar: adminUser?.avatar
+        }}
+        footerAction={{
+          label: 'Edit Avatar',
+          icon: <Camera className="w-4 h-4 text-[#A8E635]" />,
+          onClick: handleOpenAdminAvatarModal,
+          id: 'admin-sidebar-avatar-btn'
+        }}
+      />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            id="admin-edit-avatar-btn"
-            type="button"
-            onClick={handleOpenAdminAvatarModal}
-            className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs flex items-center gap-2 border border-white/20 shrink-0 transition-colors cursor-pointer"
-          >
-            <Camera className="w-3.5 h-3.5 text-purple-200" />
-            Edit Profile Picture
-          </button>
-          <button
-            id="admin-nav-advertisers-btn"
-            onClick={() => setActiveTab('advertisers')}
-            className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-extrabold text-xs flex items-center gap-2 shadow-md shrink-0 transition-colors cursor-pointer"
-          >
-            <Flame className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
-            Advertisers {pendingAdsCount > 0 && `(${pendingAdsCount} Pending)`}
-          </button>
-          <button
-            onClick={() => setActiveTab('announcements')}
-            className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-2 shadow-md shrink-0 transition-colors cursor-pointer"
-          >
-            <Send className="w-3.5 h-3.5" />
-            Broadcast Update
-          </button>
-        </div>
-      </div>
-
-      {/* Real-time Firebase Sync Status Bar */}
-      <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center">
-            <span className="relative flex h-3.5 w-3.5">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isLiveConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              <span className={`relative inline-flex rounded-full h-3.5 w-3.5 ${isLiveConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-            </span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-stone-900 text-xs sm:text-sm flex items-center gap-1.5">
-                <Database className="w-4 h-4 text-purple-700" />
-                Firebase Real-time Signups Sync
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 tracking-wider">
-                Live & Streaming
-              </span>
-            </div>
-            <div className="text-[11px] text-stone-500 mt-0.5">
-              Connected to Cloud Firestore database <code className="bg-stone-100 px-1 py-0.5 rounded text-stone-700 font-mono">ai-studio-agrox</code> • Instant updates enabled
-              {lastSyncTime && ` • Last update at ${lastSyncTime}`}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {totalSignups === 0 && (
-            <button
-              onClick={handleSeedDefaultUsersToFirebase}
-              disabled={isSeedingUsers}
-              className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold text-xs flex items-center gap-1.5 transition-colors border border-purple-200 cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              {isSeedingUsers ? 'Seeding...' : 'Populate Verified Users'}
-            </button>
-          )}
-
-          <button
-            onClick={handleManualSync}
-            disabled={isManualSyncing}
-            className="px-3.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isManualSyncing ? 'animate-spin text-purple-700' : 'text-stone-600'}`} />
-            {isManualSyncing ? 'Syncing...' : 'Force Sync'}
-          </button>
-        </div>
-      </div>
-
-      {/* Metrics Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        {/* Total Signups */}
-        <div className="bg-white p-4 rounded-2xl border border-purple-200 shadow-xs relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-purple-900 font-bold">Total Signups</div>
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
-          </div>
-          <div className="text-3xl font-black text-purple-900 mt-1">{totalSignups}</div>
-          <div className="text-[11px] text-purple-700 font-semibold mt-0.5 flex items-center gap-1">
-            <span>+{signupsToday} today</span>
-            <span className="text-stone-400">•</span>
-            <span>+{signupsThisWeek} this week</span>
-          </div>
-        </div>
-
-        {/* Registered Farmers */}
-        <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
-          <div className="text-xs text-stone-500 font-semibold">Registered Farmers</div>
-          <div className="text-2xl font-black text-emerald-700 mt-1">
-            {farmersCount}
-          </div>
-          <div className="text-[11px] text-emerald-600 mt-0.5">Agricultural Producers</div>
-        </div>
-
-        {/* Registered Buyers */}
-        <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
-          <div className="text-xs text-stone-500 font-semibold">Registered Buyers</div>
-          <div className="text-2xl font-black text-blue-700 mt-1">
-            {buyersCount}
-          </div>
-          <div className="text-[11px] text-blue-600 mt-0.5">Wholesalers & Consumers</div>
-        </div>
-
-        {/* Ad Requests */}
-        <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
-          <div className="text-xs text-stone-500 font-semibold">Ad Requests</div>
-          <div className="text-2xl font-black text-orange-600 mt-1">{adRequests.length}</div>
-          <div className="text-[11px] text-orange-700 font-medium">
-            {pendingAdsCount} awaiting review
-          </div>
-        </div>
-
-        {/* Products */}
-        <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
-          <div className="text-xs text-stone-500 font-semibold">Total Products</div>
-          <div className="text-2xl font-black text-stone-900 mt-1">{products.length}</div>
-          <div className="text-[11px] text-stone-400 mt-0.5">Listed Produce</div>
-        </div>
-
-        {/* Pending Reports */}
-        <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
-          <div className="text-xs text-stone-500 font-semibold">Pending Reports</div>
-          <div className="text-2xl font-black text-red-600 mt-1">
-            {reports.filter(r => r.status === 'pending').length}
-          </div>
-          <div className="text-[11px] text-red-500 mt-0.5">Needs Review</div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-stone-200 pb-2 overflow-x-auto">
-        {[
-          { id: 'overview', label: 'Platform Analytics' },
-          { id: 'users', label: `Live Signups & Users (${users.length})`, highlight: signupsToday > 0 },
-          { id: 'advertisers', label: `Advertisers (${adRequests.length})`, highlight: pendingAdsCount > 0 },
-          { id: 'products', label: `Catalog Moderation (${products.length})` },
-          { id: 'reports', label: `Reports (${reports.length})` },
-          { id: 'announcements', label: `Broadcast Announcements (${announcementsList.length})` },
-          { id: 'categories', label: `Categories (${categories.length})` }
-        ].map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 transition-colors flex items-center gap-1.5 cursor-pointer ${
-              activeTab === tab.id
-                ? tab.id === 'advertisers'
-                  ? 'bg-orange-600 text-white'
-                  : 'bg-purple-800 text-white'
-                : tab.highlight
-                ? 'text-purple-900 bg-purple-100 hover:bg-purple-200'
-                : 'text-stone-600 hover:bg-stone-100'
-            }`}
-          >
-            {tab.id === 'advertisers' && <Flame className="w-3.5 h-3.5 text-amber-300" />}
-            {tab.id === 'users' && <Users className="w-3.5 h-3.5 text-emerald-500" />}
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* TAB: OVERVIEW */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Real-time Signups & User Growth */}
-            <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-stone-900 text-base">Firebase User Signups Timeline</h3>
-                  <p className="text-xs text-stone-500">Live breakdown of farmer vs buyer registrations by month</p>
-                </div>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="flex items-center gap-1 font-semibold text-emerald-700">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" /> Farmers
-                  </span>
-                  <span className="flex items-center gap-1 font-semibold text-blue-700">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600" /> Buyers
-                  </span>
-                </div>
-              </div>
-              <div className="h-64 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={signupStats?.signupsByMonth || stats?.volumeChart || []}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E7E5E4" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#78716C' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#78716C' }} axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#1C1917', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '12px' }}
-                    />
-                    <Bar dataKey="farmers" fill="#059669" name="Farmers" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="buyers" fill="#2563EB" name="Buyers" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Marketplace Volume ($) */}
-            <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-stone-900 text-base">Marketplace Transaction Volume ($)</h3>
-                  <p className="text-xs text-stone-500">Gross transaction turnover through platform farm-gate sales</p>
-                </div>
-                <span className="text-xs font-bold text-purple-800 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
-                  GMV: ${stats?.totalVolume ? stats.totalVolume.toFixed(2) : '155.00'}
-                </span>
-              </div>
-              <div className="h-64 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={stats?.volumeChart || []}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E7E5E4" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#78716C' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: '#78716C' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#1C1917', borderRadius: '12px', border: 'none', color: '#fff', fontSize: '12px' }}
-                      formatter={(val: number) => [`$${val}`, 'Gross Sales']}
-                    />
-                    <Line type="monotone" dataKey="volume" stroke="#7E22CE" strokeWidth={3} dot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
-
-          {/* Recent Real-Time Signups Feed */}
-          <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-700" />
-                <h3 className="font-bold text-stone-900 text-base">Live Real-Time Signups Stream</h3>
-              </div>
+      {/* Main Content Workspace */}
+      <div className="flex-1 min-w-0 space-y-6">
+        {/* Top Translucent Control Bar */}
+        <LiquidGlassCard variant="light" className="p-3 sm:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
               <button
-                onClick={() => setActiveTab('users')}
-                className="text-xs font-bold text-purple-800 hover:text-purple-900 flex items-center gap-1 cursor-pointer"
+                type="button"
+                onClick={() => setMobileSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-xl bg-[#062B1F] text-[#A8E635] cursor-pointer"
+                aria-label="Open admin navigation"
               >
-                View all ({users.length})
-                <ArrowUpRight className="w-3.5 h-3.5" />
+                <Menu className="w-4 h-4" />
               </button>
+              <div className="flex items-center gap-2 min-w-0">
+                <Database className="w-4 h-4 text-[#145A38] shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs font-extrabold text-[#062B1F] truncate">
+                    {isLiveConnected ? 'Live Cloud Firestore Stream' : 'Sync Reconnecting'}
+                    {lastSyncTime ? ` · Updated ${lastSyncTime}` : ''}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {users.length === 0 ? (
-              <div className="text-center py-10 border border-dashed border-stone-200 rounded-2xl p-6 space-y-3">
-                <Users className="w-10 h-10 text-stone-300 mx-auto" />
-                <div className="text-sm font-bold text-stone-700">No registered signups recorded yet in Firestore</div>
-                <p className="text-xs text-stone-500 max-w-md mx-auto">
-                  New registrations via the Login/Signup modal will appear here instantly in real-time. You can also seed initial verified platform producers.
-                </p>
-                <button
+            <div className="flex flex-wrap items-center gap-2">
+              {totalSignups === 0 && (
+                <LiquidGlassButton
+                  type="button"
+                  variant="light"
+                  size="xs"
                   onClick={handleSeedDefaultUsersToFirebase}
                   disabled={isSeedingUsers}
-                  className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-2 shadow-xs"
                 >
-                  <UserPlus className="w-4 h-4" />
-                  {isSeedingUsers ? 'Seeding...' : 'Populate Verified Accounts'}
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {users.slice(0, 6).map(u => (
-                  <div key={u.id} className="p-3.5 rounded-2xl border border-stone-200 bg-stone-50/60 flex items-start gap-3 hover:bg-stone-50 transition-colors">
-                    <img src={u.avatar} alt="" className="w-10 h-10 rounded-full object-cover bg-stone-200 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <div className="font-bold text-stone-900 text-xs truncate">{u.name}</div>
-                        <span className={`px-2 py-0.5 rounded-full font-extrabold text-[9px] uppercase ${
-                          u.role === 'farmer'
-                            ? 'bg-emerald-100 text-emerald-900'
-                            : u.role === 'fodder_supplier'
-                            ? 'bg-amber-100 text-amber-900'
-                            : u.role === 'buyer'
-                            ? 'bg-blue-100 text-blue-900'
-                            : 'bg-purple-100 text-purple-900'
-                        }`}>
-                          {u.role === 'fodder_supplier' ? 'Fodder Supplier' : u.role}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-stone-500 truncate">{u.email}</div>
-                      {u.farmerProfile?.farmName && (
-                        <div className="text-[10px] font-semibold text-emerald-800 truncate mt-0.5">
-                          🌾 {u.farmerProfile.farmName}
-                        </div>
-                      )}
-                      <div className="text-[10px] text-stone-400 mt-1 flex items-center justify-between">
-                        <span>📍 {u.location?.city || 'Harare'}</span>
-                        <span className="text-[9px]">
-                          {u.createdAt ? new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Recent'}
-                        </span>
-                      </div>
-                    </div>
+                  <UserPlus className="w-3.5 h-3.5 text-[#145A38]" />
+                  <span>{isSeedingUsers ? 'Seeding...' : 'Populate Verified Users'}</span>
+                </LiquidGlassButton>
+              )}
+
+              <LiquidGlassButton
+                type="button"
+                variant="light"
+                size="xs"
+                onClick={handleManualSync}
+                disabled={isManualSyncing}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#145A38] ${isManualSyncing ? 'animate-spin' : ''}`} />
+                <span>{isManualSyncing ? 'Syncing...' : 'Force Sync'}</span>
+              </LiquidGlassButton>
+
+              <LiquidGlassButton
+                id="admin-nav-advertisers-btn"
+                type="button"
+                variant="lime"
+                size="xs"
+                onClick={() => setActiveTab('advertisers')}
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>Advertisers {pendingAdsCount > 0 ? `(${pendingAdsCount})` : ''}</span>
+              </LiquidGlassButton>
+            </div>
+          </div>
+        </LiquidGlassCard>
+
+        {/* Sunrise Panorama Executive Banner + Frosted KPI Strip */}
+        <div className="relative rounded-3xl overflow-hidden shadow-xl border border-white/35">
+          <img
+            src={heroFarmlandSunrise}
+            alt="Agricultural overview landscape"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-linear-to-br from-[#062B1F]/92 via-[#0B3D2B]/84 to-[#145A38]/76" />
+
+          <div className="relative z-10 p-6 sm:p-8 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="relative group shrink-0">
+                  <img
+                    src={
+                      adminUser?.avatar ||
+                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'
+                    }
+                    alt={adminUser?.name || 'Admin'}
+                    referrerPolicy="no-referrer"
+                    className="w-16 h-16 rounded-2xl object-cover border-2 border-[#A8E635] shadow-lg"
+                  />
+                  <button
+                    id="admin-avatar-overlay-btn"
+                    type="button"
+                    onClick={handleOpenAdminAvatarModal}
+                    className="absolute inset-0 bg-black/45 rounded-2xl flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                    title="Edit Admin Profile Picture"
+                  >
+                    <Camera className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#A8E635]">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Platform Administration &amp; Governance</span>
                   </div>
-                ))}
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                    FarmBridge Executive Controls
+                  </h1>
+                  <p className="text-xs text-[#DFF4E4]/85">
+                    Signed in as <strong>{adminUser?.name || 'Administrator'}</strong> · Live Firebase analytics, ad governance, and official broadcasts.
+                  </p>
+                </div>
               </div>
-            )}
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <LiquidGlassButton
+                  id="admin-edit-avatar-btn"
+                  type="button"
+                  variant="glass"
+                  size="xs"
+                  onClick={handleOpenAdminAvatarModal}
+                >
+                  <Camera className="w-3.5 h-3.5 text-[#A8E635]" />
+                  <span>Edit Picture</span>
+                </LiquidGlassButton>
+                <LiquidGlassButton
+                  type="button"
+                  variant="lime"
+                  size="xs"
+                  onClick={() => setActiveTab('announcements')}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Broadcast Update</span>
+                </LiquidGlassButton>
+              </div>
+            </div>
+
+            {/* Frosted Glass Metrics Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+              <div className="lg-glass-frosted rounded-2xl p-4 text-white tabular-nums">
+                <div className="text-[11px] font-semibold text-[#DFF4E4]/80">Total Signups</div>
+                <div className="text-2xl font-black text-white mt-1">{totalSignups}</div>
+                <div className="text-[11px] text-[#A8E635] font-semibold mt-0.5">
+                  +{signupsToday} today · +{signupsThisWeek} wk
+                </div>
+              </div>
+
+              <div className="lg-glass-frosted rounded-2xl p-4 text-white tabular-nums">
+                <div className="text-[11px] font-semibold text-[#DFF4E4]/80">Producers</div>
+                <div className="text-2xl font-black text-white mt-1">{farmersCount}</div>
+                <div className="text-[11px] text-[#DFF4E4]/70 mt-0.5">Farmers &amp; Suppliers</div>
+              </div>
+
+              <div className="lg-glass-frosted rounded-2xl p-4 text-white tabular-nums">
+                <div className="text-[11px] font-semibold text-[#DFF4E4]/80">Buyers</div>
+                <div className="text-2xl font-black text-white mt-1">{buyersCount}</div>
+                <div className="text-[11px] text-[#DFF4E4]/70 mt-0.5">Active Accounts</div>
+              </div>
+
+              <div className="lg-glass-frosted rounded-2xl p-4 text-white tabular-nums">
+                <div className="text-[11px] font-semibold text-[#DFF4E4]/80">Ad Requests</div>
+                <div className="text-2xl font-black text-[#F4D35E] mt-1">{adRequests.length}</div>
+                <div className="text-[11px] text-[#DFF4E4]/75 mt-0.5">{pendingAdsCount} pending</div>
+              </div>
+
+              <div className="lg-glass-frosted rounded-2xl p-4 text-white tabular-nums">
+                <div className="text-[11px] font-semibold text-[#DFF4E4]/80">Products</div>
+                <div className="text-2xl font-black text-white mt-1">{products.length}</div>
+                <div className="text-[11px] text-[#DFF4E4]/70 mt-0.5">Listed Produce</div>
+              </div>
+
+              <div className="lg-glass-frosted rounded-2xl p-4 text-white tabular-nums">
+                <div className="text-[11px] font-semibold text-[#DFF4E4]/80">Reports</div>
+                <div className="text-2xl font-black text-rose-300 mt-1">{pendingReportsCount}</div>
+                <div className="text-[11px] text-[#DFF4E4]/70 mt-0.5">Needs Review</div>
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* TAB: USERS */}
-      {activeTab === 'users' && (
-        <div className="space-y-4">
-          {/* Filtering Header */}
-          <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-            <div className="flex-1 w-full relative">
-              <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={userSearch}
-                onChange={e => setUserSearch(e.target.value)}
-                placeholder="Search registered users by name, email, farm, phone, city..."
-                className="w-full pl-9 pr-4 py-2 rounded-xl bg-stone-50 border border-stone-200 text-xs focus:outline-hidden focus:ring-2 focus:ring-purple-600 focus:bg-white transition-all"
-              />
+        {/* TAB: OVERVIEW */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <LiquidGlassCard variant="light" className="p-6 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-extrabold text-[#062B1F] text-base">Firebase User Signups Timeline</h3>
+                    <p className="text-xs text-[#0B3D2B]/70">Live breakdown of farmer vs buyer registrations</p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs font-semibold text-[#062B1F]">
+                    <span>Farmers</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="text-[#145A38]">Buyers</span>
+                  </div>
+                </div>
+                <div className="h-64 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={signupStats?.signupsByMonth || stats?.volumeChart || []}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(6,43,31,0.08)" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#0B3D2B' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: '#0B3D2B' }} axisLine={false} tickLine={false} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#062B1F', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', fontSize: '12px' }}
+                      />
+                      <Bar dataKey="farmers" fill="#145A38" name="Farmers" radius={[6, 6, 0, 0]} />
+                      <Bar dataKey="buyers" fill="#A8E635" name="Buyers" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </LiquidGlassCard>
+
+              <LiquidGlassCard variant="light" className="p-6 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-extrabold text-[#062B1F] text-base">Marketplace Transaction Volume ($)</h3>
+                    <p className="text-xs text-[#0B3D2B]/70">Gross transaction turnover through farm-gate sales</p>
+                  </div>
+                  <span className="text-xs font-bold text-[#062B1F] bg-[#DFF4E4] px-3 py-1 rounded-full border border-[#145A38]/20 tabular-nums">
+                    GMV: ${Number(stats?.totalVolume || 0).toFixed(2)}
+                  </span>
+                </div>
+                <div className="h-64 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={stats?.volumeChart || []}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(6,43,31,0.08)" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#0B3D2B' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: '#0B3D2B' }} axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#062B1F', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', fontSize: '12px' }}
+                        formatter={(val: number) => [`$${val}`, 'Gross Sales']}
+                      />
+                      <Line type="monotone" dataKey="volume" stroke="#145A38" strokeWidth={3} dot={{ r: 4, fill: '#A8E635', stroke: '#062B1F' }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </LiquidGlassCard>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-              {/* Role filter */}
-              <div className="flex items-center bg-stone-100 p-1 rounded-xl text-xs overflow-x-auto">
-                {(['all', 'farmer', 'fodder_supplier', 'buyer', 'admin'] as const).map(role => (
-                  <button
-                    key={role}
-                    onClick={() => setUserRoleFilter(role)}
-                    className={`px-3 py-1 rounded-lg font-bold capitalize transition-colors cursor-pointer whitespace-nowrap ${
-                      userRoleFilter === role
-                        ? 'bg-white text-purple-900 shadow-xs'
-                        : 'text-stone-600 hover:text-stone-900'
-                    }`}
-                  >
-                    {role === 'all' ? 'All Roles' : role === 'fodder_supplier' ? 'Fodder Supplier' : role}
-                  </button>
-                ))}
+            <LiquidGlassCard variant="light" className="p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#145A38]" />
+                  <h3 className="font-extrabold text-[#062B1F] text-base">Live Real-Time Signups Stream</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('users')}
+                  className="text-xs font-bold text-[#145A38] hover:text-[#062B1F] flex items-center gap-1 cursor-pointer tabular-nums"
+                >
+                  <span>View all ({users.length})</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
               </div>
 
-              {/* Time filter */}
-              <div className="flex items-center bg-stone-100 p-1 rounded-xl text-xs">
-                {[
-                  { id: 'all', label: 'All Time' },
-                  { id: 'today', label: 'Today (24h)' },
-                  { id: 'week', label: 'This Week' }
-                ].map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => setUserTimeFilter(t.id as any)}
-                    className={`px-3 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
-                      userTimeFilter === t.id
-                        ? 'bg-white text-purple-900 shadow-xs'
-                        : 'text-stone-600 hover:text-stone-900'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Table Container */}
-          <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-purple-700" />
-                <h3 className="font-bold text-stone-900 text-sm">Registered Accounts ({filteredUsers.length})</h3>
-              </div>
-              <span className="text-xs text-stone-500 font-medium">
-                Live stream updating from Firestore
-              </span>
-            </div>
-
-            {filteredUsers.length === 0 ? (
-              <div className="text-center py-16 p-6 space-y-3">
-                <Users className="w-12 h-12 text-stone-300 mx-auto" />
-                <h4 className="font-bold text-stone-800 text-base">No matching signups found</h4>
-                <p className="text-xs text-stone-500 max-w-sm mx-auto">
-                  {users.length === 0
-                    ? 'No user documents currently exist in Firestore collection "users". Use the button below to seed accounts or perform a registration.'
-                    : 'Try clearing your search query or adjusting role/date filters.'}
-                </p>
-                {users.length === 0 && (
-                  <button
+              {users.length === 0 ? (
+                <div className="text-center py-10 border border-dashed border-[#062B1F]/15 rounded-2xl p-6 space-y-3">
+                  <Users className="w-10 h-10 text-[#145A38]/40 mx-auto" />
+                  <div className="text-sm font-bold text-[#062B1F]">No registered signups recorded yet in Firestore</div>
+                  <p className="text-xs text-[#0B3D2B]/70 max-w-md mx-auto">
+                    New registrations via the Login/Signup modal will appear here instantly in real-time.
+                  </p>
+                  <LiquidGlassButton
+                    type="button"
+                    variant="emerald"
+                    size="sm"
                     onClick={handleSeedDefaultUsersToFirebase}
                     disabled={isSeedingUsers}
-                    className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer inline-flex items-center gap-2 shadow-xs"
                   >
                     <UserPlus className="w-4 h-4" />
-                    {isSeedingUsers ? 'Seeding...' : 'Populate Verified Producers'}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-stone-50 text-stone-500 font-semibold uppercase tracking-wider">
-                    <tr>
-                      <th className="px-4 py-3">User & Identity</th>
-                      <th className="px-4 py-3">Role</th>
-                      <th className="px-4 py-3">Location & Farm</th>
-                      <th className="px-4 py-3">Signed Up</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {filteredUsers.map(u => (
-                      <tr key={u.id} className="hover:bg-stone-50/70">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <img src={u.avatar} alt="" className="w-8 h-8 rounded-full object-cover bg-stone-100 shrink-0" />
-                            <div>
-                              <div className="font-bold text-stone-900">{u.name}</div>
-                              <div className="text-[11px] text-stone-400">{u.email}</div>
-                              {u.phone && <div className="text-[10px] text-stone-500">{u.phone}</div>}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2.5 py-1 rounded-full font-bold text-[10px] uppercase ${
-                            u.role === 'farmer'
-                              ? 'bg-emerald-100 text-emerald-900'
-                              : u.role === 'fodder_supplier'
-                              ? 'bg-amber-100 text-amber-900'
-                              : u.role === 'buyer'
-                              ? 'bg-blue-100 text-blue-900'
-                              : 'bg-purple-100 text-purple-900'
-                          }`}>
+                    <span>{isSeedingUsers ? 'Seeding...' : 'Populate Verified Accounts'}</span>
+                  </LiquidGlassButton>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {users.slice(0, 6).map(u => (
+                    <div
+                      key={u.id}
+                      className="p-3.5 rounded-2xl border border-white/80 bg-white/70 flex items-start gap-3 hover:bg-white/90 transition-colors"
+                    >
+                      <img
+                        src={u.avatar}
+                        alt={u.name}
+                        referrerPolicy="no-referrer"
+                        className="w-10 h-10 rounded-full object-cover bg-[#DFF4E4] shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="font-bold text-[#062B1F] text-xs truncate">{u.name}</div>
+                          <span className="px-2 py-0.5 rounded-full font-extrabold text-[9px] uppercase bg-[#DFF4E4] text-[#062B1F]">
                             {u.role === 'fodder_supplier' ? 'Fodder Supplier' : u.role}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-stone-600">
-                          <div className="font-semibold text-stone-900">{u.location?.city || 'Harare'}, {u.location?.province || 'Harare'}</div>
-                          {u.farmerProfile?.farmName && (
-                            <div className="text-[11px] text-emerald-700 font-medium">
-                              🌾 {u.farmerProfile.farmName}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-stone-500">
-                          {u.createdAt ? new Date(u.createdAt).toLocaleString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          }) : 'Recent'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            u.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {u.status}
+                        </div>
+                        <div className="text-[11px] text-[#0B3D2B]/70 truncate">{u.email}</div>
+                        {u.farmerProfile?.farmName && (
+                          <div className="text-[10px] font-semibold text-[#145A38] truncate mt-0.5">
+                            {u.farmerProfile.farmName}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-[#0B3D2B]/55 mt-1 flex items-center justify-between">
+                          <span>{u.location?.city || 'Harare'}</span>
+                          <span className="tabular-nums">
+                            {u.createdAt ? new Date(u.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Recent'}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="inline-flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleToggleUserStatus(u.id, u.status, u.email)}
-                              className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
-                                u.status === 'active' ? 'bg-stone-100 hover:bg-stone-200 text-stone-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </LiquidGlassCard>
+          </div>
+        )}
+
+        {/* TAB: USERS */}
+        {activeTab === 'users' && (
+          <div className="space-y-4">
+            <LiquidGlassCard variant="light" className="p-4">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                <div className="flex-1 w-full relative">
+                  <Search className="w-4 h-4 text-[#0B3D2B]/45 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={e => setUserSearch(e.target.value)}
+                    placeholder="Search registered users by name, email, farm, phone, city..."
+                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-white/85 border border-[#062B1F]/12 text-xs text-[#062B1F] focus:outline-hidden focus:ring-2 focus:ring-[#145A38]/25"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                  <div className="flex items-center bg-white/65 p-1 rounded-xl text-xs overflow-x-auto border border-white/80">
+                    {(['all', 'farmer', 'fodder_supplier', 'buyer', 'admin'] as const).map(role => (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => setUserRoleFilter(role)}
+                        className={`px-3 py-1 rounded-lg font-bold capitalize transition-colors cursor-pointer whitespace-nowrap ${
+                          userRoleFilter === role
+                            ? 'bg-[#062B1F] text-[#A8E635] shadow-xs'
+                            : 'text-[#0B3D2B]/75 hover:text-[#062B1F]'
+                        }`}
+                      >
+                        {role === 'all' ? 'All Roles' : role === 'fodder_supplier' ? 'Fodder Supplier' : role}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center bg-white/65 p-1 rounded-xl text-xs border border-white/80">
+                    {(['all', 'active', 'suspended'] as const).map(st => (
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => setUserStatusFilter(st)}
+                        className={`px-2.5 py-1 rounded-lg font-bold capitalize transition-colors cursor-pointer ${
+                          userStatusFilter === st
+                            ? 'bg-[#145A38] text-white shadow-xs'
+                            : 'text-[#0B3D2B]/75 hover:text-[#062B1F]'
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center bg-white/65 p-1 rounded-xl text-xs border border-white/80">
+                    {[
+                      { id: 'all', label: 'All Time' },
+                      { id: 'today', label: 'Today (24h)' },
+                      { id: 'week', label: 'This Week' }
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setUserTimeFilter(t.id as any)}
+                        className={`px-3 py-1 rounded-lg font-bold transition-colors cursor-pointer ${
+                          userTimeFilter === t.id
+                            ? 'bg-[#062B1F] text-[#A8E635] shadow-xs'
+                            : 'text-[#0B3D2B]/75 hover:text-[#062B1F]'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </LiquidGlassCard>
+
+            <LiquidGlassCard variant="light" className="overflow-hidden p-0">
+              <div className="p-4 border-b border-[#062B1F]/10 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#145A38]" />
+                  <h3 className="font-extrabold text-[#062B1F] text-sm tabular-nums">
+                    Registered Accounts ({filteredUsers.length})
+                  </h3>
+                </div>
+                <span className="text-xs text-[#0B3D2B]/65 font-medium">
+                  Live stream updating from Firestore
+                </span>
+              </div>
+
+              {filteredUsers.length === 0 ? (
+                <div className="text-center py-16 p-6 space-y-3">
+                  <Users className="w-12 h-12 text-[#145A38]/35 mx-auto" />
+                  <h4 className="font-bold text-[#062B1F] text-base">No matching signups found</h4>
+                  <p className="text-xs text-[#0B3D2B]/65 max-w-sm mx-auto">
+                    {users.length === 0
+                      ? 'No user documents currently exist in Firestore collection "users".'
+                      : 'Try clearing your search query or adjusting role/date filters.'}
+                  </p>
+                  {users.length === 0 && (
+                    <LiquidGlassButton
+                      type="button"
+                      variant="emerald"
+                      size="sm"
+                      onClick={handleSeedDefaultUsersToFirebase}
+                      disabled={isSeedingUsers}
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      <span>{isSeedingUsers ? 'Seeding...' : 'Populate Verified Producers'}</span>
+                    </LiquidGlassButton>
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-white/55 text-[#0B3D2B]/70 font-bold uppercase tracking-wider border-b border-[#062B1F]/10">
+                      <tr>
+                        <th className="px-4 py-3">User &amp; Identity</th>
+                        <th className="px-4 py-3">Role</th>
+                        <th className="px-4 py-3">Location &amp; Farm</th>
+                        <th className="px-4 py-3">Signed Up</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#062B1F]/8">
+                      {filteredUsers.map(u => (
+                        <tr key={u.id} className="hover:bg-white/55 transition-colors">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={u.avatar}
+                                alt={u.name}
+                                referrerPolicy="no-referrer"
+                                className="w-8 h-8 rounded-full object-cover bg-[#DFF4E4] shrink-0"
+                              />
+                              <div>
+                                <div className="font-bold text-[#062B1F]">{u.name}</div>
+                                <div className="text-[11px] text-[#0B3D2B]/65">{u.email}</div>
+                                {u.phone && <div className="text-[10px] text-[#0B3D2B]/55 tabular-nums">{u.phone}</div>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2.5 py-1 rounded-full font-bold text-[10px] uppercase bg-[#DFF4E4] text-[#062B1F]">
+                              {u.role === 'fodder_supplier' ? 'Fodder Supplier' : u.role}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-[#0B3D2B]">
+                            <div className="font-semibold text-[#062B1F]">
+                              {u.location?.city || 'Harare'}, {u.location?.province || 'Harare'}
+                            </div>
+                            {u.farmerProfile?.farmName && (
+                              <div className="text-[11px] text-[#145A38] font-medium">
+                                {u.farmerProfile.farmName}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-[#0B3D2B]/70 tabular-nums">
+                            {u.createdAt
+                              ? new Date(u.createdAt).toLocaleString(undefined, {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })
+                              : 'Recent'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                u.status === 'active'
+                                  ? 'bg-[#DFF4E4] text-[#145A38]'
+                                  : 'bg-rose-500/15 text-rose-800'
                               }`}
                             >
-                              {u.status === 'active' ? 'Suspend' : 'Activate'}
-                            </button>
-                            {u.id !== adminUser?.id ? (
+                              {u.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="inline-flex items-center justify-end gap-1.5">
                               <button
-                                id={`admin-delete-user-${u.id}`}
                                 type="button"
-                                onClick={() => handleOpenDeleteUserModal(u)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs bg-red-50 hover:bg-red-600 text-red-700 hover:text-white border border-red-200 hover:border-red-600 transition-colors cursor-pointer"
-                                title={`Permanently delete ${u.name}'s account`}
+                                onClick={() => handleToggleUserStatus(u.id, u.status, u.email)}
+                                className={`px-3 py-1 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                                  u.status === 'active'
+                                    ? 'bg-white border border-[#062B1F]/15 hover:bg-white/90 text-[#062B1F]'
+                                    : 'bg-[#145A38] hover:bg-[#0B3D2B] text-white'
+                                }`}
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Delete</span>
+                                {u.status === 'active' ? 'Suspend' : 'Activate'}
                               </button>
-                            ) : (
-                              <span className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                                Current Admin
+                              {u.id !== adminUser?.id ? (
+                                <button
+                                  id={`admin-delete-user-${u.id}`}
+                                  type="button"
+                                  onClick={() => handleOpenDeleteUserModal(u)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-xs bg-rose-500/10 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-500/25 hover:border-rose-600 transition-colors cursor-pointer"
+                                  title={`Permanently delete ${u.name}'s account`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Delete</span>
+                                </button>
+                              ) : (
+                                <span className="px-2 py-1 rounded-xl text-[10px] font-semibold bg-[#062B1F] text-[#A8E635]">
+                                  Current Admin
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </LiquidGlassCard>
+          </div>
+        )}
+
+        {/* TAB: ADVERTISERS */}
+        {activeTab === 'advertisers' && (
+          <div className="space-y-6">
+            <LiquidGlassCard variant="light" className="p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Flame className="w-5 h-5 text-amber-600 fill-amber-500" />
+                    <h2 className="text-lg font-extrabold text-[#062B1F]">
+                      Farmer Advertisement Requests &amp; POP Approvals
+                    </h2>
+                  </div>
+                  <p className="text-xs text-[#0B3D2B]/70 mt-0.5">
+                    Review farmer Hot Deals submissions, verify Proof of Payments (POP), and approve or decline $1/day promotions.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                  {[
+                    { id: 'all', label: 'All' },
+                    { id: 'pending', label: 'Pending' },
+                    { id: 'approved', label: 'Approved' },
+                    { id: 'active', label: 'Active' },
+                    { id: 'expired', label: 'Expired' },
+                    { id: 'rejected', label: 'Rejected' }
+                  ].map(pill => (
+                    <button
+                      key={pill.id}
+                      type="button"
+                      onClick={() => setAdStatusFilter(pill.id as any)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                        adStatusFilter === pill.id
+                          ? 'bg-[#062B1F] text-[#A8E635] shadow-xs'
+                          : 'bg-white/75 text-[#0B3D2B]/75 hover:bg-white'
+                      }`}
+                    >
+                      {pill.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </LiquidGlassCard>
+
+            {filteredAds.length === 0 ? (
+              <LiquidGlassCard variant="light" className="text-center py-16 p-6 space-y-3">
+                <Flame className="w-12 h-12 text-[#145A38]/35 mx-auto" />
+                <h3 className="font-bold text-[#062B1F] text-base">No advertisement requests found</h3>
+                <p className="text-xs text-[#0B3D2B]/65 max-w-sm mx-auto">
+                  {adStatusFilter === 'all'
+                    ? 'No farmers have submitted ad requests yet. Farmers can request ads at $1/day from their dashboard.'
+                    : `No requests match the "${adStatusFilter}" filter.`}
+                </p>
+              </LiquidGlassCard>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {filteredAds.map(ad => {
+                  const lifecycle = getAdLifecycle(ad, nowMs);
+                  const badge = getAdStatusBadgeMeta(lifecycle.effectiveStatus);
+                  const feeVal = Number(ad.totalFee ?? ad.totalAmount ?? (lifecycle.durationDays * 1.0));
+                  const daysVal = lifecycle.durationDays;
+
+                  return (
+                    <LiquidGlassCard key={ad.id} variant="light" className="p-5 sm:p-6 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#062B1F]/10 pb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#F4D35E]/30 text-[#694800] flex items-center justify-center shrink-0">
+                            <Flame className="w-5 h-5 fill-amber-500 text-amber-700" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-extrabold text-[#062B1F] text-base">{ad.dealHeadline}</h3>
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider ${badge.className}`}
+                              >
+                                {badge.label}
                               </span>
+                            </div>
+                            <div className="text-xs text-[#0B3D2B]/70 mt-0.5">
+                              Farmer: <strong>{ad.farmerName}</strong> ({ad.farmName}) · {ad.farmerPhone || 'No phone'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 text-right tabular-nums">
+                          <div>
+                            <div className="text-xs text-[#0B3D2B]/60">Campaign Fee</div>
+                            <div className="text-base font-black text-[#145A38]">${feeVal.toFixed(2)}</div>
+                          </div>
+                          <div className="text-xs text-[#0B3D2B]/60">
+                            <div>Duration</div>
+                            <div className="font-bold text-[#062B1F]">{daysVal} Days ($1/day)</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 bg-white/65 px-4 py-2.5 rounded-2xl border border-white/80 text-xs tabular-nums">
+                        <div>
+                          <span className="text-[#0B3D2B]/60 font-semibold block text-[11px]">Start Date</span>
+                          <span className="font-bold text-[#062B1F]">{formatAdDate(lifecycle.startDateIso)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[#0B3D2B]/60 font-semibold block text-[11px]">Expiry Date</span>
+                          <span className="font-bold text-[#062B1F]">{formatAdDate(lifecycle.endDateIso)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[#0B3D2B]/60 font-semibold block text-[11px]">Remaining Duration</span>
+                          <span className="font-bold text-[#145A38]">{lifecycle.remainingLabel}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                        <div className="bg-white/65 p-3.5 rounded-2xl border border-white/80 space-y-1">
+                          <div className="text-[#0B3D2B]/60 font-semibold text-[11px]">Product &amp; Discount</div>
+                          <div className="font-bold text-[#062B1F] text-sm">{ad.productName}</div>
+                          <div className="text-amber-700 font-bold">Offer: {ad.discountText}</div>
+                          <div className="text-[#0B3D2B]/70 mt-1 line-clamp-2">{ad.dealDescription}</div>
+                        </div>
+
+                        <div className="bg-white/65 p-3.5 rounded-2xl border border-white/80 space-y-1">
+                          <div className="text-[#0B3D2B]/60 font-semibold text-[11px]">Payment Verification</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold uppercase text-[#062B1F]">{ad.paymentMethod}</span>
+                            {ad.paymentReference && (
+                              <span className="font-mono text-[#0B3D2B]/65">Ref: {ad.paymentReference}</span>
                             )}
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          {ad.proofOfPaymentUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => setViewingPopAd(ad)}
+                              className="mt-2 text-xs font-bold text-[#145A38] hover:text-[#062B1F] underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <FileCheck className="w-3.5 h-3.5" />
+                              <span>View Attached POP Receipt</span>
+                            </button>
+                          ) : (
+                            <div className="text-amber-700 font-medium mt-1">No proof of payment uploaded</div>
+                          )}
+                        </div>
+
+                        <div className="bg-white/65 p-3.5 rounded-2xl border border-white/80 space-y-2 flex flex-col justify-between">
+                          <div>
+                            <div className="text-[#0B3D2B]/60 font-semibold text-[11px]">Admin Decision Notes</div>
+                            <input
+                              type="text"
+                              placeholder="Add reason or note for farmer..."
+                              defaultValue={ad.adminNotes || ''}
+                              onChange={e => setAdminNotesInput({ ...adminNotesInput, [ad.id]: e.target.value })}
+                              className="w-full text-xs p-2 bg-white border border-[#062B1F]/15 rounded-xl mt-1 text-[#062B1F] focus:outline-hidden focus:ring-1 focus:ring-[#145A38]"
+                            />
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            {lifecycle.effectiveStatus !== 'active' && lifecycle.effectiveStatus !== 'approved' && (
+                              <LiquidGlassButton
+                                type="button"
+                                variant="emerald"
+                                size="xs"
+                                onClick={() => handleUpdateAdStatus(ad.id, 'approved')}
+                                disabled={updatingAdId === ad.id}
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Approve Ad</span>
+                              </LiquidGlassButton>
+                            )}
+
+                            {(lifecycle.effectiveStatus === 'active' || lifecycle.effectiveStatus === 'approved') && (
+                              <LiquidGlassButton
+                                type="button"
+                                variant="light"
+                                size="xs"
+                                onClick={() => handleUpdateAdStatus(ad.id, 'expired')}
+                                disabled={updatingAdId === ad.id}
+                              >
+                                Mark Expired
+                              </LiquidGlassButton>
+                            )}
+
+                            {lifecycle.effectiveStatus !== 'rejected' && (
+                              <LiquidGlassButton
+                                type="button"
+                                variant="danger"
+                                size="xs"
+                                onClick={() => handleUpdateAdStatus(ad.id, 'rejected')}
+                                disabled={updatingAdId === ad.id}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Reject</span>
+                              </LiquidGlassButton>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAd(ad.id)}
+                              disabled={updatingAdId === ad.id}
+                              className="p-1.5 text-[#0B3D2B]/45 hover:text-rose-600 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer ml-auto"
+                              title="Delete Ad Request"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </LiquidGlassCard>
+                  );
+                })}
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* TAB: ADVERTISERS (Approve / Decline / Check POPs) */}
-      {activeTab === 'advertisers' && (
-        <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-stone-200 shadow-xs">
-            <div>
-              <div className="flex items-center gap-2">
-                <Flame className="w-5 h-5 text-orange-600 fill-orange-500" />
-                <h2 className="text-lg font-bold text-stone-900">Farmer Advertisement Requests & POP Approvals</h2>
-              </div>
-              <p className="text-xs text-stone-500 mt-0.5">
-                Review farmer Hot Deals submissions, verify Proof of Payments (POP), and approve or decline $1/day promotions.
-              </p>
+        {/* TAB: PRODUCTS */}
+        {activeTab === 'products' && (
+          <LiquidGlassCard variant="light" className="overflow-hidden p-0">
+            <div className="p-4 border-b border-[#062B1F]/10 flex items-center justify-between">
+              <h3 className="font-extrabold text-[#062B1F] text-sm tabular-nums">
+                Active Product Listings ({products.length})
+              </h3>
             </div>
-
-            {/* Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-              {[
-                { id: 'all', label: 'All' },
-                { id: 'pending', label: 'Pending' },
-                { id: 'approved', label: 'Approved' },
-                { id: 'active', label: 'Active' },
-                { id: 'expired', label: 'Expired' },
-                { id: 'rejected', label: 'Rejected' }
-              ].map(pill => (
-                <button
-                  key={pill.id}
-                  onClick={() => setAdStatusFilter(pill.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                    adStatusFilter === pill.id
-                      ? 'bg-orange-600 text-white shadow-xs'
-                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                  }`}
-                >
-                  {pill.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {filteredAds.length === 0 ? (
-            <div className="text-center py-16 bg-white rounded-3xl border border-stone-200 p-6 space-y-3">
-              <Flame className="w-12 h-12 text-stone-300 mx-auto" />
-              <h3 className="font-bold text-stone-800 text-base">No advertisement requests found</h3>
-              <p className="text-xs text-stone-500 max-w-sm mx-auto">
-                {adStatusFilter === 'all'
-                  ? 'No farmers have submitted ad requests yet. Farmers can request ads at $1/day from their dashboard.'
-                  : `No requests match the "${adStatusFilter}" filter.`}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4">
-              {filteredAds.map(ad => {
-                const lifecycle = getAdLifecycle(ad, nowMs);
-                const badge = getAdStatusBadgeMeta(lifecycle.effectiveStatus);
-                const feeVal = Number(ad.totalFee ?? ad.totalAmount ?? (lifecycle.durationDays * 1.00));
-                const daysVal = lifecycle.durationDays;
-
-                return (
-                  <div
-                    key={ad.id}
-                    className={`bg-white rounded-3xl border p-5 sm:p-6 shadow-xs transition-all space-y-4 ${
-                      lifecycle.effectiveStatus === 'pending'
-                        ? 'border-amber-300 bg-amber-50/15'
-                        : lifecycle.effectiveStatus === 'active' || lifecycle.effectiveStatus === 'approved'
-                        ? 'border-emerald-300'
-                        : 'border-stone-200 opacity-90'
-                    }`}
-                  >
-                    {/* Header line */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
-                          <Flame className="w-5 h-5 fill-orange-500 text-orange-600" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-white/55 text-[#0B3D2B]/70 font-bold uppercase tracking-wider border-b border-[#062B1F]/10">
+                  <tr>
+                    <th className="px-4 py-3">Listing</th>
+                    <th className="px-4 py-3">Producer</th>
+                    <th className="px-4 py-3">Price</th>
+                    <th className="px-4 py-3">Stock</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#062B1F]/8">
+                  {products.map(prod => (
+                    <tr key={prod.id} className="hover:bg-white/55">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={prod.images[0]}
+                            alt={prod.name}
+                            referrerPolicy="no-referrer"
+                            className="w-8 h-8 rounded-lg object-cover bg-[#DFF4E4]"
+                          />
+                          <div>
+                            <div className="font-bold text-[#062B1F]">{prod.name}</div>
+                            <div className="text-[11px] text-[#0B3D2B]/60">{prod.categoryName}</div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-extrabold text-stone-900 text-base">{ad.dealHeadline}</h3>
-                            <span
-                              className={`px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wider ${badge.className}`}
+                      </td>
+                      <td className="px-4 py-3 text-[#0B3D2B] font-medium">
+                        {prod.farmerName} ({prod.farmName})
+                      </td>
+                      <td className="px-4 py-3 font-bold text-[#145A38] tabular-nums">
+                        ${prod.price.toFixed(2)} / {prod.unit}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
+                            prod.availability === 'available'
+                              ? 'bg-[#DFF4E4] text-[#145A38]'
+                              : 'bg-[#F4D35E]/35 text-[#694800]'
+                          }`}
+                        >
+                          {prod.quantityAvailable} {prod.unit}s
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {pendingDeleteProductId === prod.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProduct(prod.id)}
+                              className="px-2 py-1 rounded-md bg-rose-600 text-white text-[10px] font-bold hover:bg-rose-700 cursor-pointer"
                             >
-                              {badge.label}
-                            </span>
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteProductId(null)}
+                              className="px-2 py-1 rounded-md bg-white border border-[#062B1F]/15 text-[#062B1F] text-[10px] font-bold cursor-pointer"
+                            >
+                              Cancel
+                            </button>
                           </div>
-                          <div className="text-xs text-stone-500 mt-0.5">
-                            Farmer: <strong>{ad.farmerName}</strong> ({ad.farmName}) • {ad.farmerPhone || 'No phone'}
-                          </div>
-                        </div>
-                      </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setPendingDeleteProductId(prod.id)}
+                            className="p-1.5 text-[#0B3D2B]/45 hover:text-rose-600 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer"
+                            title="Remove Listing"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </LiquidGlassCard>
+        )}
 
-                      <div className="flex items-center gap-4 text-right tabular-nums">
-                        <div>
-                          <div className="text-xs text-stone-400">Campaign Fee</div>
-                          <div className="text-base font-black text-emerald-800">${feeVal.toFixed(2)}</div>
-                        </div>
-                        <div className="text-xs text-stone-400">
-                          <div>Duration</div>
-                          <div className="font-bold text-stone-800">{daysVal} Days ($1/day)</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Campaign Schedule Row: Start Date, Expiry Date, Remaining */}
-                    <div className="grid grid-cols-3 gap-3 bg-stone-50 px-4 py-2.5 rounded-2xl border border-stone-200/70 text-xs tabular-nums">
-                      <div>
-                        <span className="text-stone-400 font-semibold block text-[11px]">Start Date</span>
-                        <span className="font-bold text-stone-900">{formatAdDate(lifecycle.startDateIso)}</span>
-                      </div>
-                      <div>
-                        <span className="text-stone-400 font-semibold block text-[11px]">Expiry Date</span>
-                        <span className="font-bold text-stone-900">{formatAdDate(lifecycle.endDateIso)}</span>
-                      </div>
-                      <div>
-                        <span className="text-stone-400 font-semibold block text-[11px]">Remaining Duration</span>
-                        <span className={`font-bold ${
-                          lifecycle.effectiveStatus === 'active'
-                            ? 'text-emerald-700'
-                            : lifecycle.effectiveStatus === 'expired'
-                            ? 'text-stone-500'
-                            : lifecycle.effectiveStatus === 'rejected'
-                            ? 'text-red-600'
-                            : 'text-amber-700'
-                        }`}>
-                          {lifecycle.remainingLabel}
+        {/* TAB: REPORTS */}
+        {activeTab === 'reports' && (
+          <LiquidGlassCard variant="light" className="overflow-hidden p-0">
+            <div className="p-4 border-b border-[#062B1F]/10 flex items-center justify-between">
+              <h3 className="font-extrabold text-[#062B1F] text-sm">Marketplace Incident &amp; Content Reports</h3>
+            </div>
+            <div className="divide-y divide-[#062B1F]/10">
+              {reports.length === 0 ? (
+                <div className="p-10 text-center text-xs text-[#0B3D2B]/65">No reports filed.</div>
+              ) : (
+                reports.map(rep => (
+                  <div key={rep.id} className="p-4 flex items-center justify-between gap-4 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#062B1F]">{rep.reason.toUpperCase()}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            rep.status === 'pending'
+                              ? 'bg-rose-500/15 text-rose-800'
+                              : 'bg-[#DFF4E4] text-[#145A38]'
+                          }`}
+                        >
+                          {rep.status}
                         </span>
                       </div>
+                      <p className="text-[#0B3D2B]/80">{rep.description}</p>
                     </div>
-
-                    {/* Body Content */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                      <div className="bg-stone-50 p-3.5 rounded-2xl space-y-1">
-                        <div className="text-stone-400 font-semibold text-[11px]">Product &amp; Discount</div>
-                        <div className="font-bold text-stone-900 text-sm">{ad.productName}</div>
-                        <div className="text-orange-700 font-bold">Offer: {ad.discountText}</div>
-                        <div className="text-stone-500 mt-1 line-clamp-2">{ad.dealDescription}</div>
+                    {rep.status === 'pending' && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <LiquidGlassButton
+                          type="button"
+                          variant="emerald"
+                          size="xs"
+                          onClick={() => handleResolveReport(rep.id, 'resolved')}
+                        >
+                          Resolve
+                        </LiquidGlassButton>
+                        <LiquidGlassButton
+                          type="button"
+                          variant="light"
+                          size="xs"
+                          onClick={() => handleResolveReport(rep.id, 'dismissed')}
+                        >
+                          Dismiss
+                        </LiquidGlassButton>
                       </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </LiquidGlassCard>
+        )}
 
-                      <div className="bg-stone-50 p-3.5 rounded-2xl space-y-1">
-                        <div className="text-stone-400 font-semibold text-[11px]">Payment Verification</div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold uppercase text-stone-800">{ad.paymentMethod}</span>
-                          {ad.paymentReference && (
-                            <span className="font-mono text-stone-500">Ref: {ad.paymentReference}</span>
-                          )}
-                        </div>
-                        {ad.proofOfPaymentUrl ? (
-                          <button
-                            onClick={() => setViewingPopAd(ad)}
-                            className="mt-2 text-xs font-bold text-orange-700 hover:text-orange-800 underline flex items-center gap-1 cursor-pointer"
-                          >
-                            <FileCheck className="w-3.5 h-3.5 text-orange-600" />
-                            View Attached POP Receipt
-                          </button>
+        {/* TAB: ANNOUNCEMENTS */}
+        {activeTab === 'announcements' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <LiquidGlassCard variant="light" className="p-6 space-y-4">
+              <h3 className="font-extrabold text-[#062B1F] text-base">Broadcast Platform Announcement</h3>
+              {annSuccess && (
+                <div className="p-3 bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-[#145A38]" />
+                  <span>Broadcast successfully published.</span>
+                </div>
+              )}
+              {annError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/25 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                  <span>{annError}</span>
+                </div>
+              )}
+              <form onSubmit={handleSendAnnouncement} className="space-y-3 text-xs">
+                <div>
+                  <label className="font-bold text-[#062B1F]">Headline</label>
+                  <input
+                    type="text"
+                    value={annTitle}
+                    onChange={e => setAnnTitle(e.target.value)}
+                    placeholder="e.g. Harare Regional Logistics Update"
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-xs text-[#062B1F] focus:ring-2 focus:ring-[#145A38]/25 focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-[#062B1F]">Target Group</label>
+                    <select
+                      value={annTarget}
+                      onChange={e => setAnnTarget(e.target.value as any)}
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-xs text-[#062B1F] focus:ring-2 focus:ring-[#145A38]/25 focus:outline-hidden"
+                    >
+                      <option value="all">Everyone</option>
+                      <option value="farmers">Farmers &amp; Producers</option>
+                      <option value="buyers">Buyers &amp; Wholesalers</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-[#062B1F]">Urgency Level</label>
+                    <select
+                      value={annPriority}
+                      onChange={e => setAnnPriority(e.target.value as any)}
+                      className="w-full mt-1 p-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-xs text-[#062B1F] focus:ring-2 focus:ring-[#145A38]/25 focus:outline-hidden"
+                    >
+                      <option value="normal">Normal Priority</option>
+                      <option value="urgent">Urgent / Alert</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-bold text-[#062B1F]">Announcement Body</label>
+                  <textarea
+                    rows={4}
+                    value={annContent}
+                    onChange={e => setAnnContent(e.target.value)}
+                    placeholder="Detailed broadcast content for stakeholders..."
+                    className="w-full mt-1 p-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-xs text-[#062B1F] focus:ring-2 focus:ring-[#145A38]/25 focus:outline-hidden"
+                  />
+                </div>
+
+                <LiquidGlassButton
+                  type="submit"
+                  variant="emerald"
+                  size="sm"
+                  disabled={isPublishingAnn}
+                  className="w-full"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isPublishingAnn ? 'Broadcasting...' : 'Publish Official Broadcast'}</span>
+                </LiquidGlassButton>
+              </form>
+            </LiquidGlassCard>
+
+            <LiquidGlassCard variant="light" className="p-6 space-y-4">
+              <h3 className="font-extrabold text-[#062B1F] text-base tabular-nums">
+                Past Platform Broadcasts ({announcementsList.length})
+              </h3>
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {announcementsList.map(ann => (
+                  <div
+                    key={ann.id}
+                    className="p-3.5 rounded-2xl border border-white/80 bg-white/65 space-y-1.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-[#062B1F]">{ann.title}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            ann.priority === 'urgent'
+                              ? 'bg-rose-500/15 text-rose-800'
+                              : 'bg-[#DFF4E4] text-[#145A38]'
+                          }`}
+                        >
+                          {ann.priority}
+                        </span>
+                        {pendingDeleteAnnId === ann.id ? (
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAnnouncement(ann.id)}
+                              className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold hover:bg-rose-700 cursor-pointer"
+                            >
+                              Remove
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteAnnId(null)}
+                              className="px-2 py-0.5 rounded bg-white border border-[#062B1F]/15 text-[#062B1F] text-[10px] font-bold cursor-pointer"
+                            >
+                              Keep
+                            </button>
+                          </div>
                         ) : (
-                          <div className="text-amber-700 font-medium mt-1">No proof of payment uploaded</div>
-                        )}
-                      </div>
-
-                      <div className="bg-stone-50 p-3.5 rounded-2xl space-y-2 flex flex-col justify-between">
-                        <div>
-                          <div className="text-stone-400 font-semibold text-[11px]">Admin Decision Notes</div>
-                          <input
-                            type="text"
-                            placeholder="Add reason or note for farmer..."
-                            defaultValue={ad.adminNotes || ''}
-                            onChange={e => setAdminNotesInput({ ...adminNotesInput, [ad.id]: e.target.value })}
-                            className="w-full text-xs p-1.5 bg-white border border-stone-200 rounded-lg mt-1 focus:outline-hidden focus:ring-1 focus:ring-orange-500"
-                          />
-                        </div>
-
-                        {/* Action buttons */}
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          {lifecycle.effectiveStatus !== 'active' && lifecycle.effectiveStatus !== 'approved' && (
-                            <button
-                              onClick={() => handleUpdateAdStatus(ad.id, 'approved')}
-                              disabled={updatingAdId === ad.id}
-                              className="flex-1 py-1.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1 shadow-xs transition-colors cursor-pointer"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              Approve Ad
-                            </button>
-                          )}
-
-                          {(lifecycle.effectiveStatus === 'active' || lifecycle.effectiveStatus === 'approved') && (
-                            <button
-                              onClick={() => handleUpdateAdStatus(ad.id, 'expired')}
-                              disabled={updatingAdId === ad.id}
-                              className="py-1.5 px-3 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-lg font-bold text-xs transition-colors cursor-pointer"
-                            >
-                              Mark Expired
-                            </button>
-                          )}
-
-                          {lifecycle.effectiveStatus !== 'rejected' && (
-                            <button
-                              onClick={() => handleUpdateAdStatus(ad.id, 'rejected')}
-                              disabled={updatingAdId === ad.id}
-                              className="py-1.5 px-3 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              Reject
-                            </button>
-                          )}
-
                           <button
-                            onClick={() => handleDeleteAd(ad.id)}
-                            disabled={updatingAdId === ad.id}
-                            className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                            title="Delete Ad Request"
+                            type="button"
+                            onClick={() => setPendingDeleteAnnId(ann.id)}
+                            className="text-[#0B3D2B]/45 hover:text-rose-600 p-1 rounded-md hover:bg-rose-500/10 cursor-pointer"
+                            title="Delete broadcast"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                        </div>
+                        )}
                       </div>
                     </div>
+                    <p className="text-[#0B3D2B]/80 line-clamp-2">{ann.content}</p>
+                    <div className="flex items-center justify-between text-[10px] text-[#0B3D2B]/55 pt-1 border-t border-[#062B1F]/10 tabular-nums">
+                      <span>Target: {ann.targetAudience}</span>
+                      <span>{new Date(ann.createdAt).toLocaleDateString()}</span>
+                    </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
+            </LiquidGlassCard>
+          </div>
+        )}
+
+        {/* TAB: CATEGORIES */}
+        {activeTab === 'categories' && (
+          <LiquidGlassCard variant="light" className="p-6 space-y-4">
+            <h3 className="font-extrabold text-[#062B1F] text-base">Agricultural Catalog Categories</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {categories.map(cat => (
+                <div
+                  key={cat.id}
+                  className="p-3.5 rounded-2xl border border-white/80 bg-white/70 flex items-center justify-between text-xs"
+                >
+                  <div>
+                    <div className="font-bold text-[#062B1F]">{cat.name}</div>
+                    <div className="text-[11px] text-[#0B3D2B]/60">{cat.slug}</div>
+                  </div>
+                  <Tag className="w-4 h-4 text-[#145A38]" />
+                </div>
+              ))}
             </div>
-          )}
-        </div>
-      )}
+          </LiquidGlassCard>
+        )}
+      </div>
 
       {/* POP Full-Screen Inspection Modal */}
-      {viewingPopAd && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-stone-200 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-orange-600" />
-                <h3 className="font-extrabold text-stone-900 text-base">
-                  Proof of Payment: {viewingPopAd.farmerName}
-                </h3>
-              </div>
-              <button
-                onClick={() => setViewingPopAd(null)}
-                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs bg-stone-50 p-3 rounded-2xl border border-stone-200">
+      <LiquidGlassModal
+        isOpen={Boolean(viewingPopAd)}
+        onClose={() => setViewingPopAd(null)}
+        title={viewingPopAd ? `Proof of Payment: ${viewingPopAd.farmerName}` : 'Proof of Payment'}
+        subtitle={viewingPopAd?.dealHeadline}
+        icon={<Receipt className="w-5 h-5 text-[#A8E635]" />}
+        maxWidthClass="max-w-2xl"
+      >
+        {viewingPopAd && (
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-xs bg-white/75 p-3.5 rounded-2xl border border-[#062B1F]/12 tabular-nums">
               <div><strong>Deal Headline:</strong> {viewingPopAd.dealHeadline}</div>
               <div><strong>Method:</strong> {viewingPopAd.paymentMethod.toUpperCase()}</div>
               <div><strong>Duration:</strong> {viewingPopAd.durationDays ?? viewingPopAd.days ?? 7} Days @ $1/day</div>
-              <div><strong>Amount Due:</strong> <span className="font-bold text-emerald-800">${Number(viewingPopAd.totalFee ?? viewingPopAd.totalAmount ?? 7).toFixed(2)}</span></div>
+              <div><strong>Amount Due:</strong> <span className="font-bold text-[#145A38]">${Number(viewingPopAd.totalFee ?? viewingPopAd.totalAmount ?? 7).toFixed(2)}</span></div>
               <div><strong>Ref ID:</strong> {viewingPopAd.paymentReference || 'N/A'}</div>
-              <div><strong>Status:</strong> <span className="uppercase font-bold text-orange-600">{viewingPopAd.status}</span></div>
+              <div><strong>Status:</strong> <span className="uppercase font-bold text-amber-700">{viewingPopAd.status}</span></div>
             </div>
 
-            {/* Image / PDF Preview Container */}
-            <div className="max-h-96 overflow-auto rounded-2xl border border-stone-200 bg-stone-900 flex items-center justify-center p-2">
+            <div className="max-h-96 overflow-auto rounded-2xl border border-[#062B1F]/15 bg-[#062B1F] flex items-center justify-center p-2">
               {viewingPopAd.proofOfPaymentUrl?.startsWith('data:application/pdf') ? (
                 <iframe
                   src={viewingPopAd.proofOfPaymentUrl}
@@ -1462,453 +1776,158 @@ export const AdminDashboard: React.FC = () => {
               )}
             </div>
 
-            {/* Decision Bar */}
             <div className="flex items-center justify-end gap-3 pt-2">
-              <button
+              <LiquidGlassButton
+                type="button"
+                variant="danger"
+                size="sm"
                 onClick={() => handleUpdateAdStatus(viewingPopAd.id, 'rejected')}
-                className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-xl font-bold text-xs transition-colors cursor-pointer"
               >
                 Decline POP
-              </button>
-              <button
+              </LiquidGlassButton>
+              <LiquidGlassButton
+                type="button"
+                variant="emerald"
+                size="sm"
                 onClick={() => handleUpdateAdStatus(viewingPopAd.id, 'approved')}
-                className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md transition-colors cursor-pointer"
               >
                 <Check className="w-4 h-4" />
-                Approve & Launch Hot Deal
-              </button>
+                <span>Approve &amp; Launch Hot Deal</span>
+              </LiquidGlassButton>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* TAB: PRODUCTS */}
-      {activeTab === 'products' && (
-        <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
-          <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-            <h3 className="font-bold text-stone-900 text-sm">Active Product Listings ({products.length})</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-stone-50 text-stone-500 font-semibold uppercase tracking-wider">
-                <tr>
-                  <th className="px-4 py-3">Listing</th>
-                  <th className="px-4 py-3">Producer</th>
-                  <th className="px-4 py-3">Price</th>
-                  <th className="px-4 py-3">Stock</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {products.map(prod => (
-                  <tr key={prod.id} className="hover:bg-stone-50/70">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <img src={prod.images[0]} alt="" className="w-8 h-8 rounded-lg object-cover bg-stone-100" />
-                        <div>
-                          <div className="font-bold text-stone-900">{prod.name}</div>
-                          <div className="text-[11px] text-stone-400">{prod.categoryName}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-stone-600 font-medium">
-                      {prod.farmerName} ({prod.farmName})
-                    </td>
-                    <td className="px-4 py-3 font-bold text-emerald-800">
-                      ${prod.price.toFixed(2)} / {prod.unit}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        prod.availability === 'available' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {prod.quantityAvailable} {prod.unit}s
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {pendingDeleteProductId === prod.id ? (
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            onClick={() => handleDeleteProduct(prod.id)}
-                            className="px-2 py-1 rounded-md bg-red-600 text-white text-[10px] font-bold hover:bg-red-700 cursor-pointer"
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            onClick={() => setPendingDeleteProductId(null)}
-                            className="px-2 py-1 rounded-md bg-stone-100 text-stone-600 text-[10px] font-bold hover:bg-stone-200 cursor-pointer"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setPendingDeleteProductId(prod.id)}
-                          className="p-1.5 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
-                          title="Remove Listing"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: REPORTS */}
-      {activeTab === 'reports' && (
-        <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
-          <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-            <h3 className="font-bold text-stone-900 text-sm">Marketplace Incident & Content Reports</h3>
-          </div>
-          <div className="divide-y divide-stone-100">
-            {reports.map(rep => (
-              <div key={rep.id} className="p-4 flex items-center justify-between gap-4 text-xs">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-stone-900">{rep.reason.toUpperCase()}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      rep.status === 'pending' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
-                    }`}>
-                      {rep.status}
-                    </span>
-                  </div>
-                  <p className="text-stone-600">{rep.description}</p>
-                </div>
-                {rep.status === 'pending' && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => handleResolveReport(rep.id, 'resolved')}
-                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold cursor-pointer transition-colors"
-                    >
-                      Resolve
-                    </button>
-                    <button
-                      onClick={() => handleResolveReport(rep.id, 'dismissed')}
-                      className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl font-bold cursor-pointer transition-colors"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB: ANNOUNCEMENTS */}
-      {activeTab === 'announcements' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
-            <h3 className="font-bold text-stone-900 text-base">Broadcast Platform Announcement</h3>
-            {annSuccess && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-600" />
-                Broadcast successfully published!
-              </div>
-            )}
-            {annError && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-semibold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-red-600" />
-                {annError}
-              </div>
-            )}
-            <form onSubmit={handleSendAnnouncement} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-stone-700">Headline</label>
-                <input
-                  type="text"
-                  value={annTitle}
-                  onChange={e => setAnnTitle(e.target.value)}
-                  placeholder="e.g. Harare Regional Logistics Subsidy Launched"
-                  className="w-full mt-1 p-2 rounded-xl bg-stone-50 border border-stone-200 text-xs focus:ring-2 focus:ring-purple-600 focus:outline-hidden"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-stone-700">Target Group</label>
-                  <select
-                    value={annTarget}
-                    onChange={e => setAnnTarget(e.target.value as any)}
-                    className="w-full mt-1 p-2 rounded-xl bg-stone-50 border border-stone-200 text-xs focus:ring-2 focus:ring-purple-600 focus:outline-hidden"
-                  >
-                    <option value="all">Everyone</option>
-                    <option value="farmers">Farmers & Producers</option>
-                    <option value="buyers">Buyers & Wholesalers</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="font-bold text-stone-700">Urgency Level</label>
-                  <select
-                    value={annPriority}
-                    onChange={e => setAnnPriority(e.target.value as any)}
-                    className="w-full mt-1 p-2 rounded-xl bg-stone-50 border border-stone-200 text-xs focus:ring-2 focus:ring-purple-600 focus:outline-hidden"
-                  >
-                    <option value="normal">Normal Priority</option>
-                    <option value="urgent">Urgent / Alert</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700">Announcement Body</label>
-                <textarea
-                  rows={4}
-                  value={annContent}
-                  onChange={e => setAnnContent(e.target.value)}
-                  placeholder="Detailed broadcast content for stakeholders..."
-                  className="w-full mt-1 p-2 rounded-xl bg-stone-50 border border-stone-200 text-xs focus:ring-2 focus:ring-purple-600 focus:outline-hidden"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isPublishingAnn}
-                className="w-full py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-                {isPublishingAnn ? 'Broadcasting...' : 'Publish Official Broadcast'}
-              </button>
-            </form>
-          </div>
-
-          <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
-            <h3 className="font-bold text-stone-900 text-base">Past Platform Broadcasts ({announcementsList.length})</h3>
-            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-              {announcementsList.map(ann => (
-                <div key={ann.id} className="p-3.5 rounded-2xl border border-stone-200 bg-stone-50/50 space-y-1.5 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-stone-900">{ann.title}</span>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        ann.priority === 'urgent' ? 'bg-red-100 text-red-800' : 'bg-purple-100 text-purple-800'
-                      }`}>
-                        {ann.priority}
-                      </span>
-                      {pendingDeleteAnnId === ann.id ? (
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            onClick={() => handleDeleteAnnouncement(ann.id)}
-                            className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold hover:bg-red-700 cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                          <button
-                            onClick={() => setPendingDeleteAnnId(null)}
-                            className="px-2 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-bold hover:bg-stone-200 cursor-pointer"
-                          >
-                            Keep
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setPendingDeleteAnnId(ann.id)}
-                          className="text-stone-400 hover:text-red-600 p-1 rounded-md hover:bg-red-50 cursor-pointer"
-                          title="Delete broadcast"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-stone-600 line-clamp-2">{ann.content}</p>
-                  <div className="flex items-center justify-between text-[10px] text-stone-400 pt-1 border-t border-stone-100">
-                    <span>Target: {ann.targetAudience}</span>
-                    <span>{new Date(ann.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: CATEGORIES */}
-      {activeTab === 'categories' && (
-        <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs space-y-4">
-          <h3 className="font-bold text-stone-900 text-base">Agricultural Catalog Categories</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {categories.map(cat => (
-              <div key={cat.id} className="p-3.5 rounded-2xl border border-stone-200 bg-stone-50 flex items-center justify-between text-xs">
-                <div>
-                  <div className="font-bold text-stone-900">{cat.name}</div>
-                  <div className="text-[11px] text-stone-500">{cat.slug}</div>
-                </div>
-                <Tag className="w-4 h-4 text-purple-700" />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+        )}
+      </LiquidGlassModal>
 
       {/* Admin Profile Picture Edit Modal */}
-      {showAdminAvatarModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setShowAdminAvatarModal(false)}
-        >
-          <div
-            id="admin-avatar-modal-dialog"
-            className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-stone-200"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-purple-100 text-purple-700">
-                  <Camera className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-stone-900 text-base">Edit Admin Profile Picture</h3>
-                  <p className="text-[11px] text-stone-500">Shown on navbar and official broadcasts</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAdminAvatarModal(false)}
-                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      <LiquidGlassModal
+        id="admin-avatar-modal-dialog"
+        isOpen={showAdminAvatarModal}
+        onClose={() => setShowAdminAvatarModal(false)}
+        title="Edit Admin Profile Picture"
+        subtitle="Shown on navbar and official broadcasts"
+        icon={<Camera className="w-5 h-5 text-[#A8E635]" />}
+        maxWidthClass="max-w-md"
+      >
+        <div className="p-6 space-y-4">
+          {avatarError && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-800 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{avatarError}</span>
             </div>
+          )}
 
-            {avatarError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{avatarError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSaveAdminAvatar} className="space-y-4 text-xs">
-              <div className="flex items-center gap-4 bg-stone-50 p-4 rounded-2xl border border-stone-200">
-                <img
-                  src={adminAvatarDraft}
-                  alt="Admin Avatar Preview"
-                  className="w-20 h-20 rounded-2xl object-cover border-2 border-purple-600 shadow-sm bg-white shrink-0"
-                />
-                <div className="flex-1 space-y-2">
-                  <label className="font-bold text-stone-700 block">Upload Photo (400×400px)</label>
-                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-stone-100 border border-stone-300 rounded-xl font-bold text-stone-800 cursor-pointer transition-colors">
-                    <Upload className="w-3.5 h-3.5 text-purple-700" />
-                    <span>Choose Image File</span>
-                    <input
-                      id="admin-avatar-file-input"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleAdminAvatarFileChange}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Or Paste Image URL</label>
-                <input
-                  id="admin-avatar-url-input"
-                  type="text"
-                  value={adminAvatarDraft}
-                  onChange={e => setAdminAvatarDraft(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-purple-500/20"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-500 uppercase text-[10px] tracking-wider block mb-1.5">
-                  Executive Presets
+          <form onSubmit={handleSaveAdminAvatar} className="space-y-4 text-xs">
+            <div className="flex items-center gap-4 bg-white/75 p-4 rounded-2xl border border-[#062B1F]/12">
+              <img
+                src={adminAvatarDraft}
+                alt="Admin Avatar Preview"
+                referrerPolicy="no-referrer"
+                className="w-20 h-20 rounded-2xl object-cover border-2 border-[#145A38] shadow-sm bg-white shrink-0"
+              />
+              <div className="flex-1 space-y-2">
+                <label className="font-bold text-[#062B1F] block">Upload Photo (400×400px)</label>
+                <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-[#DFF4E4]/60 border border-[#062B1F]/15 rounded-xl font-bold text-[#062B1F] cursor-pointer transition-colors">
+                  <Upload className="w-3.5 h-3.5 text-[#145A38]" />
+                  <span>Choose Image File</span>
+                  <input
+                    id="admin-avatar-file-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAdminAvatarFileChange}
+                    className="hidden"
+                  />
                 </label>
-                <div className="flex items-center gap-2">
-                  {ADMIN_PRESET_AVATARS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setAdminAvatarDraft(preset.url)}
-                      className={`w-10 h-10 rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
-                        adminAvatarDraft === preset.url
-                          ? 'border-purple-600 scale-105 shadow-xs'
-                          : 'border-stone-200 opacity-75 hover:opacity-100'
-                      }`}
-                      title={preset.label}
-                    >
-                      <img src={preset.url} alt={preset.label} className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
               </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
-                <button
-                  type="button"
-                  onClick={() => setShowAdminAvatarModal(false)}
-                  className="px-4 py-2 rounded-xl border border-stone-300 text-stone-700 hover:bg-stone-50 font-bold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  id="save-admin-avatar-btn"
-                  type="submit"
-                  disabled={isSavingAvatar}
-                  className="px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:bg-stone-300 text-white font-bold flex items-center gap-1.5 shadow-md cursor-pointer"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  {isSavingAvatar ? 'Saving...' : 'Save Picture'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {/* Delete User Account Confirmation Modal (Spam & Moderation) */}
-      {pendingDeleteUser && (
-        <div
-          className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => !deletingUserId && setPendingDeleteUser(null)}
-        >
-          <div
-            id="admin-delete-user-modal"
-            className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-stone-200"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-red-100 text-red-700">
-                  <AlertTriangle className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-stone-900 text-base">Delete User Account</h3>
-                  <p className="text-[11px] text-stone-500">Permanent Firebase & marketplace removal</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                disabled={Boolean(deletingUserId)}
-                onClick={() => setPendingDeleteUser(null)}
-                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer disabled:opacity-50"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
-            <div className="flex items-center gap-3 p-3 rounded-2xl bg-stone-50 border border-stone-200">
+            <div>
+              <label className="font-bold text-[#062B1F] block mb-1">Or Paste Image URL</label>
+              <input
+                id="admin-avatar-url-input"
+                type="text"
+                value={adminAvatarDraft}
+                onChange={e => setAdminAvatarDraft(e.target.value)}
+                placeholder="https://..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-hidden focus:ring-2 focus:ring-[#145A38]/25"
+              />
+            </div>
+
+            <div>
+              <label className="font-bold text-[#0B3D2B]/65 uppercase text-[10px] tracking-wider block mb-1.5">
+                Executive Presets
+              </label>
+              <div className="flex items-center gap-2">
+                {ADMIN_PRESET_AVATARS.map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setAdminAvatarDraft(preset.url)}
+                    className={`w-10 h-10 rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                      adminAvatarDraft === preset.url
+                        ? 'border-[#145A38] scale-105 shadow-xs'
+                        : 'border-white opacity-75 hover:opacity-100'
+                    }`}
+                    title={preset.label}
+                  >
+                    <img src={preset.url} alt={preset.label} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#062B1F]/10">
+              <LiquidGlassButton
+                type="button"
+                variant="light"
+                size="sm"
+                onClick={() => setShowAdminAvatarModal(false)}
+              >
+                Cancel
+              </LiquidGlassButton>
+              <LiquidGlassButton
+                id="save-admin-avatar-btn"
+                type="submit"
+                variant="emerald"
+                size="sm"
+                disabled={isSavingAvatar}
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>{isSavingAvatar ? 'Saving...' : 'Save Picture'}</span>
+              </LiquidGlassButton>
+            </div>
+          </form>
+        </div>
+      </LiquidGlassModal>
+
+      {/* Delete User Account Confirmation Modal */}
+      <LiquidGlassModal
+        id="admin-delete-user-modal"
+        isOpen={Boolean(pendingDeleteUser)}
+        onClose={() => !deletingUserId && setPendingDeleteUser(null)}
+        title="Delete User Account"
+        subtitle="Permanent Firebase & marketplace removal"
+        icon={<AlertTriangle className="w-5 h-5 text-rose-300" />}
+        maxWidthClass="max-w-md"
+      >
+        {pendingDeleteUser && (
+          <div className="p-6 space-y-4">
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/75 border border-[#062B1F]/12">
               <img
                 src={pendingDeleteUser.avatar}
                 alt={pendingDeleteUser.name}
-                className="w-11 h-11 rounded-full object-cover bg-stone-200 shrink-0"
+                referrerPolicy="no-referrer"
+                className="w-11 h-11 rounded-full object-cover bg-[#DFF4E4] shrink-0"
               />
               <div className="min-w-0 flex-1">
-                <div className="font-bold text-stone-900 text-xs truncate">{pendingDeleteUser.name}</div>
-                <div className="text-[11px] text-stone-500 truncate">{pendingDeleteUser.email}</div>
+                <div className="font-bold text-[#062B1F] text-xs truncate">{pendingDeleteUser.name}</div>
+                <div className="text-[11px] text-[#0B3D2B]/70 truncate">{pendingDeleteUser.email}</div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] font-bold uppercase text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-bold uppercase text-[#062B1F] bg-[#DFF4E4] px-2 py-0.5 rounded-full">
                     {pendingDeleteUser.role === 'fodder_supplier' ? 'Fodder Supplier' : pendingDeleteUser.role}
                   </span>
                   {pendingDeleteUser.farmerProfile?.farmName && (
-                    <span className="text-[10px] text-emerald-700 font-medium truncate">
+                    <span className="text-[10px] text-[#145A38] font-medium truncate">
                       {pendingDeleteUser.farmerProfile.farmName}
                     </span>
                   )}
@@ -1916,12 +1935,12 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-900 text-xs space-y-1.5">
-              <div className="font-bold flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                This action cannot be undone
+            <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-950 text-xs space-y-1.5">
+              <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>This action cannot be undone</span>
               </div>
-              <ul className="list-disc pl-5 text-[11px] text-red-800 space-y-0.5">
+              <ul className="list-disc pl-5 text-[11px] text-rose-900 space-y-0.5">
                 <li>Deletes the user profile from Firebase Firestore and the marketplace directory.</li>
                 <li>Removes all products, community media posts, ad requests, buyer requests, and notifications created by this account.</li>
                 <li>Anonymizes historical order records and blocks this account from signing back in.</li>
@@ -1929,9 +1948,9 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             {deleteUserError && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-300 text-red-800 text-xs space-y-1">
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-900 text-xs space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>Deletion blocked</span>
                 </div>
                 <p className="text-[11px]">{deleteUserError}</p>
@@ -1945,25 +1964,25 @@ export const AdminDashboard: React.FC = () => {
 
             <form onSubmit={handleConfirmDeleteUser} className="space-y-3.5 text-xs">
               <div>
-                <label className="font-bold text-stone-700 block mb-1">Removal Reason (Audit Log)</label>
+                <label className="font-bold text-[#062B1F] block mb-1">Removal Reason (Audit Log)</label>
                 <input
                   id="admin-delete-reason-input"
                   type="text"
                   value={deleteReason}
                   onChange={e => setDeleteReason(e.target.value)}
                   placeholder="e.g. Spam / fake listings"
-                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 focus:outline-hidden focus:ring-2 focus:ring-red-500/20"
+                  className="w-full px-3 py-2 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-hidden focus:ring-2 focus:ring-rose-500/25"
                 />
               </div>
 
               {isSellerRole(pendingDeleteUser.role) && (
-                <label className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 cursor-pointer">
+                <label className="flex items-start gap-2.5 p-3 rounded-xl bg-[#F4D35E]/20 border border-[#F4D35E]/60 text-[#062B1F] cursor-pointer">
                   <input
                     id="admin-force-delete-checkbox"
                     type="checkbox"
                     checked={deleteForceConfirm}
                     onChange={e => setDeleteForceConfirm(e.target.checked)}
-                    className="mt-0.5 accent-red-600 cursor-pointer"
+                    className="mt-0.5 accent-rose-600 cursor-pointer"
                   />
                   <span className="text-[11px] leading-snug">
                     <strong className="block font-bold">Force delete spam seller account</strong>
@@ -1972,29 +1991,31 @@ export const AdminDashboard: React.FC = () => {
                 </label>
               )}
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
-                <button
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#062B1F]/10">
+                <LiquidGlassButton
                   type="button"
+                  variant="light"
+                  size="sm"
                   disabled={Boolean(deletingUserId)}
                   onClick={() => setPendingDeleteUser(null)}
-                  className="px-4 py-2 rounded-xl border border-stone-300 text-stone-700 hover:bg-stone-50 font-bold cursor-pointer disabled:opacity-50"
                 >
                   Cancel
-                </button>
-                <button
+                </LiquidGlassButton>
+                <LiquidGlassButton
                   id="confirm-admin-delete-user-btn"
                   type="submit"
+                  variant="danger"
+                  size="sm"
                   disabled={Boolean(deletingUserId)}
-                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-stone-300 text-white font-bold flex items-center gap-1.5 shadow-md cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  {deletingUserId ? 'Deleting & Syncing...' : 'Permanently Delete Account'}
-                </button>
+                  <span>{deletingUserId ? 'Deleting & Syncing...' : 'Permanently Delete Account'}</span>
+                </LiquidGlassButton>
               </div>
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </LiquidGlassModal>
     </div>
   );
 };

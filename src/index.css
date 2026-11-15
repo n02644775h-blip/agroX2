@@ -1,17 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  --fb-primary: #174B35;
-  --fb-secondary: #77A987;
-  --fb-bg: #F8FAF7;
-  --fb-border: #E8EEE8;
-  --fb-text: #202B24;
-  --fb-surface: #FFFFFF;
+  --lg-forest: #062B1F;
+  --lg-emerald: #145A38;
+  --lg-rich: #0B3D2B;
+  --lg-lime: #A8E635;
+  --lg-mint: #DFF4E4;
+  --lg-cream: #F8FAF7;
+  --lg-gold: #F4D35E;
+  --lg-ink: #0B261C;
 }
 
 @layer base {
   html {
-    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Plus Jakarta Sans', 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     scroll-behavior: smooth;
@@ -19,10 +21,198 @@
 
   body {
     background-color: #F8FAF7;
-    color: #202B24;
-    font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #0B261C;
+    font-family: 'Plus Jakarta Sans', 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    overflow-x: hidden;
   }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Manrope', 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+}
+
+/* =========================================================
+   FarmBridge Animated Liquid Glass Design Tokens & Surfaces
+   ========================================================= */
+
+.lg-glass-light {
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.84) 0%,
+    rgba(248, 250, 247, 0.68) 55%,
+    rgba(223, 244, 228, 0.56) 100%
+  );
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 20px 45px -20px rgba(6, 43, 31, 0.16),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(20, 90, 56, 0.08);
+}
+
+.lg-glass-mint {
+  background: linear-gradient(
+    145deg,
+    rgba(248, 250, 247, 0.88) 0%,
+    rgba(223, 244, 228, 0.76) 100%
+  );
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  box-shadow:
+    0 16px 38px -16px rgba(6, 43, 31, 0.14),
+    inset 0 1px 1px rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(20, 90, 56, 0.10);
+}
+
+.lg-glass-dark {
+  background: linear-gradient(
+    145deg,
+    rgba(11, 61, 43, 0.72) 0%,
+    rgba(6, 43, 31, 0.86) 100%
+  );
+  backdrop-filter: blur(24px) saturate(175%);
+  -webkit-backdrop-filter: blur(24px) saturate(175%);
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  box-shadow:
+    0 24px 52px -18px rgba(3, 22, 15, 0.55),
+    inset 0 1px 1px rgba(255, 255, 255, 0.34),
+    inset 0 -1px 0 rgba(168, 230, 53, 0.12);
+}
+
+.lg-glass-frosted {
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.24) 0%,
+    rgba(223, 244, 228, 0.12) 48%,
+    rgba(6, 43, 31, 0.36) 100%
+  );
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    0 28px 64px -16px rgba(3, 20, 14, 0.52),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.55),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.16);
+}
+
+.lg-glass-pill {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.lg-cta-lime {
+  background: linear-gradient(135deg, #A8E635 0%, #72C82C 52%, #145A38 100%);
+  color: #062B1F;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  box-shadow:
+    0 10px 26px -8px rgba(168, 230, 53, 0.55),
+    inset 0 1px 1px rgba(255, 255, 255, 0.65);
+}
+
+.lg-cta-lime:hover {
+  filter: brightness(1.04);
+  box-shadow:
+    0 14px 30px -6px rgba(168, 230, 53, 0.65),
+    inset 0 1px 1px rgba(255, 255, 255, 0.78);
+}
+
+.lg-cta-emerald {
+  background: linear-gradient(135deg, #145A38 0%, #0B3D2B 58%, #062B1F 100%);
+  color: #FFFFFF;
+  border: 1px solid rgba(168, 230, 53, 0.28);
+  box-shadow:
+    0 12px 28px -10px rgba(6, 43, 31, 0.48),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.lg-cta-emerald:hover {
+  filter: brightness(1.08);
+}
+
+@media (max-width: 767px) {
+  .lg-glass-light,
+  .lg-glass-mint,
+  .lg-glass-dark,
+  .lg-glass-frosted {
+    backdrop-filter: blur(14px) saturate(145%);
+    -webkit-backdrop-filter: blur(14px) saturate(145%);
+  }
+}
+
+/* Specular Light Sweep Animation */
+@keyframes lg-specular-sweep {
+  0% {
+    transform: translateX(-140%) skewX(-18deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.45;
+  }
+  55% {
+    transform: translateX(220%) skewX(-18deg);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(220%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes lg-orb-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(18px, -14px, 0) scale(1.06);
+  }
+}
+
+.lg-shimmer-beam {
+  position: relative;
+  overflow: hidden;
+}
+
+.lg-shimmer-beam::after {
+  content: '';
+  position: absolute;
+  inset: -40% auto -40% 0;
+  width: 36%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+  animation: lg-specular-sweep 9s ease-in-out infinite;
+}
+
+.lg-orb-animate {
+  animation: lg-orb-float 11s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-shimmer-beam::after,
+  .lg-orb-animate {
+    animation: none !important;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Android Safe Area Utilities */
@@ -44,7 +234,7 @@
   scrollbar-width: none;
 }
 
-/* Subtle scrollbar for vertical lists */
+/* Custom sleek forest/mint scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -55,10 +245,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D5E0D6;
+  background: rgba(20, 90, 56, 0.25);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #77A987;
+  background: #145A38;
 }

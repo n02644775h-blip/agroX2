@@ -13,6 +13,8 @@ import {
 import { Product, Order, BuyerRequest, Review } from '../types';
 import { ProductCard } from './ProductCard';
 import { BuyerRequestsPanel } from './BuyerRequestsPanel';
+import { LiquidGlassCard, LiquidGlassButton, LiquidGlassModal } from './glass';
+import heroFarmlandImg from '../assets/images/hero_farmland_sunrise_1794742072298.jpg';
 import {
   Heart,
   MessageSquare,
@@ -21,13 +23,12 @@ import {
   Sparkles,
   MapPin,
   Truck,
-  CheckCircle,
   CreditCard,
   FileCheck,
   Receipt,
-  X,
   Star,
-  Settings
+  Settings,
+  ShoppingBag
 } from 'lucide-react';
 
 interface BuyerDashboardProps {
@@ -67,10 +68,10 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
           api.getProducts({ sortBy: 'popular' }).catch(() => [])
         ]);
         if (!active) return;
-        setOrders(prev => {
+        setOrders((prev) => {
           const map = new Map<string, Order>();
-          prev.forEach(o => map.set(o.id, o));
-          ordersData.forEach(o => map.set(o.id, o));
+          prev.forEach((o) => map.set(o.id, o));
+          ordersData.forEach((o) => map.set(o.id, o));
           return Array.from(map.values()).sort(
             (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
@@ -86,22 +87,19 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
 
     loadBuyerData();
 
-    const unsubOrders = subscribeToFirebaseOrders(
-      { buyerId: user.id },
-      (fbOrders) => {
-        setOrders(prev => {
-          const map = new Map<string, Order>();
-          prev.forEach(o => map.set(o.id, o));
-          fbOrders.forEach(o => map.set(o.id, o));
-          return Array.from(map.values()).sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-        });
-      }
-    );
+    const unsubOrders = subscribeToFirebaseOrders({ buyerId: user.id }, (fbOrders) => {
+      setOrders((prev) => {
+        const map = new Map<string, Order>();
+        prev.forEach((o) => map.set(o.id, o));
+        fbOrders.forEach((o) => map.set(o.id, o));
+        return Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      });
+    });
 
     const mergeReviews = (list: Review[]) => {
-      setReviewsByOrderId(prev => {
+      setReviewsByOrderId((prev) => {
         const next = { ...prev };
         for (const rev of list) {
           if (rev.orderId) next[rev.orderId] = rev;
@@ -120,11 +118,11 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
     };
   }, [user]);
 
-  const activeOrders = orders.filter(o => {
+  const activeOrders = orders.filter((o) => {
     const c = normalizeOrderStatus(o.status, o.deliveryMethod);
     return c !== 'done' && c !== 'cancelled';
   });
-  const historyOrders = orders.filter(o => {
+  const historyOrders = orders.filter((o) => {
     const c = normalizeOrderStatus(o.status, o.deliveryMethod);
     return c === 'done' || c === 'cancelled';
   });
@@ -134,81 +132,100 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
 
   return (
     <div className="space-y-8 pb-16">
-      {/* Welcome Banner */}
-      <div className="bg-linear-to-r from-amber-700 via-amber-800 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-        <div className="space-y-2 max-w-xl">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-semibold backdrop-blur-xs">
-            <Sparkles className="w-3.5 h-3.5" />
-            Buyer Hub
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Welcome back, {user?.name}!
-          </h1>
-          <p className="text-stone-200 text-xs sm:text-sm">
-            Track your orders in real time, review payment confirmations, and message local growers directly.
-          </p>
-        </div>
+      {/* Liquid Glass Buyer Hub Welcome Panorama */}
+      <section className="relative rounded-3xl overflow-hidden shadow-[0_24px_60px_-20px_rgba(6,43,31,0.45)] border border-white/25">
+        <img
+          src={heroFarmlandImg}
+          alt="Fresh Farm Harvest"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-linear-to-r from-[#062B1F]/92 via-[#0B3D2B]/80 to-[#062B1F]/55" />
 
-        <div className="flex flex-wrap items-center gap-3">
-          {onOpenSettings && (
-            <button
-              onClick={onOpenSettings}
-              className="px-4 py-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs backdrop-blur-md transition-all shrink-0 flex items-center gap-2 border border-white/20 cursor-pointer"
+        <div className="relative z-10 p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 text-white">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 border border-white/25 text-[#A8E635] text-xs font-bold backdrop-blur-md">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Buyer Hub</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              Welcome back, <span className="text-[#A8E635]">{user?.name}!</span>
+            </h1>
+            <p className="text-[#DFF4E4]/90 text-xs sm:text-sm">
+              Track your orders in real time, review payment confirmations, post sourcing requests,
+              and message local growers directly.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {onOpenSettings && (
+              <LiquidGlassButton variant="glass" size="sm" onClick={onOpenSettings}>
+                <Settings className="w-4 h-4 text-[#A8E635]" />
+                <span>Settings</span>
+              </LiquidGlassButton>
+            )}
+            <LiquidGlassButton
+              variant="glass"
+              size="sm"
+              onClick={() => onNavigate('messages')}
             >
-              <Settings className="w-4 h-4 text-amber-200" />
-              <span>Settings</span>
-            </button>
-          )}
-          <button
-            onClick={() => onNavigate('messages')}
-            className="px-4 py-3 rounded-2xl bg-white/20 hover:bg-white/30 text-white font-bold text-xs backdrop-blur-md transition-all shrink-0 flex items-center gap-2 border border-white/20 cursor-pointer"
-          >
-            <MessageSquare className="w-4 h-4 text-amber-300" />
-            <span>Community Chat &amp; Bulletins</span>
-          </button>
-          <button
-            onClick={() => onNavigate('marketplace')}
-            className="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-900/30 transition-all shrink-0 cursor-pointer"
-          >
-            Explore Fresh Produce
-          </button>
+              <MessageSquare className="w-4 h-4 text-[#F4D35E]" />
+              <span>Community Chat &amp; Bulletins</span>
+            </LiquidGlassButton>
+            <LiquidGlassButton
+              variant="lime"
+              size="sm"
+              onClick={() => onNavigate('marketplace')}
+            >
+              <ShoppingBag className="w-4 h-4" />
+              <span>Explore Fresh Produce</span>
+            </LiquidGlassButton>
+          </div>
         </div>
-      </div>
+      </section>
 
       {/* My Orders Section */}
       <section id="buyer-my-orders-section" className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <h2 className="text-xl font-bold text-stone-900">My Orders</h2>
+            <h2 className="text-xl font-extrabold text-[#062B1F]">My Orders</h2>
             {activeOrders.length > 0 && (
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold tabular-nums">
+              <span className="px-2.5 py-0.5 rounded-full bg-[#062B1F] text-[#A8E635] text-xs font-extrabold tabular-nums">
                 {activeOrders.length} active
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center bg-white p-1 rounded-xl border border-stone-200 text-xs font-bold">
+            <div className="flex items-center lg-glass-light p-1 rounded-2xl text-xs font-bold">
               <button
+                type="button"
                 onClick={() => setOrdersTab('active')}
-                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                  ordersTab === 'active' ? 'bg-emerald-700 text-white' : 'text-stone-600 hover:text-stone-900'
+                className={`px-3 py-1.5 rounded-xl transition-colors cursor-pointer ${
+                  ordersTab === 'active'
+                    ? 'bg-[#062B1F] text-[#A8E635]'
+                    : 'text-[#0B3D2B]/75 hover:text-[#062B1F]'
                 }`}
               >
                 Active ({activeOrders.length})
               </button>
               <button
+                type="button"
                 onClick={() => setOrdersTab('history')}
-                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                  ordersTab === 'history' ? 'bg-emerald-700 text-white' : 'text-stone-600 hover:text-stone-900'
+                className={`px-3 py-1.5 rounded-xl transition-colors cursor-pointer ${
+                  ordersTab === 'history'
+                    ? 'bg-[#062B1F] text-[#A8E635]'
+                    : 'text-[#0B3D2B]/75 hover:text-[#062B1F]'
                 }`}
               >
                 History ({historyOrders.length})
               </button>
               <button
+                type="button"
                 onClick={() => setOrdersTab('all')}
-                className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                  ordersTab === 'all' ? 'bg-emerald-700 text-white' : 'text-stone-600 hover:text-stone-900'
+                className={`px-3 py-1.5 rounded-xl transition-colors cursor-pointer ${
+                  ordersTab === 'all'
+                    ? 'bg-[#062B1F] text-[#A8E635]'
+                    : 'text-[#0B3D2B]/75 hover:text-[#062B1F]'
                 }`}
               >
                 All ({orders.length})
@@ -216,79 +233,94 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
             </div>
 
             <button
+              type="button"
               onClick={() => onNavigate('orders')}
-              className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+              className="text-xs font-bold text-[#145A38] hover:underline flex items-center gap-1 cursor-pointer"
             >
-              Full Order Tracker
+              <span>Full Order Tracker</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
         {loading && orders.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-white border border-stone-200 text-center text-xs text-stone-400">
+          <LiquidGlassCard variant="light" className="p-8 text-center text-xs text-[#0B3D2B]/65">
             Loading your orders...
-          </div>
+          </LiquidGlassCard>
         ) : displayedOrders.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-white border border-stone-200 text-center space-y-2">
-            <Clock className="w-8 h-8 text-stone-400 mx-auto" />
-            <div className="font-bold text-stone-800 text-sm">
+          <LiquidGlassCard variant="light" className="p-10 text-center space-y-2.5">
+            <Clock className="w-8 h-8 text-[#145A38]/45 mx-auto" />
+            <div className="font-bold text-[#062B1F] text-sm">
               {ordersTab === 'active' ? 'No active orders right now' : 'No orders in this list'}
             </div>
-            <p className="text-xs text-stone-500">
+            <p className="text-xs text-[#0B3D2B]/70">
               Browse the marketplace to place a fresh produce or fodder order.
             </p>
-          </div>
+          </LiquidGlassCard>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {displayedOrders.map(order => {
+            {displayedOrders.map((order) => {
               const statusMeta = getOrderStatusMeta(order.status, order.deliveryMethod);
               const stages = getOrderStages(order.deliveryMethod);
-              const currentIdx = stages.findIndex(s => s.key === statusMeta.canonical);
+              const currentIdx = stages.findIndex((s) => s.key === statusMeta.canonical);
               const payMeta = getPaymentStatusMeta(order.paymentStatus, order.paymentMethod);
 
               return (
-                <div
-                  key={order.id}
-                  className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs hover:border-emerald-300 transition-all space-y-4"
-                >
-                  {/* Top row */}
+                <LiquidGlassCard key={order.id} variant="light" interactive className="p-5 space-y-4">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-stone-900 text-sm">{order.orderNumber}</span>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusMeta.badgeClass}`}>
+                        <span className="font-extrabold text-[#062B1F] text-sm">
+                          {order.orderNumber}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusMeta.badgeClass}`}
+                        >
                           {statusMeta.label}
                         </span>
                       </div>
-                      <div className="text-xs text-stone-500 mt-0.5">
+                      <div className="text-xs text-[#0B3D2B]/70 mt-0.5">
                         {order.farmName} ({order.farmerName}) •{' '}
-                        {new Date(order.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        {new Date(order.createdAt).toLocaleDateString(undefined, {
+                          month: 'short',
+                          day: 'numeric'
+                        })}
                       </div>
                     </div>
                     <div className="text-right tabular-nums">
-                      <div className="text-base font-black text-stone-900">${Number(order.totalAmount || 0).toFixed(2)}</div>
-                      <span className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${payMeta.badgeClass}`}>
+                      <div className="text-base font-black text-[#062B1F]">
+                        ${Number(order.totalAmount || 0).toFixed(2)}
+                      </div>
+                      <span
+                        className={`inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${payMeta.badgeClass}`}
+                      >
                         {payMeta.label}
                       </span>
                     </div>
                   </div>
 
-                  {/* Visual Progress Indicator (4 stages) */}
                   {statusMeta.canonical !== 'cancelled' && (
-                    <div className="bg-stone-50 p-3 rounded-xl border border-stone-100 space-y-2">
+                    <div className="bg-[#DFF4E4]/55 p-3 rounded-2xl border border-[#145A38]/12 space-y-2">
                       <div className="grid grid-cols-4 gap-1.5">
                         {stages.map((st, idx) => {
                           const completed = currentIdx >= idx;
                           const isCurrent = currentIdx === idx;
                           return (
                             <div key={st.key} className="space-y-1">
-                              <div className="h-1.5 rounded-full bg-stone-200 overflow-hidden">
-                                <div className={`h-full transition-all ${completed ? 'w-full bg-emerald-600' : 'w-0'}`} />
+                              <div className="h-1.5 rounded-full bg-[#0B3D2B]/15 overflow-hidden">
+                                <div
+                                  className={`h-full transition-all ${
+                                    completed ? 'w-full bg-[#145A38]' : 'w-0'
+                                  }`}
+                                />
                               </div>
                               <div
                                 className={`text-[10px] font-bold truncate ${
-                                  isCurrent ? 'text-emerald-800' : completed ? 'text-stone-700' : 'text-stone-400'
+                                  isCurrent
+                                    ? 'text-[#062B1F]'
+                                    : completed
+                                      ? 'text-[#145A38]'
+                                      : 'text-[#0B3D2B]/45'
                                 }`}
                               >
                                 {st.label}
@@ -300,18 +332,20 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                     </div>
                   )}
 
-                  {/* Items & Payment Method Summary */}
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 overflow-x-auto">
                       {(order.items || []).map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-1.5 bg-stone-50 pr-2 rounded-lg border border-stone-100 shrink-0">
+                        <div
+                          key={idx}
+                          className="flex items-center gap-1.5 bg-white/80 pr-2 rounded-lg border border-[#0B3D2B]/10 shrink-0"
+                        >
                           <img
                             src={item.productImage}
                             alt=""
                             referrerPolicy="no-referrer"
-                            className="w-8 h-8 rounded-l-lg object-cover bg-stone-100"
+                            className="w-8 h-8 rounded-l-lg object-cover bg-[#DFF4E4]"
                           />
-                          <span className="text-[11px] font-medium text-stone-700">
+                          <span className="text-[11px] font-medium text-[#062B1F]">
                             {item.quantity}× {item.productName}
                           </span>
                         </div>
@@ -319,20 +353,21 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Delivery / Pickup & Payment Footer */}
-                  <div className="text-[11px] text-stone-600 space-y-1 pt-2 border-t border-stone-100">
+                  <div className="text-[11px] text-[#0B3D2B]/80 space-y-1 pt-2 border-t border-[#0B3D2B]/10">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-1 truncate">
                         {order.deliveryMethod === 'delivery' ? (
                           <>
-                            <Truck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <Truck className="w-3.5 h-3.5 text-[#145A38] shrink-0" />
                             <span className="truncate">
-                              {order.deliveryLocation?.formattedAddress || order.deliveryAddress || 'Home Delivery'}
+                              {order.deliveryLocation?.formattedAddress ||
+                                order.deliveryAddress ||
+                                'Home Delivery'}
                             </span>
                           </>
                         ) : (
                           <>
-                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <MapPin className="w-3.5 h-3.5 text-[#145A38] shrink-0" />
                             <span className="truncate">
                               Farm Pickup: {order.pickupLocation?.address || order.farmName}
                               {order.pickupTimeWindow ? ` (${order.pickupTimeWindow})` : ''}
@@ -340,63 +375,68 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                           </>
                         )}
                       </span>
-                      <span className="flex items-center gap-1 text-stone-500 shrink-0">
+                      <span className="flex items-center gap-1 text-[#0B3D2B]/65 shrink-0">
                         <CreditCard className="w-3 h-3" />
                         {getPaymentMethodLabel(order.paymentMethod)}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1.5">
+                    <div className="flex items-center justify-between pt-1.5 flex-wrap gap-2">
                       {order.proofOfPaymentUrl ? (
                         <button
                           type="button"
                           onClick={() => setViewingPopOrder(order)}
-                          className="text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                          className="text-[#145A38] font-bold hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <FileCheck className="w-3.5 h-3.5" />
-                          View Uploaded POP
+                          <span>View Uploaded POP</span>
                         </button>
                       ) : (
-                        <span className="text-stone-400">
-                          {order.paymentMethod === 'cash_on_delivery' ? 'Pay on delivery / collection' : 'No POP uploaded yet'}
+                        <span className="text-[#0B3D2B]/55">
+                          {order.paymentMethod === 'cash_on_delivery'
+                            ? 'Pay on delivery / collection'
+                            : 'No POP uploaded yet'}
                         </span>
                       )}
 
                       <div className="flex items-center gap-3">
-                        {statusMeta.canonical === 'done' && (() => {
-                          const matchedReview = reviewsByOrderId[order.id];
-                          const ratingVal = matchedReview?.rating ?? order.rating;
-                          const commentVal = matchedReview?.comment ?? order.reviewComment;
-                          const hasRated = Boolean(order.isReviewed || matchedReview || ratingVal);
-
-                          if (hasRated && ratingVal) {
-                            return (
-                              <span
-                                title={commentVal || getRatingLabel(ratingVal)}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[10px]"
-                              >
-                                <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                Your Rating: {getRatingLabel(ratingVal)}
-                              </span>
+                        {statusMeta.canonical === 'done' &&
+                          (() => {
+                            const matchedReview = reviewsByOrderId[order.id];
+                            const ratingVal = matchedReview?.rating ?? order.rating;
+                            const commentVal = matchedReview?.comment ?? order.reviewComment;
+                            const hasRated = Boolean(
+                              order.isReviewed || matchedReview || ratingVal
                             );
-                          }
 
-                          return onOpenReviewModal ? (
-                            <button
-                              type="button"
-                              onClick={() => onOpenReviewModal(order)}
-                              className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-900 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Star className="w-3 h-3 fill-stone-900" />
-                              Rate Your Order
-                            </button>
-                          ) : null;
-                        })()}
+                            if (hasRated && ratingVal) {
+                              return (
+                                <span
+                                  title={commentVal || getRatingLabel(ratingVal)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#F4D35E]/25 border border-[#F4D35E]/60 text-[#062B1F] font-bold text-[10px]"
+                                >
+                                  <Star className="w-3 h-3 fill-[#F4D35E] text-[#F4D35E]" />
+                                  Your Rating: {getRatingLabel(ratingVal)}
+                                </span>
+                              );
+                            }
+
+                            return onOpenReviewModal ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenReviewModal(order)}
+                                className="px-2.5 py-1 rounded-lg bg-[#F4D35E] hover:bg-[#e5c146] text-[#062B1F] font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Star className="w-3 h-3 fill-[#062B1F]" />
+                                <span>Rate Your Order</span>
+                              </button>
+                            ) : null;
+                          })()}
 
                         <button
                           type="button"
                           onClick={() => onNavigate('orders', { selectedOrder: order })}
-                          className="text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                          className="text-[#145A38] font-bold hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <span>Track &amp; Manage</span>
                           <ChevronRight className="w-3.5 h-3.5" />
@@ -404,7 +444,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                       </div>
                     </div>
                   </div>
-                </div>
+                </LiquidGlassCard>
               );
             })}
           </div>
@@ -412,32 +452,28 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
       </section>
 
       {/* My Requests Section */}
-      {user && (
-        <BuyerRequestsPanel
-          user={user}
-          onOpenMessages={onOpenMessagesForRequest}
-        />
-      )}
+      {user && <BuyerRequestsPanel user={user} onOpenMessages={onOpenMessagesForRequest} />}
 
       {/* Saved Favorites */}
       {favoriteProducts.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+            <h2 className="text-lg font-extrabold text-[#062B1F] flex items-center gap-2">
               <Heart className="w-4 h-4 text-rose-500 fill-current" />
-              Saved Favorites ({favoriteProducts.length})
+              <span>Saved Favorites ({favoriteProducts.length})</span>
             </h2>
             <button
+              type="button"
               onClick={() => onNavigate('favorites')}
-              className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+              className="text-xs font-bold text-[#145A38] hover:underline flex items-center gap-1 cursor-pointer"
             >
-              View all
+              <span>View all</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-            {favoriteProducts.slice(0, 4).map(product => (
+            {favoriteProducts.slice(0, 4).map((product) => (
               <ProductCard
                 key={product.id}
                 product={product}
@@ -448,21 +484,22 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
         </div>
       )}
 
-      {/* Seasonal Farmer Recommendations */}
+      {/* Recommendations */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-stone-900">Recommended Farm Harvests</h2>
+          <h2 className="text-lg font-extrabold text-[#062B1F]">Recommended Farm Harvests</h2>
           <button
+            type="button"
             onClick={() => onNavigate('marketplace')}
-            className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
+            className="text-xs font-bold text-[#145A38] hover:underline flex items-center gap-1 cursor-pointer"
           >
-            Browse all produce
+            <span>Browse all produce</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-          {recommended.map(product => (
+          {recommended.map((product) => (
             <ProductCard
               key={product.id}
               product={product}
@@ -473,30 +510,16 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
       </div>
 
       {/* Uploaded POP Viewer Modal */}
-      {viewingPopOrder && (
-        <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setViewingPopOrder(null)}
-        >
-          <div
-            className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-stone-200"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-extrabold text-stone-900 text-base">
-                  Payment Record — {viewingPopOrder.orderNumber}
-                </h3>
-              </div>
-              <button
-                onClick={() => setViewingPopOrder(null)}
-                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="max-h-96 overflow-auto rounded-2xl border border-stone-200 bg-stone-900 flex items-center justify-center p-2">
+      <LiquidGlassModal
+        isOpen={Boolean(viewingPopOrder)}
+        onClose={() => setViewingPopOrder(null)}
+        title={viewingPopOrder ? `Payment Record — ${viewingPopOrder.orderNumber}` : ''}
+        icon={<Receipt className="w-5 h-5 text-[#A8E635]" />}
+        maxWidthClass="max-w-lg"
+      >
+        {viewingPopOrder && (
+          <div className="p-6">
+            <div className="max-h-96 overflow-auto rounded-2xl border border-[#0B3D2B]/15 bg-[#062B1F] flex items-center justify-center p-2">
               {viewingPopOrder.proofOfPaymentUrl?.startsWith('data:application/pdf') ? (
                 <iframe
                   src={viewingPopOrder.proofOfPaymentUrl}
@@ -512,8 +535,8 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
               )}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </LiquidGlassModal>
     </div>
   );
 };

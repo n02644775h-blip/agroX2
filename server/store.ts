@@ -33,6 +33,12 @@ import {
   INITIAL_MEDIA_POSTS,
   INITIAL_BUYER_REQUESTS
 } from './data';
+import {
+  normalizeOrderStatus,
+  isOrderAttributableToFarmer,
+  calculateFarmerSalesRevenue,
+  calculateFarmerWeeklySalesChart
+} from '../src/utils/orderUtils';
 
 class MarketplaceStore {
   private users: User[] = [...INITIAL_USERS];
@@ -1319,29 +1325,20 @@ class MarketplaceStore {
   // --- Analytics & Statistics ---
   getFarmerStats(farmerId: string) {
     const farmerProducts = this.products.filter(p => p.farmerId === farmerId);
-    const farmerOrders = this.orders.filter(o => o.farmerId === farmerId);
-    const totalSales = farmerOrders
-      .filter(o =>
-        ['done', 'completed', 'delivering', 'out_for_delivery', 'ready_for_pickup', 'ready_for_collection'].includes(
-          o.status
-        )
-      )
-      .reduce((sum, o) => sum + o.totalAmount, 0);
+    const farmerOrders = this.orders.filter(o => isOrderAttributableToFarmer(o, farmerId));
+    const totalSales = calculateFarmerSalesRevenue(farmerOrders, farmerId);
 
-    const pendingOrdersCount = farmerOrders.filter(o => o.status === 'received' || o.status === 'pending').length;
-    const completedOrdersCount = farmerOrders.filter(o => o.status === 'done' || o.status === 'completed').length;
-    const activeListingsCount = farmerProducts.filter(p => p.availability === 'available' || p.availability === 'low_stock').length;
+    const pendingOrdersCount = farmerOrders.filter(
+      o => normalizeOrderStatus(o.status, o.deliveryMethod) === 'received'
+    ).length;
+    const completedOrdersCount = farmerOrders.filter(
+      o => normalizeOrderStatus(o.status, o.deliveryMethod) === 'done'
+    ).length;
+    const activeListingsCount = farmerProducts.filter(
+      p => p.availability === 'available' || p.availability === 'low_stock'
+    ).length;
 
-    // Daily/monthly sales grouping for charts
-    const salesChart = [
-      { name: 'Mon', sales: 45, orders: 2 },
-      { name: 'Tue', sales: 120, orders: 4 },
-      { name: 'Wed', sales: 85, orders: 3 },
-      { name: 'Thu', sales: 160, orders: 5 },
-      { name: 'Fri', sales: 210, orders: 7 },
-      { name: 'Sat', sales: 340, orders: 11 },
-      { name: 'Sun', sales: 190, orders: 6 }
-    ];
+    const salesChart = calculateFarmerWeeklySalesChart(farmerOrders, farmerId);
 
     return {
       totalProducts: farmerProducts.length,

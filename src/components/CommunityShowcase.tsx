@@ -7,6 +7,7 @@ import {
   incrementFirebasePostQuote
 } from '../services/firebasePosts';
 import { MediaPost } from '../types';
+import { LiquidGlassCard, LiquidGlassButton } from './glass';
 import {
   ChevronLeft,
   ChevronRight,
@@ -179,17 +180,17 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
       id="farmbridge-community-section"
       className="space-y-6 pt-2 scroll-mt-20"
     >
-      {/* Section Header & Desktop Carousel Navigation */}
+      {/* Section Header & Carousel Navigation */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#77A987]">
+          <p className="text-xs font-extrabold uppercase tracking-wider text-[#145A38]">
             Community Stories
           </p>
-          <h2 className="text-2xl sm:text-3xl font-bold text-[#202B24] tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#062B1F] tracking-tight">
             FarmBridge Community
           </h2>
-          <p className="text-sm text-[#202B24]/65">
-            Discover what farmers are growing, producing, and sharing.
+          <p className="text-sm text-[#0B261C]/65">
+            Discover what farmers are growing, producing, and sharing across the network.
           </p>
         </div>
 
@@ -197,7 +198,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
           <button
             type="button"
             onClick={() => scrollCarousel('left')}
-            className="w-10 h-10 rounded-full bg-white border border-[#E8EEE8] hover:border-[#174B35] text-[#202B24] hover:text-[#174B35] flex items-center justify-center transition-colors"
+            className="w-10 h-10 rounded-full lg-glass-light hover:bg-[#145A38] hover:text-white text-[#062B1F] flex items-center justify-center transition-colors cursor-pointer"
             aria-label="Previous community posts"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -205,7 +206,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
           <button
             type="button"
             onClick={() => scrollCarousel('right')}
-            className="w-10 h-10 rounded-full bg-white border border-[#E8EEE8] hover:border-[#174B35] text-[#202B24] hover:text-[#174B35] flex items-center justify-center transition-colors"
+            className="w-10 h-10 rounded-full lg-glass-light hover:bg-[#145A38] hover:text-white text-[#062B1F] flex items-center justify-center transition-colors cursor-pointer"
             aria-label="Next community posts"
           >
             <ChevronRight className="w-5 h-5" />
@@ -219,7 +220,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
           {[1, 2, 3, 4].map(i => (
             <div
               key={i}
-              className="h-96 rounded-2xl bg-white border border-[#E8EEE8] animate-pulse"
+              className="h-96 rounded-3xl lg-glass-light animate-pulse"
             />
           ))}
         </div>
@@ -238,16 +239,18 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
             const avatarFailed = failedImages[`avatar-${post.id}`];
 
             return (
-              <article
+              <LiquidGlassCard
                 key={post.id}
-                className="snap-start shrink-0 w-[85vw] sm:w-[320px] md:w-[336px] bg-white rounded-2xl border border-[#E8EEE8] hover:border-[#77A987] transition-colors overflow-hidden flex flex-col"
+                variant="light"
+                interactive
+                className="snap-start shrink-0 w-[85vw] sm:w-[320px] md:w-[336px] overflow-hidden flex flex-col"
               >
-                {/* Card Header: Farmer Avatar & Name */}
-                <div className="p-4 flex items-center justify-between gap-2 border-b border-[#E8EEE8]">
+                {/* Card Header */}
+                <div className="p-4 flex items-center justify-between gap-2 border-b border-[#145A38]/10">
                   <button
                     type="button"
                     onClick={() => onSelectFarmer(post.farmerId)}
-                    className="flex items-center gap-2.5 min-w-0 text-left group"
+                    className="flex items-center gap-2.5 min-w-0 text-left group cursor-pointer"
                   >
                     {post.farmerAvatar && !avatarFailed ? (
                       <img
@@ -258,23 +261,23 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         onError={() =>
                           setFailedImages(prev => ({ ...prev, [`avatar-${post.id}`]: true }))
                         }
-                        className="w-9 h-9 rounded-full object-cover border border-[#E8EEE8] shrink-0"
+                        className="w-9 h-9 rounded-full object-cover border border-[#145A38]/20 shrink-0"
                       />
                     ) : (
-                      <div className="w-9 h-9 rounded-full bg-[#F8FAF7] border border-[#E8EEE8] flex items-center justify-center text-xs font-bold text-[#174B35] shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-[#DFF4E4] border border-[#145A38]/20 flex items-center justify-center text-xs font-bold text-[#145A38] shrink-0">
                         {(post.farmName || post.farmerName).slice(0, 2).toUpperCase()}
                       </div>
                     )}
                     <div className="min-w-0">
-                      <div className="font-semibold text-xs text-[#202B24] group-hover:text-[#174B35] truncate">
+                      <div className="font-bold text-xs text-[#062B1F] group-hover:text-[#145A38] truncate">
                         {post.farmName || post.farmerName}
                       </div>
-                      <div className="text-[11px] text-[#202B24]/55 flex items-center gap-1 truncate">
+                      <div className="text-[11px] text-[#0B261C]/55 flex items-center gap-1 truncate">
                         <span>{new Date(post.createdAt).toLocaleDateString()}</span>
                         {post.location && (
                           <>
                             <span>·</span>
-                            <MapPin className="w-3 h-3 text-[#77A987] shrink-0" />
+                            <MapPin className="w-3 h-3 text-[#145A38] shrink-0" />
                             <span className="truncate">{post.location}</span>
                           </>
                         )}
@@ -283,7 +286,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                   </button>
 
                   {post.price !== undefined && (
-                    <span className="text-xs font-bold text-[#174B35] shrink-0 tabular-nums">
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#DFF4E4] text-xs font-extrabold text-[#062B1F] shrink-0 tabular-nums">
                       ${post.price.toFixed(2)}
                       {post.unit ? `/${post.unit}` : ''}
                     </span>
@@ -291,7 +294,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                 </div>
 
                 {/* Media Viewport */}
-                <div className="relative aspect-[4/3] bg-[#F8FAF7] overflow-hidden group">
+                <div className="relative aspect-[4/3] bg-[#DFF4E4]/40 overflow-hidden group">
                   {lead?.type === 'video' ? (
                     <>
                       <video
@@ -311,7 +314,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleMute(post.id)}
-                          className="w-8 h-8 rounded-full bg-[#202B24]/75 text-white flex items-center justify-center hover:bg-[#202B24]"
+                          className="w-8 h-8 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white flex items-center justify-center hover:bg-[#062B1F] cursor-pointer"
                           aria-label={isUnmuted ? 'Mute video' : 'Unmute video'}
                         >
                           {isUnmuted ? (
@@ -323,7 +326,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleVideoPlay(post.id)}
-                          className="w-8 h-8 rounded-full bg-[#174B35] text-white flex items-center justify-center hover:bg-[#123c2a]"
+                          className="w-8 h-8 rounded-full bg-[#A8E635] text-[#062B1F] flex items-center justify-center shadow-md cursor-pointer"
                           aria-label={isVideoPlaying ? 'Pause video' : 'Play video'}
                         >
                           {isVideoPlaying ? (
@@ -341,7 +344,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         setModalMediaIdx(0);
                         setModalPost(post);
                       }}
-                      className="w-full h-full block text-left"
+                      className="w-full h-full block text-left cursor-pointer"
                     >
                       <img
                         src={lead.url}
@@ -355,7 +358,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                       />
                     </button>
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[#77A987]">
+                    <div className="w-full h-full flex items-center justify-center text-[#145A38]">
                       <Sprout className="w-8 h-8 opacity-70" />
                     </div>
                   )}
@@ -367,7 +370,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         setModalMediaIdx(0);
                         setModalPost(post);
                       }}
-                      className="absolute top-3 right-3 px-2.5 py-0.5 rounded-lg bg-[#202B24]/75 text-white text-[11px] font-semibold"
+                      className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white text-[11px] font-bold cursor-pointer"
                     >
                       +{post.media.length - 1} more
                     </button>
@@ -383,29 +386,29 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         setModalMediaIdx(0);
                         setModalPost(post);
                       }}
-                      className="text-left block w-full"
+                      className="text-left block w-full cursor-pointer"
                     >
-                      <p className="text-sm font-semibold text-[#202B24] line-clamp-2 hover:text-[#174B35] transition-colors leading-snug">
+                      <p className="text-sm font-bold text-[#062B1F] line-clamp-2 hover:text-[#145A38] transition-colors leading-snug">
                         {post.caption}
                       </p>
                     </button>
 
                     {post.productName && (
-                      <div className="inline-flex items-center gap-1 text-xs font-medium text-[#174B35]">
+                      <div className="inline-flex items-center gap-1 text-xs font-semibold text-[#145A38]">
                         <Tag className="w-3 h-3" />
                         <span>{post.productName}</span>
                       </div>
                     )}
                   </div>
 
-                  <div className="pt-3 border-t border-[#E8EEE8] space-y-3">
+                  <div className="pt-3 border-t border-[#145A38]/10 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <button
                           type="button"
                           onClick={() => handleLike(post)}
-                          className={`inline-flex items-center gap-1 text-xs font-semibold transition-colors ${
-                            isLiked ? 'text-rose-600' : 'text-[#202B24]/65 hover:text-rose-600'
+                          className={`inline-flex items-center gap-1 text-xs font-bold transition-colors cursor-pointer ${
+                            isLiked ? 'text-rose-600' : 'text-[#0B261C]/65 hover:text-rose-600'
                           }`}
                         >
                           <Heart className={`w-4 h-4 ${isLiked ? 'fill-rose-500' : ''}`} />
@@ -415,12 +418,12 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         <button
                           type="button"
                           onClick={() => handleShare(post)}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-[#202B24]/65 hover:text-[#174B35] transition-colors"
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-[#0B261C]/65 hover:text-[#145A38] transition-colors cursor-pointer"
                         >
                           {copiedPostId === post.id ? (
                             <>
-                              <Check className="w-4 h-4 text-[#174B35]" />
-                              <span className="text-[#174B35]">Copied</span>
+                              <Check className="w-4 h-4 text-[#145A38]" />
+                              <span className="text-[#145A38]">Copied</span>
                             </>
                           ) : (
                             <>
@@ -437,54 +440,53 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                           setModalMediaIdx(0);
                           setModalPost(post);
                         }}
-                        className="text-xs font-medium text-[#202B24]/60 hover:text-[#174B35] inline-flex items-center gap-1"
+                        className="text-xs font-semibold text-[#0B261C]/65 hover:text-[#145A38] inline-flex items-center gap-1 cursor-pointer"
                       >
                         <span>Details</span>
                         <ExternalLink className="w-3 h-3" />
                       </button>
                     </div>
 
-                    <button
-                      type="button"
+                    <LiquidGlassButton
+                      variant="emerald"
+                      size="sm"
+                      className="w-full"
                       onClick={() => handleQuote(post)}
-                      className="w-full py-2 px-3 rounded-xl bg-[#174B35] hover:bg-[#123c2a] text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <MessageSquareQuote className="w-3.5 h-3.5" />
                       <span>Request a Quote</span>
-                    </button>
+                    </LiquidGlassButton>
                   </div>
                 </div>
-              </article>
+              </LiquidGlassCard>
             );
           })}
         </div>
       )}
 
-      {/* Load More Trigger */}
       {hasMore && (
         <div className="flex justify-center pt-1">
-          <button
-            type="button"
+          <LiquidGlassButton
+            variant="light"
+            size="sm"
             onClick={() => setVisibleCount(c => c + 8)}
-            className="px-5 py-2 rounded-xl bg-white border border-[#E8EEE8] hover:border-[#77A987] text-[#202B24] font-semibold text-xs transition-colors"
           >
             Load More Community Posts ({posts.length - visibleCount} remaining)
-          </button>
+          </LiquidGlassButton>
         </div>
       )}
 
       {/* Full-View Post Detail Modal */}
       {modalPost && (
         <div
-          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+          className="fixed inset-0 z-50 bg-[#062B1F]/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
           onClick={() => setModalPost(null)}
         >
           <div
-            className="bg-white rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-2 max-h-[90vh] border border-[#E8EEE8]"
+            className="bg-[#F8FAF7]/95 backdrop-blur-2xl rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-2 max-h-[90vh] border border-white/80"
             onClick={e => e.stopPropagation()}
           >
-            {/* Left: Media Viewer */}
-            <div className="relative bg-[#202B24] flex items-center justify-center min-h-[260px] md:min-h-[420px]">
+            <div className="relative bg-[#062B1F] flex items-center justify-center min-h-[260px] md:min-h-[420px]">
               {(() => {
                 const item = modalPost.media?.[modalMediaIdx] || modalPost.media?.[0];
                 if (!item) return null;
@@ -517,7 +519,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                         idx === 0 ? modalPost.media.length - 1 : idx - 1
                       )
                     }
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black cursor-pointer"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
@@ -526,7 +528,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                     onClick={() =>
                       setModalMediaIdx(idx => (idx + 1) % modalPost.media.length)
                     }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black cursor-pointer"
                   >
                     <ChevronRight className="w-5 h-5" />
                   </button>
@@ -537,10 +539,9 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
               )}
             </div>
 
-            {/* Right: Info & Actions */}
             <div className="p-5 sm:p-6 flex flex-col justify-between overflow-y-auto space-y-4">
               <div className="space-y-4">
-                <div className="flex items-start justify-between gap-3 border-b border-[#E8EEE8] pb-3">
+                <div className="flex items-start justify-between gap-3 border-b border-[#145A38]/12 pb-3">
                   <button
                     type="button"
                     onClick={() => {
@@ -548,19 +549,19 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                       setModalPost(null);
                       onSelectFarmer(fId);
                     }}
-                    className="flex items-center gap-3 text-left group"
+                    className="flex items-center gap-3 text-left group cursor-pointer"
                   >
                     <img
                       src={modalPost.farmerAvatar}
                       alt={modalPost.farmerName}
                       referrerPolicy="no-referrer"
-                      className="w-11 h-11 rounded-full object-cover border border-[#E8EEE8]"
+                      className="w-11 h-11 rounded-full object-cover border border-[#145A38]/25"
                     />
                     <div>
-                      <div className="font-bold text-sm text-[#202B24] group-hover:text-[#174B35]">
+                      <div className="font-bold text-sm text-[#062B1F] group-hover:text-[#145A38]">
                         {modalPost.farmName}
                       </div>
-                      <div className="text-xs text-[#202B24]/60">
+                      <div className="text-xs text-[#0B261C]/60">
                         {modalPost.farmerName} · {new Date(modalPost.createdAt).toLocaleDateString()}
                       </div>
                     </div>
@@ -569,7 +570,7 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                   <button
                     type="button"
                     onClick={() => setModalPost(null)}
-                    className="p-2 rounded-full text-[#202B24]/50 hover:text-[#202B24] hover:bg-[#F8FAF7]"
+                    className="p-2 rounded-full text-[#0B261C]/50 hover:text-[#062B1F] hover:bg-[#DFF4E4]/60 cursor-pointer"
                     aria-label="Close post details"
                   >
                     <X className="w-5 h-5" />
@@ -577,61 +578,48 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                 </div>
 
                 {modalPost.location && (
-                  <div className="inline-flex items-center gap-1.5 text-xs font-medium text-[#202B24]/75">
-                    <MapPin className="w-3.5 h-3.5 text-[#77A987]" />
+                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#145A38]">
+                    <MapPin className="w-3.5 h-3.5" />
                     <span>{modalPost.location}</span>
                   </div>
                 )}
 
-                <h3 className="text-base font-bold text-[#202B24] leading-snug">
+                <h3 className="text-base font-extrabold text-[#062B1F] leading-snug">
                   {modalPost.caption}
                 </h3>
 
                 {modalPost.description && (
-                  <p className="text-xs sm:text-sm text-[#202B24]/70 leading-relaxed">
+                  <p className="text-xs sm:text-sm text-[#0B261C]/75 leading-relaxed">
                     {modalPost.description}
                   </p>
                 )}
 
                 {(modalPost.productName || modalPost.price !== undefined) && (
-                  <div className="p-3.5 rounded-2xl bg-[#F8FAF7] border border-[#E8EEE8] flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-[#202B24]">
-                      <Tag className="w-4 h-4 text-[#174B35]" />
+                  <div className="p-3.5 rounded-2xl lg-glass-mint border border-[#145A38]/15 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#062B1F]">
+                      <Tag className="w-4 h-4 text-[#145A38]" />
                       <span>{modalPost.productName || modalPost.taggedProductName || 'Featured Produce'}</span>
                     </div>
                     {modalPost.price !== undefined && (
-                      <span className="font-bold text-sm text-[#174B35] tabular-nums">
+                      <span className="font-extrabold text-sm text-[#145A38] tabular-nums">
                         ${modalPost.price.toFixed(2)}
                         {modalPost.unit ? `/${modalPost.unit}` : ''}
                       </span>
                     )}
                   </div>
                 )}
-
-                {modalPost.hashtags && modalPost.hashtags.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {modalPost.hashtags.map(tag => (
-                      <span
-                        key={tag}
-                        className="text-xs text-[#77A987] font-medium"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
               </div>
 
-              <div className="pt-4 border-t border-[#E8EEE8] space-y-3">
+              <div className="pt-4 border-t border-[#145A38]/12 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <button
                       type="button"
                       onClick={() => handleLike(modalPost)}
-                      className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                      className={`inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer ${
                         (modalPost.likedBy || []).includes(user?.id || 'guest-browser')
                           ? 'text-rose-600'
-                          : 'text-[#202B24]/65 hover:text-rose-600'
+                          : 'text-[#0B261C]/65 hover:text-rose-600'
                       }`}
                     >
                       <Heart
@@ -647,12 +635,12 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                     <button
                       type="button"
                       onClick={() => handleShare(modalPost)}
-                      className="inline-flex items-center gap-1.5 text-xs font-medium text-[#202B24]/65 hover:text-[#174B35]"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B261C]/65 hover:text-[#145A38] cursor-pointer"
                     >
                       {copiedPostId === modalPost.id ? (
                         <>
-                          <Check className="w-4 h-4 text-[#174B35]" />
-                          <span className="text-[#174B35]">Link copied!</span>
+                          <Check className="w-4 h-4 text-[#145A38]" />
+                          <span className="text-[#145A38]">Link copied!</span>
                         </>
                       ) : (
                         <>
@@ -670,20 +658,21 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                       setModalPost(null);
                       onSelectFarmer(fId);
                     }}
-                    className="text-xs font-semibold text-[#174B35] hover:underline"
+                    className="text-xs font-bold text-[#145A38] hover:underline cursor-pointer"
                   >
                     Visit Farm Profile →
                   </button>
                 </div>
 
-                <button
-                  type="button"
+                <LiquidGlassButton
+                  variant="lime"
+                  size="lg"
+                  className="w-full"
                   onClick={() => handleQuote(modalPost)}
-                  className="w-full py-3 rounded-xl bg-[#174B35] hover:bg-[#123c2a] text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors"
                 >
                   <MessageSquareQuote className="w-4 h-4" />
                   <span>Request a Quote from {modalPost.farmName}</span>
-                </button>
+                </LiquidGlassButton>
               </div>
             </div>
           </div>

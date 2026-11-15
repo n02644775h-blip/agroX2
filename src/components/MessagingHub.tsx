@@ -12,6 +12,7 @@ import {
 } from '../services/firebaseMessaging';
 import { Message, User, Product, Conversation, MediaPost, BuyerRequest, isSellerRole } from '../types';
 import { PublicAnnouncementsChat } from './PublicAnnouncementsChat';
+import { LiquidGlassCard, LiquidGlassButton, LiquidGlassModal } from './glass';
 import {
   Send,
   MessageSquare,
@@ -237,7 +238,6 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
         setActiveTab('direct');
         setSendError(null);
 
-        // Find existing conversation either via participant match or deterministic ID
         const deterministicId = get1on1ConversationId(user.id, initialRecipientId);
         const existingConv = conversations.find(
           c => c.id === deterministicId || c.participants.some(p => p.id === initialRecipientId)
@@ -246,7 +246,6 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
         const targetConvId = existingConv ? existingConv.id : deterministicId;
         setActiveConvId(targetConvId);
 
-        // Hydrate recipient cleanly from multiple sources
         const knownUser =
           allUsers.find(u => u.id === initialRecipientId) ||
           initialRecipientUser ||
@@ -255,7 +254,6 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
         if (knownUser) {
           setActiveRecipient(knownUser);
         } else {
-          // Construct immediate fallback while fetching full profile
           const partnerFromConv = existingConv?.participants.find(p => p.id === initialRecipientId);
           setActiveRecipient({
             id: initialRecipientId,
@@ -566,622 +564,626 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
   return (
     <div className="space-y-4">
       {/* Primary Channel Selector Header Bar */}
-      <div className="bg-white rounded-2xl border border-stone-200 p-2 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <button
-            id="tab-public-announcements-chat"
-            onClick={() => setActiveTab('announcements')}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'announcements'
-                ? 'bg-emerald-800 text-white shadow-sm'
-                : 'text-stone-700 hover:bg-stone-100'
-            }`}
-          >
-            <Megaphone className="w-4 h-4 text-emerald-400" />
-            <span>Public Admin Announcements</span>
-            {announcementsCount > 0 && (
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                  activeTab === 'announcements'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-emerald-100 text-emerald-800'
-                }`}
-              >
-                {announcementsCount}
-              </span>
-            )}
-          </button>
+      <LiquidGlassCard variant="mint" className="p-2.5 sm:p-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              id="tab-public-announcements-chat"
+              type="button"
+              onClick={() => setActiveTab('announcements')}
+              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'announcements'
+                  ? 'bg-[#062B1F] text-[#A8E635] shadow-md'
+                  : 'text-[#0B3D2B] hover:bg-white/70'
+              }`}
+            >
+              <Megaphone className="w-4 h-4 text-[#A8E635]" />
+              <span>Public Admin Announcements</span>
+              {announcementsCount > 0 && (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold tabular-nums ${
+                    activeTab === 'announcements'
+                      ? 'bg-[#145A38] text-white'
+                      : 'bg-[#DFF4E4] text-[#062B1F]'
+                  }`}
+                >
+                  {announcementsCount}
+                </span>
+              )}
+            </button>
 
-          <button
-            id="tab-direct-p2p-messages"
-            onClick={() => setActiveTab('direct')}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'direct'
-                ? 'bg-emerald-800 text-white shadow-sm'
-                : 'text-stone-700 hover:bg-stone-100'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4 text-emerald-400" />
-            <span>Direct Messages (1-on-1)</span>
-            <span className="text-[10px] text-stone-400 font-normal">({conversations.length})</span>
-          </button>
-        </div>
+            <button
+              id="tab-direct-p2p-messages"
+              type="button"
+              onClick={() => setActiveTab('direct')}
+              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'direct'
+                  ? 'bg-[#062B1F] text-[#A8E635] shadow-md'
+                  : 'text-[#0B3D2B] hover:bg-white/70'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4 text-[#A8E635]" />
+              <span>Direct Messages (1-on-1)</span>
+              <span className="text-[10px] opacity-75 font-normal tabular-nums">({conversations.length})</span>
+            </button>
+          </div>
 
-        <div className="text-[11px] text-stone-500 hidden md:flex items-center gap-2 px-3">
-          <ShieldCheck className="w-4 h-4 text-emerald-700" />
-          <span>Real-Time Buyer, Farmer & Fodder Supplier Messaging</span>
+          <div className="text-[11px] text-[#0B3D2B]/75 hidden md:flex items-center gap-2 px-3">
+            <ShieldCheck className="w-4 h-4 text-[#145A38]" />
+            <span>Real-Time Buyer, Farmer &amp; Fodder Supplier Messaging</span>
+          </div>
         </div>
-      </div>
+      </LiquidGlassCard>
 
       {/* RENDER ACTIVE CHANNEL */}
       {activeTab === 'announcements' ? (
         <PublicAnnouncementsChat />
       ) : (
         /* Direct Messages Interface */
-        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden min-h-[620px] flex flex-col md:flex-row">
-          {/* Left Sidebar: Conversations (hidden on mobile when a thread is open) */}
-          <div
-            className={`w-full md:w-80 border-r border-stone-200 flex-col bg-stone-50/50 ${
-              activeRecipient ? 'hidden md:flex' : 'flex'
-            }`}
-          >
-            <div className="p-4 border-b border-stone-200 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="font-bold text-stone-900 text-base">Direct Messages</h2>
-                <button
-                  id="new-direct-chat-btn"
-                  type="button"
-                  onClick={() => setShowNewChatPicker(true)}
-                  className="px-2.5 py-1 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>New Chat</span>
-                </button>
-              </div>
-
-              {/* Quick switch to Announcements inside list */}
-              <div
-                onClick={() => setActiveTab('announcements')}
-                className="p-3 bg-linear-to-r from-emerald-900 to-teal-950 text-white rounded-2xl cursor-pointer hover:shadow-md transition-all flex items-center justify-between"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-500/30 flex items-center justify-center">
-                    <Megaphone className="w-4 h-4 text-emerald-300" />
-                  </div>
-                  <div>
-                    <h5 className="font-bold text-xs text-white">Public Announcements</h5>
-                    <p className="text-[10px] text-emerald-200">Admin broadcast group</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 text-emerald-400" />
-              </div>
-
-              <div className="relative">
-                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchFilter}
-                  onChange={e => setSearchFilter(e.target.value)}
-                  placeholder="Search conversations..."
-                  className="w-full pl-9 pr-3 py-2 bg-white rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto divide-y divide-stone-100">
-              {loading && filteredConversations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-stone-400">Loading chats...</div>
-              ) : filteredConversations.length === 0 ? (
-                <div className="p-8 text-center text-xs text-stone-400 space-y-3">
-                  <p>No 1-on-1 conversations yet.</p>
-                  <p className="text-[11px] text-emerald-700 font-medium">
-                    Click <strong>Contact Farmer</strong> on any product or start a new chat below!
-                  </p>
-                  <button
+        <LiquidGlassCard variant="light" className="overflow-hidden p-0">
+          <div className="min-h-[620px] flex flex-col md:flex-row">
+            {/* Left Sidebar: Conversations */}
+            <div
+              className={`w-full md:w-80 border-r border-[#062B1F]/10 flex-col bg-white/45 ${
+                activeRecipient ? 'hidden md:flex' : 'flex'
+              }`}
+            >
+              <div className="p-4 border-b border-[#062B1F]/10 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-extrabold text-[#062B1F] text-base">Direct Messages</h2>
+                  <LiquidGlassButton
+                    id="new-direct-chat-btn"
                     type="button"
+                    variant="lime"
+                    size="xs"
                     onClick={() => setShowNewChatPicker(true)}
-                    className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
-                    Browse Farmers & Buyers
-                  </button>
+                    <span>New Chat</span>
+                  </LiquidGlassButton>
                 </div>
-              ) : (
-                filteredConversations.map(conv => {
-                  const partner = conv.participants.find(p => p.id !== user?.id);
-                  if (!partner) return null;
-                  const isSelected = activeConvId === conv.id;
-                  const unread = conv.unreadCountFor?.[user?.id || ''] || 0;
 
-                  return (
-                    <div
-                      key={conv.id}
-                      onClick={() => selectConversation(conv)}
-                      className={`p-3.5 flex items-center gap-3 cursor-pointer transition-all ${
-                        isSelected ? 'bg-emerald-50/80 border-r-4 border-emerald-600' : 'hover:bg-stone-100/60'
-                      }`}
+                {/* Quick switch to Announcements inside list */}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('announcements')}
+                  className="w-full text-left p-3 bg-linear-to-r from-[#062B1F] via-[#0B3D2B] to-[#145A38] text-white rounded-2xl cursor-pointer hover:shadow-md transition-all flex items-center justify-between border border-white/15"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-[#A8E635]/20 border border-[#A8E635]/35 flex items-center justify-center">
+                      <Megaphone className="w-4 h-4 text-[#A8E635]" />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-xs text-white">Public Announcements</h5>
+                      <p className="text-[10px] text-[#DFF4E4]/80">Official admin channel</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#A8E635]" />
+                </button>
+
+                <div className="relative">
+                  <Search className="w-4 h-4 text-[#0B3D2B]/45 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchFilter}
+                    onChange={e => setSearchFilter(e.target.value)}
+                    placeholder="Search conversations..."
+                    className="w-full pl-9 pr-3 py-2 bg-white/85 rounded-xl border border-[#062B1F]/12 text-xs text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                  />
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto divide-y divide-[#062B1F]/8">
+                {loading && filteredConversations.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[#0B3D2B]/55">Loading chats...</div>
+                ) : filteredConversations.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[#0B3D2B]/65 space-y-3">
+                    <p>No 1-on-1 conversations yet.</p>
+                    <p className="text-[11px] text-[#145A38] font-medium">
+                      Click <strong>Contact Farmer</strong> on any product or start a new chat below!
+                    </p>
+                    <LiquidGlassButton
+                      type="button"
+                      variant="light"
+                      size="xs"
+                      onClick={() => setShowNewChatPicker(true)}
                     >
-                      <div className="relative">
+                      <UserPlus className="w-3.5 h-3.5 text-[#145A38]" />
+                      <span>Browse Farmers & Buyers</span>
+                    </LiquidGlassButton>
+                  </div>
+                ) : (
+                  filteredConversations.map(conv => {
+                    const partner = conv.participants.find(p => p.id !== user?.id);
+                    if (!partner) return null;
+                    const isSelected = activeConvId === conv.id;
+                    const unread = conv.unreadCountFor?.[user?.id || ''] || 0;
+
+                    return (
+                      <button
+                        key={conv.id}
+                        type="button"
+                        onClick={() => selectConversation(conv)}
+                        className={`w-full text-left p-3.5 flex items-center gap-3 cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-[#DFF4E4]/85 shadow-inner'
+                            : 'hover:bg-white/60'
+                        }`}
+                      >
                         <img
                           src={
                             partner.avatar ||
                             'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200'
                           }
-                          alt=""
-                          className="w-11 h-11 rounded-2xl object-cover border border-stone-200"
+                          alt={partner.name}
+                          referrerPolicy="no-referrer"
+                          className={`w-11 h-11 rounded-2xl object-cover shrink-0 ${
+                            isSelected ? 'ring-2 ring-[#145A38]' : 'border border-white/80'
+                          }`}
                         />
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white absolute -bottom-0.5 -right-0.5"></span>
-                      </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <h4 className="font-bold text-stone-900 text-xs truncate">{partner.name}</h4>
-                          <span className="text-[10px] text-stone-400">
-                            {conv.lastMessageTime
-                              ? new Date(conv.lastMessageTime).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })
-                              : ''}
-                          </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-0.5 gap-2">
+                            <h4 className="font-bold text-[#062B1F] text-xs truncate">{partner.name}</h4>
+                            <span className="text-[10px] text-[#0B3D2B]/55 shrink-0 tabular-nums">
+                              {conv.lastMessageTime
+                                ? new Date(conv.lastMessageTime).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })
+                                : ''}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-[#0B3D2B]/70 truncate">
+                              {conv.lastMessage || 'Click to view messages'}
+                            </p>
+                            {unread > 0 && (
+                              <span className="min-w-4 h-4 px-1 rounded-full bg-[#145A38] text-[#A8E635] text-[10px] font-bold flex items-center justify-center shrink-0 tabular-nums">
+                                {unread}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs text-stone-500 truncate">
-                            {conv.lastMessage || 'Click to view messages'}
-                          </p>
-                          {unread > 0 && (
-                            <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                              {unread}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Right: Active Chat Area */}
+            <div className={`flex-1 flex-col bg-white/30 ${activeRecipient ? 'flex' : 'hidden md:flex'}`}>
+              {activeRecipient ? (
+                <>
+                  {/* Chat Top Header */}
+                  <div className="p-4 border-b border-[#062B1F]/10 flex items-center justify-between bg-white/75 backdrop-blur-md z-10">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveRecipient(null);
+                          setActiveConvId(null);
+                        }}
+                        className="md:hidden p-1.5 rounded-xl bg-white border border-[#062B1F]/12 text-[#062B1F] cursor-pointer"
+                        aria-label="Back to conversations"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <img
+                        src={
+                          activeRecipient.avatar ||
+                          'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=200'
+                        }
+                        alt={activeRecipient.name}
+                        referrerPolicy="no-referrer"
+                        className="w-10 h-10 rounded-2xl object-cover border border-white shadow-xs"
+                      />
+                      <div>
+                        <div className="flex items-center gap-1.5 font-extrabold text-[#062B1F] text-sm">
+                          <span>{activeRecipient.name}</span>
+                          {isSellerRole(activeRecipient.role) && (
+                            <span
+                              title={
+                                activeRecipient.role === 'fodder_supplier'
+                                  ? 'Verified Fodder Supplier'
+                                  : 'Verified Producer'
+                              }
+                              className="inline-flex items-center"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5 text-[#145A38]" />
                             </span>
                           )}
                         </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Right: Active Chat Area */}
-          <div className={`flex-1 flex-col bg-white ${activeRecipient ? 'flex' : 'hidden md:flex'}`}>
-            {activeRecipient ? (
-              <>
-                {/* Chat Top Header */}
-                <div className="p-4 border-b border-stone-200 flex items-center justify-between bg-white z-10">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveRecipient(null);
-                        setActiveConvId(null);
-                      }}
-                      className="md:hidden p-1.5 rounded-xl bg-stone-100 text-stone-700 hover:bg-stone-200"
-                      aria-label="Back to conversations"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <img
-                      src={
-                        activeRecipient.avatar ||
-                        'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=200'
-                      }
-                      alt={activeRecipient.name}
-                      className="w-10 h-10 rounded-2xl object-cover border border-stone-200"
-                    />
-                    <div>
-                      <div className="flex items-center gap-1.5 font-bold text-stone-900 text-sm">
-                        <span>{activeRecipient.name}</span>
-                        {isSellerRole(activeRecipient.role) && (
-                          <ShieldCheck
-                            className="w-3.5 h-3.5 text-emerald-600"
-                            title={
-                              activeRecipient.role === 'fodder_supplier'
-                                ? 'Verified Fodder Supplier'
-                                : 'Verified Producer'
-                            }
-                          />
-                        )}
-                      </div>
-                      <div className="text-[11px] text-stone-500 flex items-center gap-2">
-                        <span className="font-medium text-emerald-800">
-                          {getRoleBadgeLabel(activeRecipient.role)}
-                        </span>
-                        {activeRecipient.farmerProfile?.farmName && (
-                          <>
-                            <span>•</span>
-                            <span className="truncate max-w-[160px]">
-                              {activeRecipient.farmerProfile.farmName}
-                            </span>
-                          </>
-                        )}
-                        <span>•</span>
-                        <span className="flex items-center gap-0.5">
-                          <MapPin className="w-3 h-3 text-stone-400" />
-                          {activeRecipient.location?.city || 'Local Hub'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Messages Thread Container */}
-                <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-stone-50/40 max-h-[460px]">
-                  {attachedProduct && (
-                    <div className="max-w-md mx-auto p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 shadow-xs">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <img
-                          src={attachedProduct.images?.[0]}
-                          alt=""
-                          className="w-12 h-12 rounded-xl object-cover shrink-0"
-                        />
-                        <div className="truncate text-xs">
-                          <span className="text-[10px] font-bold text-emerald-800 uppercase block">
-                            Product Inquiry
+                        <div className="text-[11px] text-[#0B3D2B]/70 flex items-center gap-1.5">
+                          <span className="font-semibold text-[#145A38]">
+                            {getRoleBadgeLabel(activeRecipient.role)}
                           </span>
-                          <strong className="text-stone-900 block truncate">{attachedProduct.name}</strong>
-                          <span className="text-emerald-700 font-bold">
-                            ${attachedProduct.price.toFixed(2)} / {attachedProduct.unit}
+                          {activeRecipient.farmerProfile?.farmName && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="truncate max-w-[160px]">
+                                {activeRecipient.farmerProfile.farmName}
+                              </span>
+                            </>
+                          )}
+                          <span aria-hidden="true">·</span>
+                          <span className="flex items-center gap-0.5">
+                            <MapPin className="w-3 h-3 text-[#145A38]" />
+                            {activeRecipient.location?.city || 'Local Hub'}
                           </span>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setAttachedProduct(null)}
-                        className="p-1 rounded-lg hover:bg-emerald-100 text-emerald-700"
-                        title="Remove product card"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
                     </div>
-                  )}
+                  </div>
 
-                  {attachedPost && (
-                    <div className="max-w-md mx-auto p-3 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-3 shadow-xs">
-                      <div className="flex items-center gap-3 min-w-0">
-                        {attachedPost.media?.[0]?.type === 'video' ? (
-                          <div className="w-12 h-12 rounded-xl bg-stone-900 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                            VIDEO
-                          </div>
-                        ) : (
+                  {/* Messages Thread Container */}
+                  <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-[#F8FAF7]/55 max-h-[460px]">
+                    {attachedProduct && (
+                      <div className="max-w-md mx-auto p-3 rounded-2xl bg-[#DFF4E4]/90 border border-[#145A38]/25 flex items-center justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-3 min-w-0">
                           <img
-                            src={attachedPost.media?.[0]?.url || '/images/community/community_tomato_greenhouse.jpg'}
-                            alt=""
+                            src={attachedProduct.images?.[0]}
+                            alt={attachedProduct.name}
+                            referrerPolicy="no-referrer"
                             className="w-12 h-12 rounded-xl object-cover shrink-0"
                           />
-                        )}
-                        <div className="truncate text-xs">
-                          <span className="text-[10px] font-bold text-emerald-800 uppercase flex items-center gap-1">
-                            <Sparkles className="w-3 h-3" />
-                            Quote Inquiry — Showcase Post
+                          <div className="truncate text-xs">
+                            <span className="text-[10px] font-bold text-[#145A38] uppercase block">
+                              Product Inquiry
+                            </span>
+                            <strong className="text-[#062B1F] block truncate">{attachedProduct.name}</strong>
+                            <span className="text-[#145A38] font-bold tabular-nums">
+                              ${attachedProduct.price.toFixed(2)} / {attachedProduct.unit}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAttachedProduct(null)}
+                          className="p-1 rounded-lg hover:bg-white/60 text-[#145A38] cursor-pointer"
+                          title="Remove product card"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {attachedPost && (
+                      <div className="max-w-md mx-auto p-3 rounded-2xl bg-[#DFF4E4]/90 border border-[#145A38]/25 flex items-center justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {attachedPost.media?.[0]?.type === 'video' ? (
+                            <div className="w-12 h-12 rounded-xl bg-[#062B1F] text-[#A8E635] flex items-center justify-center text-[10px] font-bold shrink-0">
+                              VIDEO
+                            </div>
+                          ) : (
+                            <img
+                              src={attachedPost.media?.[0]?.url || '/images/community/community_tomato_greenhouse.jpg'}
+                              alt={attachedPost.productName || 'Showcase post'}
+                              referrerPolicy="no-referrer"
+                              className="w-12 h-12 rounded-xl object-cover shrink-0"
+                            />
+                          )}
+                          <div className="truncate text-xs">
+                            <span className="text-[10px] font-bold text-[#145A38] uppercase flex items-center gap-1">
+                              <Sparkles className="w-3 h-3" />
+                              Quote Inquiry — Showcase Post
+                            </span>
+                            <strong className="text-[#062B1F] block truncate">
+                              {attachedPost.productName || attachedPost.caption}
+                            </strong>
+                            <span className="text-[#145A38] font-bold tabular-nums">
+                              {attachedPost.farmName}
+                              {attachedPost.price !== undefined
+                                ? ` · $${attachedPost.price.toFixed(2)}${attachedPost.unit ? `/${attachedPost.unit}` : ''}`
+                                : ''}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setAttachedPost(null)}
+                          className="p-1 rounded-lg hover:bg-white/60 text-[#145A38] cursor-pointer"
+                          title="Remove post card"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    {attachedRequest && (
+                      <div className="max-w-md mx-auto p-3 rounded-2xl bg-[#F4D35E]/25 border border-[#F4D35E]/60 flex items-center justify-between gap-3 shadow-xs">
+                        <div className="min-w-0 text-xs space-y-0.5">
+                          <span className="text-[10px] font-bold text-[#694800] uppercase flex items-center gap-1">
+                            <Megaphone className="w-3 h-3" />
+                            Buyer Request Reference
                           </span>
-                          <strong className="text-stone-900 block truncate">
-                            {attachedPost.productName || attachedPost.caption}
+                          <strong className="text-[#062B1F] block truncate">
+                            {attachedRequest.productName} ({attachedRequest.quantityRequired})
                           </strong>
-                          <span className="text-emerald-700 font-bold">
-                            {attachedPost.farmName}
-                            {attachedPost.price !== undefined
-                              ? ` • $${attachedPost.price.toFixed(2)}${attachedPost.unit ? `/${attachedPost.unit}` : ''}`
+                          <span className="text-[#0B3D2B] block truncate tabular-nums">
+                            {attachedRequest.location}
+                            {attachedRequest.preferredPrice !== undefined
+                              ? ` · Target $${attachedRequest.preferredPrice.toFixed(2)}`
                               : ''}
                           </span>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setAttachedRequest(null)}
+                          className="p-1 rounded-lg hover:bg-white/60 text-[#694800] shrink-0 cursor-pointer"
+                          title="Remove request card"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setAttachedPost(null)}
-                        className="p-1 rounded-lg hover:bg-emerald-100 text-emerald-700"
-                        title="Remove post card"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
+                    )}
 
-                  {attachedRequest && (
-                    <div className="max-w-md mx-auto p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 shadow-xs">
-                      <div className="min-w-0 text-xs space-y-0.5">
-                        <span className="text-[10px] font-bold text-amber-800 uppercase flex items-center gap-1">
-                          <Megaphone className="w-3 h-3" />
-                          Buyer Request Reference
-                        </span>
-                        <strong className="text-stone-900 block truncate">
-                          {attachedRequest.productName} ({attachedRequest.quantityRequired})
-                        </strong>
-                        <span className="text-amber-900 block truncate">
-                          {attachedRequest.location}
-                          {attachedRequest.preferredPrice !== undefined
-                            ? ` • Target $${attachedRequest.preferredPrice.toFixed(2)}`
-                            : ''}
-                        </span>
+                    {messages.length === 0 ? (
+                      <div className="py-12 text-center text-xs text-[#0B3D2B]/60 space-y-2">
+                        <MessageSquare className="w-8 h-8 mx-auto text-[#145A38]/35" />
+                        <p className="font-bold text-[#062B1F]">
+                          Start a direct 1-on-1 conversation with {activeRecipient.name}
+                        </p>
+                        <p>
+                          Ask about stock levels, harvest dates, bulk pricing, or arrange pickup &amp; delivery.
+                        </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setAttachedRequest(null)}
-                        className="p-1 rounded-lg hover:bg-amber-100 text-amber-700 shrink-0"
-                        title="Remove request card"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-
-                  {messages.length === 0 ? (
-                    <div className="py-12 text-center text-xs text-stone-400 space-y-2">
-                      <MessageSquare className="w-8 h-8 mx-auto text-stone-300" />
-                      <p className="font-semibold text-stone-600">
-                        Start a direct 1-on-1 conversation with {activeRecipient.name}
-                      </p>
-                      <p>
-                        Ask about stock levels, harvest dates, bulk pricing, or arrange pickup & delivery.
-                      </p>
-                    </div>
-                  ) : (
-                    messages.map(msg => {
-                      const isMe = msg.senderId === user?.id;
-                      const messageText = msg.text || msg.content || '';
-                      return (
-                        <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                          <div
-                            className={`max-w-xs sm:max-w-md rounded-2xl px-4 py-2.5 text-xs shadow-xs space-y-1 ${
-                              isMe
-                                ? 'bg-emerald-700 text-white rounded-br-xs'
-                                : 'bg-white text-stone-800 border border-stone-200/90 rounded-bl-xs'
-                            }`}
-                          >
-                            {msg.productSnippet && (
-                              <div
-                                className={`p-2 rounded-xl mb-1.5 flex items-center gap-2 text-[11px] ${
-                                  isMe
-                                    ? 'bg-emerald-800 text-emerald-100'
-                                    : 'bg-stone-50 text-stone-700'
-                                }`}
-                              >
-                                <Package className="w-4 h-4 shrink-0" />
-                                <span className="font-semibold truncate">
-                                  {msg.productSnippet.name} (${Number(msg.productSnippet.price || 0).toFixed(2)}/{msg.productSnippet.unit})
-                                </span>
-                              </div>
-                            )}
-                            {msg.postReference && (
-                              <div
-                                className={`p-2.5 rounded-xl mb-1.5 flex items-center gap-2.5 text-[11px] ${
-                                  isMe
-                                    ? 'bg-emerald-800/90 text-emerald-50'
-                                    : 'bg-emerald-50 text-stone-800 border border-emerald-200'
-                                }`}
-                              >
-                                {msg.postReference.mediaUrl && msg.postReference.mediaType !== 'video' ? (
-                                  <img
-                                    src={msg.postReference.mediaUrl}
-                                    alt=""
-                                    className="w-9 h-9 rounded-lg object-cover shrink-0"
-                                  />
-                                ) : (
-                                  <Sparkles className="w-4 h-4 shrink-0" />
-                                )}
-                                <div className="min-w-0">
-                                  <div className="text-[10px] font-bold uppercase opacity-80">
-                                    Community Quote Request
-                                  </div>
-                                  <div className="font-bold truncate">
-                                    {msg.postReference.productName || msg.postReference.caption}
-                                  </div>
-                                  {msg.postReference.price !== undefined && (
-                                    <div className="opacity-90">
-                                      ${Number(msg.postReference.price).toFixed(2)}
-                                      {msg.postReference.unit ? `/${msg.postReference.unit}` : ''}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                            {msg.requestReference && (
-                              <div
-                                className={`p-2.5 rounded-xl mb-1.5 text-[11px] space-y-0.5 ${
-                                  isMe
-                                    ? 'bg-emerald-800/90 text-emerald-50'
-                                    : 'bg-amber-50 text-stone-800 border border-amber-200'
-                                }`}
-                              >
-                                <div className="text-[10px] font-bold uppercase opacity-80 flex items-center gap-1">
-                                  <Megaphone className="w-3 h-3" />
-                                  <span>Buyer Request</span>
-                                </div>
-                                <div className="font-bold">
-                                  {msg.requestReference.productName} ({msg.requestReference.quantityRequired})
-                                </div>
-                                <div className="opacity-90">
-                                  {msg.requestReference.location}
-                                  {msg.requestReference.budgetText ? ` • ${msg.requestReference.budgetText}` : ''}
-                                </div>
-                              </div>
-                            )}
-                            <p className="leading-relaxed whitespace-pre-wrap">{messageText}</p>
+                    ) : (
+                      messages.map(msg => {
+                        const isMe = msg.senderId === user?.id;
+                        const messageText = msg.text || msg.content || '';
+                        return (
+                          <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                             <div
-                              className={`flex items-center justify-end gap-1 text-[9px] ${
-                                isMe ? 'text-emerald-200' : 'text-stone-400'
+                              className={`max-w-xs sm:max-w-md rounded-2xl px-4 py-2.5 text-xs shadow-xs space-y-1 ${
+                                isMe
+                                  ? 'bg-linear-to-br from-[#145A38] to-[#062B1F] text-white rounded-br-xs border border-white/15'
+                                  : 'bg-white/90 text-[#062B1F] border border-white rounded-bl-xs backdrop-blur-md'
                               }`}
                             >
-                              <span>
-                                {new Date(msg.createdAt).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </span>
-                              {isMe && <CheckCheck className="w-3 h-3 text-emerald-300" />}
+                              {msg.productSnippet && (
+                                <div
+                                  className={`p-2 rounded-xl mb-1.5 flex items-center gap-2 text-[11px] ${
+                                    isMe
+                                      ? 'bg-white/12 text-[#DFF4E4]'
+                                      : 'bg-[#DFF4E4]/70 text-[#062B1F]'
+                                  }`}
+                                >
+                                  <Package className="w-4 h-4 shrink-0" />
+                                  <span className="font-semibold truncate tabular-nums">
+                                    {msg.productSnippet.name} (${Number(msg.productSnippet.price || 0).toFixed(2)}/{msg.productSnippet.unit})
+                                  </span>
+                                </div>
+                              )}
+                              {msg.postReference && (
+                                <div
+                                  className={`p-2.5 rounded-xl mb-1.5 flex items-center gap-2.5 text-[11px] ${
+                                    isMe
+                                      ? 'bg-white/12 text-[#DFF4E4]'
+                                      : 'bg-[#DFF4E4]/70 text-[#062B1F] border border-[#145A38]/15'
+                                  }`}
+                                >
+                                  {msg.postReference.mediaUrl && msg.postReference.mediaType !== 'video' ? (
+                                    <img
+                                      src={msg.postReference.mediaUrl}
+                                      alt=""
+                                      referrerPolicy="no-referrer"
+                                      className="w-9 h-9 rounded-lg object-cover shrink-0"
+                                    />
+                                  ) : (
+                                    <Sparkles className="w-4 h-4 shrink-0" />
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="text-[10px] font-bold uppercase opacity-80">
+                                      Community Quote Request
+                                    </div>
+                                    <div className="font-bold truncate">
+                                      {msg.postReference.productName || msg.postReference.caption}
+                                    </div>
+                                    {msg.postReference.price !== undefined && (
+                                      <div className="opacity-90 tabular-nums">
+                                        ${Number(msg.postReference.price).toFixed(2)}
+                                        {msg.postReference.unit ? `/${msg.postReference.unit}` : ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {msg.requestReference && (
+                                <div
+                                  className={`p-2.5 rounded-xl mb-1.5 text-[11px] space-y-0.5 ${
+                                    isMe
+                                      ? 'bg-white/12 text-[#DFF4E4]'
+                                      : 'bg-[#F4D35E]/25 text-[#062B1F] border border-[#F4D35E]/50'
+                                  }`}
+                                >
+                                  <div className="text-[10px] font-bold uppercase opacity-80 flex items-center gap-1">
+                                    <Megaphone className="w-3 h-3" />
+                                    <span>Buyer Request</span>
+                                  </div>
+                                  <div className="font-bold">
+                                    {msg.requestReference.productName} ({msg.requestReference.quantityRequired})
+                                  </div>
+                                  <div className="opacity-90">
+                                    {msg.requestReference.location}
+                                    {msg.requestReference.budgetText ? ` · ${msg.requestReference.budgetText}` : ''}
+                                  </div>
+                                </div>
+                              )}
+                              <p className="leading-relaxed whitespace-pre-wrap">{messageText}</p>
+                              <div
+                                className={`flex items-center justify-end gap-1 text-[9px] tabular-nums ${
+                                  isMe ? 'text-[#DFF4E4]/75' : 'text-[#0B3D2B]/50'
+                                }`}
+                              >
+                                <span>
+                                  {new Date(msg.createdAt).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                {isMe && <CheckCheck className="w-3 h-3 text-[#A8E635]" />}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {sendError && (
-                  <div className="px-4 py-2 bg-red-50 border-t border-red-200 text-red-700 text-xs font-semibold flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <AlertCircle className="w-4 h-4 shrink-0" />
-                      {sendError}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSendError(null)}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Quick Inquiry Templates */}
-                <div className="px-4 py-2 bg-stone-50 border-t border-stone-100 flex gap-2 overflow-x-auto">
-                  {quickTemplates.map((tmpl, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setNewMessageText(tmpl)}
-                      className="px-2.5 py-1 bg-white hover:bg-emerald-50 border border-stone-200 hover:border-emerald-300 rounded-full text-[11px] text-stone-600 hover:text-emerald-800 whitespace-nowrap transition-colors cursor-pointer"
-                    >
-                      {tmpl}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Message Input Box */}
-                <form
-                  onSubmit={handleSendMessage}
-                  className="p-3 sm:p-4 border-t border-stone-200 bg-white flex items-center gap-2"
-                >
-                  <input
-                    id="message-text-input"
-                    type="text"
-                    value={newMessageText}
-                    onChange={e => setNewMessageText(e.target.value)}
-                    placeholder={`Message ${activeRecipient.name}...`}
-                    className="flex-1 px-4 py-2.5 bg-stone-50 rounded-2xl border border-stone-200 text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  />
-                  <button
-                    id="send-direct-message-btn"
-                    type="submit"
-                    disabled={!newMessageText.trim() || sending}
-                    className="p-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-stone-200 text-white rounded-2xl shadow-xs transition-colors cursor-pointer"
-                  >
-                    {sending ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
+                        );
+                      })
                     )}
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-stone-400 space-y-3">
-                <MessageSquare className="w-12 h-12 text-stone-300" />
-                <h3 className="font-bold text-stone-700 text-sm">Select or Start a 1-on-1 Chat</h3>
-                <p className="text-xs max-w-xs">
-                  Choose an existing conversation or click below to message any farmer, fodder supplier, or buyer directly.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowNewChatPicker(true)}
-                  className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Start New 1-on-1 Chat
-                </button>
-              </div>
-            )}
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                  {sendError && (
+                    <div className="px-4 py-2 bg-rose-500/10 border-t border-rose-500/25 text-rose-800 text-xs font-semibold flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{sendError}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSendError(null)}
+                        className="text-rose-600 hover:text-rose-800 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Quick Inquiry Templates */}
+                  <div className="px-4 py-2 bg-white/60 border-t border-[#062B1F]/8 flex gap-2 overflow-x-auto">
+                    {quickTemplates.map((tmpl, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setNewMessageText(tmpl)}
+                        className="px-3 py-1 bg-white/90 hover:bg-[#DFF4E4] border border-[#062B1F]/12 hover:border-[#145A38]/30 rounded-full text-[11px] text-[#062B1F] whitespace-nowrap transition-colors cursor-pointer shrink-0"
+                      >
+                        {tmpl}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Message Input Box */}
+                  <form
+                    onSubmit={handleSendMessage}
+                    className="p-3 sm:p-4 border-t border-[#062B1F]/10 bg-white/80 backdrop-blur-md flex items-center gap-2"
+                  >
+                    <input
+                      id="message-text-input"
+                      type="text"
+                      value={newMessageText}
+                      onChange={e => setNewMessageText(e.target.value)}
+                      placeholder={`Message ${activeRecipient.name}...`}
+                      className="flex-1 px-4 py-2.5 bg-white/90 rounded-2xl border border-[#062B1F]/15 text-xs text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                    />
+                    <LiquidGlassButton
+                      id="send-direct-message-btn"
+                      type="submit"
+                      variant="lime"
+                      size="sm"
+                      disabled={!newMessageText.trim() || sending}
+                    >
+                      {sending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </LiquidGlassButton>
+                  </form>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[#0B3D2B]/65 space-y-3">
+                  <MessageSquare className="w-12 h-12 text-[#145A38]/35" />
+                  <h3 className="font-extrabold text-[#062B1F] text-sm">Select or Start a 1-on-1 Chat</h3>
+                  <p className="text-xs max-w-xs">
+                    Choose an existing conversation or click below to message any farmer, fodder supplier, or buyer directly.
+                  </p>
+                  <LiquidGlassButton
+                    type="button"
+                    variant="emerald"
+                    size="sm"
+                    onClick={() => setShowNewChatPicker(true)}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>Start New 1-on-1 Chat</span>
+                  </LiquidGlassButton>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </LiquidGlassCard>
       )}
 
       {/* New Chat Directory Picker Modal */}
-      {showNewChatPicker && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setShowNewChatPicker(false)}
-        >
-          <div
-            className="bg-white rounded-3xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-stone-200 max-h-[82vh] flex flex-col"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-              <div>
-                <h3 className="font-extrabold text-stone-900 text-base">Start 1-on-1 Conversation</h3>
-                <p className="text-[11px] text-stone-500">
-                  Select a farmer, fodder supplier, or buyer to message
-                </p>
+      <LiquidGlassModal
+        isOpen={showNewChatPicker}
+        onClose={() => setShowNewChatPicker(false)}
+        title="Start 1-on-1 Conversation"
+        subtitle="Select a farmer, fodder supplier, or buyer to message"
+        icon={<UserPlus className="w-5 h-5 text-[#A8E635]" />}
+        maxWidthClass="max-w-md"
+      >
+        <div className="p-5 space-y-4 flex flex-col max-h-[75vh]">
+          <div className="relative">
+            <Search className="w-4 h-4 text-[#0B3D2B]/45 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={directorySearch}
+              onChange={e => setDirectorySearch(e.target.value)}
+              placeholder="Search by name, farm, fodder, or city..."
+              className="w-full pl-9 pr-3 py-2 bg-white/85 rounded-xl border border-[#062B1F]/15 text-xs text-[#062B1F] focus:outline-hidden focus:ring-2 focus:ring-[#145A38]/25"
+            />
+          </div>
+
+          <div className="flex-1 overflow-y-auto divide-y divide-[#062B1F]/10 pr-1">
+            {directoryUsers.length === 0 ? (
+              <div className="py-10 text-center text-xs text-[#0B3D2B]/55">
+                No matching members found.
               </div>
-              <button
-                type="button"
-                onClick={() => setShowNewChatPicker(false)}
-                className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="relative">
-              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={directorySearch}
-                onChange={e => setDirectorySearch(e.target.value)}
-                placeholder="Search by name, farm, fodder, or city..."
-                className="w-full pl-9 pr-3 py-2 bg-stone-50 rounded-xl border border-stone-200 text-xs focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto divide-y divide-stone-100 pr-1">
-              {directoryUsers.length === 0 ? (
-                <div className="py-10 text-center text-xs text-stone-400">
-                  No matching members found.
-                </div>
-              ) : (
-                directoryUsers.map(member => (
-                  <button
-                    key={member.id}
-                    type="button"
-                    onClick={() => startChatWithUser(member)}
-                    className="w-full p-3 flex items-center justify-between gap-3 hover:bg-emerald-50/70 rounded-xl transition-colors text-left cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <img
-                        src={
-                          member.avatar ||
-                          'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=200'
-                        }
-                        alt={member.name}
-                        className="w-10 h-10 rounded-2xl object-cover border border-stone-200 shrink-0"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-bold text-stone-900 text-xs truncate">{member.name}</div>
-                        <div className="text-[11px] text-stone-500 truncate flex items-center gap-1.5">
-                          <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
-                            {member.role === 'fodder_supplier' ? (
-                              <Wheat className="w-3 h-3 text-amber-600" />
-                            ) : member.role === 'farmer' ? (
-                              <Sprout className="w-3 h-3 text-emerald-600" />
-                            ) : (
-                              <ShoppingBag className="w-3 h-3 text-blue-600" />
-                            )}
-                            {getRoleBadgeLabel(member.role)}
-                          </span>
-                          {member.farmerProfile?.farmName && (
-                            <span className="truncate">• {member.farmerProfile.farmName}</span>
+            ) : (
+              directoryUsers.map(member => (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() => startChatWithUser(member)}
+                  className="w-full p-3 flex items-center justify-between gap-3 hover:bg-[#DFF4E4]/65 rounded-xl transition-colors text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={
+                        member.avatar ||
+                        'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=200'
+                      }
+                      alt={member.name}
+                      referrerPolicy="no-referrer"
+                      className="w-10 h-10 rounded-2xl object-cover border border-white shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-bold text-[#062B1F] text-xs truncate">{member.name}</div>
+                      <div className="text-[11px] text-[#0B3D2B]/70 truncate flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 font-semibold text-[#145A38]">
+                          {member.role === 'fodder_supplier' ? (
+                            <Wheat className="w-3 h-3 text-amber-600" />
+                          ) : member.role === 'farmer' ? (
+                            <Sprout className="w-3 h-3 text-[#145A38]" />
+                          ) : (
+                            <ShoppingBag className="w-3 h-3 text-sky-700" />
                           )}
-                        </div>
+                          {getRoleBadgeLabel(member.role)}
+                        </span>
+                        {member.farmerProfile?.farmName && (
+                          <span className="truncate">· {member.farmerProfile.farmName}</span>
+                        )}
                       </div>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-stone-400 shrink-0" />
-                  </button>
-                ))
-              )}
-            </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-[#0B3D2B]/45 shrink-0" />
+                </button>
+              ))
+            )}
           </div>
         </div>
-      )}
+      </LiquidGlassModal>
     </div>
   );
 };

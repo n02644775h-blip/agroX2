@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { isSellerRole } from '../types';
 import {
-  Sprout,
   ShoppingBag,
   MessageSquare,
   Bell,
@@ -18,7 +18,6 @@ import {
   FileText,
   LogOut,
   MapPin,
-  Smartphone,
   Megaphone,
   Settings,
   Search,
@@ -33,7 +32,6 @@ interface NavbarProps {
   onOpenAddProduct?: () => void;
   onOpenNotifications?: () => void;
   onOpenCart?: () => void;
-  onOpenInstallApp?: () => void;
   onOpenSettings?: () => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
@@ -48,24 +46,33 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddProduct,
   onOpenNotifications,
   onOpenCart,
-  onOpenInstallApp,
   onOpenSettings,
   searchQuery = '',
   onSearchChange,
   onSearchSubmit,
   onScrollToSection
 }) => {
+  const prefersReducedMotion = useReducedMotion();
   const { user, logout, unreadNotifsCount, unreadMessagesCount } = useAuth();
   const { totalItems, openCart } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [localSearch, setLocalSearch] = useState(searchQuery);
+  const [activeAnchor, setActiveAnchor] = useState<string>('marketplace');
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setLocalSearch(searchQuery);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (currentView !== 'marketplace') {
+      setActiveAnchor(currentView);
+    } else if (!['community', 'requests'].includes(activeAnchor)) {
+      setActiveAnchor('marketplace');
+    }
+  }, [currentView]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -78,12 +85,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   }, []);
 
   const handleNav = (view: string, data?: any) => {
+    setActiveAnchor(view);
     onNavigate(view, data);
     setMobileMenuOpen(false);
     setUserDropdownOpen(false);
   };
 
-  const handleSectionLink = (sectionId: string) => {
+  const handleSectionLink = (sectionId: string, anchorKey: string) => {
+    setActiveAnchor(anchorKey);
     setMobileMenuOpen(false);
     setUserDropdownOpen(false);
     if (onScrollToSection) {
@@ -100,7 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     if (onSearchSubmit) {
       onSearchSubmit(trimmed);
     } else {
-      handleSectionLink('fresh-from-farmers');
+      handleSectionLink('fresh-from-farmers', 'marketplace');
     }
     setMobileSearchOpen(false);
     setMobileMenuOpen(false);
@@ -114,74 +123,101 @@ export const Navbar: React.FC<NavbarProps> = ({
     return 'Buyer';
   };
 
+  const renderNavPill = (isActive: boolean) =>
+    isActive ? (
+      <motion.span
+        layoutId={prefersReducedMotion ? undefined : 'navbar-liquid-pill'}
+        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+        className="absolute inset-0 rounded-full bg-linear-to-r from-[#A8E635]/95 via-[#7AC92D]/95 to-[#145A38] border border-white/55 shadow-sm shadow-[#A8E635]/30"
+      />
+    ) : null;
+
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E8EEE8]">
+    <header className="sticky top-0 z-40 bg-[#062B1F]/86 backdrop-blur-2xl border-b border-white/15 shadow-[0_12px_32px_-14px_rgba(6,43,31,0.65)] text-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3 lg:gap-6">
+        <div className="flex items-center justify-between h-16 gap-3 lg:gap-5">
           {/* Left: FarmBridge Brand Mark */}
-          <div className="flex items-center gap-6 shrink-0">
+          <div className="flex items-center gap-4 lg:gap-6 shrink-0">
             <button
               id="navbar-brand-logo"
               onClick={() => handleNav('marketplace')}
-              className="flex items-center gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#174B35] rounded-lg"
+              className="flex items-center gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] rounded-xl cursor-pointer"
             >
-              <div className="w-9 h-9 bg-[#174B35] rounded-xl flex items-center justify-center text-white transition-colors group-hover:bg-[#123c2a]">
-                <Sprout className="w-5 h-5" />
+              <div className="w-9 h-9 flex items-center justify-center transition-transform group-hover:scale-105 shrink-0">
+                <img
+                  src="/assets/farmbridge-logo-white.png"
+                  alt="FarmBridge logo"
+                  className="w-full h-full object-contain drop-shadow-sm"
+                />
               </div>
               <div className="leading-none">
-                <span className="text-lg font-bold tracking-tight text-[#202B24] block">
-                  FarmBridge
+                <span className="text-lg font-extrabold tracking-tight text-white block">
+                  FarmBridge<span className="text-[#A8E635]">.</span>
                 </span>
-                <span className="text-[10px] font-medium text-[#77A987] tracking-wide hidden sm:block">
+                <span className="text-[10px] font-medium text-[#DFF4E4]/75 tracking-wide hidden sm:block">
                   Direct Agricultural Market
                 </span>
               </div>
             </button>
 
-            {/* Primary Navigation Links */}
+            {/* Primary Translucent Pill Navigation */}
             <nav
               aria-label="Main navigation"
-              className="hidden md:flex items-center gap-1 text-[13px] font-medium text-[#202B24]/75"
+              className="hidden md:flex items-center gap-1 p-1 rounded-full bg-white/8 border border-white/12 text-[13px] font-medium"
             >
               <button
                 id="nav-marketplace-btn"
                 onClick={() => handleNav('marketplace')}
-                className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
-                  currentView === 'marketplace'
-                    ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
-                    : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  currentView === 'marketplace' && activeAnchor === 'marketplace'
+                    ? 'text-[#062B1F] font-bold'
+                    : 'text-[#DFF4E4]/85 hover:text-white'
                 }`}
               >
-                Marketplace
+                {renderNavPill(currentView === 'marketplace' && activeAnchor === 'marketplace')}
+                <span className="relative z-10">Marketplace</span>
               </button>
 
               <button
                 id="nav-community-btn"
-                onClick={() => handleSectionLink('farmbridge-community-section')}
-                className="px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 hover:text-[#174B35] hover:bg-[#F8FAF7]"
+                onClick={() => handleSectionLink('farmbridge-community-section', 'community')}
+                className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  currentView === 'marketplace' && activeAnchor === 'community'
+                    ? 'text-[#062B1F] font-bold'
+                    : 'text-[#DFF4E4]/85 hover:text-white'
+                }`}
               >
-                Community
+                {renderNavPill(currentView === 'marketplace' && activeAnchor === 'community')}
+                <span className="relative z-10">Community</span>
               </button>
 
               <button
                 id="nav-buyer-requests-btn"
-                onClick={() => handleSectionLink('buyer-requests-section')}
-                className="px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 hover:text-[#174B35] hover:bg-[#F8FAF7]"
+                onClick={() => handleSectionLink('buyer-requests-section', 'requests')}
+                className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  currentView === 'marketplace' && activeAnchor === 'requests'
+                    ? 'text-[#062B1F] font-bold'
+                    : 'text-[#DFF4E4]/85 hover:text-white'
+                }`}
               >
-                Buyer Requests
+                {renderNavPill(currentView === 'marketplace' && activeAnchor === 'requests')}
+                <span className="relative z-10">Buyer Requests</span>
               </button>
 
               {isSellerRole(user?.role) && (
                 <button
                   id="nav-farmer-portal-btn"
                   onClick={() => handleNav('farmer_dashboard')}
-                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                  className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     currentView === 'farmer_dashboard' || currentView === 'farm_profile'
-                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
-                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                      ? 'text-[#062B1F] font-bold'
+                      : 'text-[#DFF4E4]/85 hover:text-white'
                   }`}
                 >
-                  {user?.role === 'fodder_supplier' ? 'Supplier Hub' : 'Farmer Hub'}
+                  {renderNavPill(currentView === 'farmer_dashboard' || currentView === 'farm_profile')}
+                  <span className="relative z-10">
+                    {user?.role === 'fodder_supplier' ? 'Supplier Hub' : 'Farmer Hub'}
+                  </span>
                 </button>
               )}
 
@@ -189,13 +225,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   id="nav-buyer-hub-btn"
                   onClick={() => handleNav('buyer_dashboard')}
-                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                  className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     currentView === 'buyer_dashboard'
-                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
-                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                      ? 'text-[#062B1F] font-bold'
+                      : 'text-[#DFF4E4]/85 hover:text-white'
                   }`}
                 >
-                  Buyer Hub
+                  {renderNavPill(currentView === 'buyer_dashboard')}
+                  <span className="relative z-10">Buyer Hub</span>
                 </button>
               )}
 
@@ -203,13 +240,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   id="nav-admin-portal-btn"
                   onClick={() => handleNav('admin')}
-                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                  className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     currentView === 'admin'
-                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
-                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                      ? 'text-[#062B1F] font-bold'
+                      : 'text-[#DFF4E4]/85 hover:text-white'
                   }`}
                 >
-                  Admin
+                  {renderNavPill(currentView === 'admin')}
+                  <span className="relative z-10">Admin</span>
                 </button>
               )}
 
@@ -217,24 +255,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   id="nav-orders-btn"
                   onClick={() => handleNav('orders')}
-                  className={`px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 ${
+                  className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     currentView === 'orders'
-                      ? 'text-[#174B35] font-semibold bg-[#F8FAF7]'
-                      : 'hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                      ? 'text-[#062B1F] font-bold'
+                      : 'text-[#DFF4E4]/85 hover:text-white'
                   }`}
                 >
-                  Orders
+                  {renderNavPill(currentView === 'orders')}
+                  <span className="relative z-10">Orders</span>
                 </button>
               )}
             </nav>
           </div>
 
-          {/* Center-Right: Compact Desktop Search */}
+          {/* Center-Right: Frosted Glass Search Input */}
           <form
             onSubmit={handleSearchFormSubmit}
             className="hidden xl:flex items-center flex-1 max-w-xs relative"
           >
-            <Search className="w-4 h-4 text-[#202B24]/45 absolute left-3 pointer-events-none" />
+            <Search className="w-4 h-4 text-[#DFF4E4]/65 absolute left-3.5 pointer-events-none" />
             <input
               type="text"
               value={localSearch}
@@ -244,7 +283,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               placeholder="Search produce, farms..."
               aria-label="Search marketplace"
-              className="w-full pl-9 pr-8 py-1.5 text-xs bg-[#F8FAF7] border border-[#E8EEE8] rounded-xl text-[#202B24] placeholder:text-[#202B24]/45 focus:outline-none focus:bg-white focus:border-[#77A987] transition-colors"
+              className="w-full pl-9 pr-8 py-1.5 text-xs bg-white/10 border border-white/20 rounded-full text-white placeholder:text-[#DFF4E4]/55 focus:outline-none focus:bg-white/18 focus:border-[#A8E635] transition-all backdrop-blur-md"
             />
             {localSearch && (
               <button
@@ -255,62 +294,58 @@ export const Navbar: React.FC<NavbarProps> = ({
                   if (onSearchSubmit) onSearchSubmit('');
                 }}
                 aria-label="Clear search"
-                className="absolute right-2.5 text-[#202B24]/45 hover:text-[#202B24]"
+                className="absolute right-3 text-[#DFF4E4]/60 hover:text-white cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </form>
 
-          {/* Right Action Controls (Essential shopping tools always accessible on desktop & mobile) */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            {/* Mobile & Compact Search Toggle */}
+          {/* Right Action Controls */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               id="navbar-search-toggle"
               onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-              className="xl:hidden p-2 rounded-xl text-[#202B24]/75 hover:text-[#174B35] hover:bg-[#F8FAF7] transition-colors"
+              className="xl:hidden p-2 rounded-full text-[#DFF4E4]/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer"
               title="Search produce"
               aria-label="Search produce"
             >
               <Search className="w-5 h-5" />
             </button>
 
-            {/* Seller Quick Add */}
             {isSellerRole(user?.role) && onOpenAddProduct && (
               <button
                 id="navbar-add-product-btn"
                 onClick={onOpenAddProduct}
-                className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#174B35] hover:bg-[#123c2a] text-white text-xs font-semibold rounded-xl transition-colors whitespace-nowrap shrink-0"
+                className="hidden lg:inline-flex items-center gap-1.5 px-3.5 py-1.5 lg-cta-lime text-[#062B1F] text-xs font-bold rounded-full transition-all whitespace-nowrap shrink-0 cursor-pointer"
               >
                 <PlusCircle className="w-3.5 h-3.5" />
                 <span>{user?.role === 'fodder_supplier' ? 'Add Fodder' : 'List Produce'}</span>
               </button>
             )}
 
-            {/* Direct Messages */}
             {user && (
               <button
                 id="navbar-messages-btn"
                 onClick={() => handleNav('messages', { channel: 'direct' })}
-                className={`relative p-2 rounded-xl transition-colors ${
+                className={`relative p-2 rounded-full transition-colors cursor-pointer ${
                   currentView === 'messages'
-                    ? 'bg-[#F8FAF7] text-[#174B35]'
-                    : 'text-[#202B24]/75 hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                    ? 'bg-[#A8E635]/20 text-[#A8E635]'
+                    : 'text-[#DFF4E4]/85 hover:text-white hover:bg-white/12'
                 }`}
                 title="Messages"
                 aria-label="Messages"
               >
                 <MessageSquare className="w-5 h-5" />
                 {unreadMessagesCount > 0 && (
-                  <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#174B35] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                  <span className="absolute top-0 right-0 min-w-4 h-4 px-1 rounded-full bg-[#A8E635] text-[#062B1F] text-[10px] font-extrabold flex items-center justify-center tabular-nums">
                     {unreadMessagesCount}
                   </span>
                 )}
               </button>
             )}
 
-            {/* Notifications */}
             {user && (
               <button
                 id="navbar-notifications-btn"
@@ -321,24 +356,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                     handleNav('notifications');
                   }
                 }}
-                className={`relative p-2 rounded-xl transition-colors ${
+                className={`relative p-2 rounded-full transition-colors cursor-pointer ${
                   currentView === 'notifications'
-                    ? 'bg-[#F8FAF7] text-[#174B35]'
-                    : 'text-[#202B24]/75 hover:text-[#174B35] hover:bg-[#F8FAF7]'
+                    ? 'bg-[#A8E635]/20 text-[#A8E635]'
+                    : 'text-[#DFF4E4]/85 hover:text-white hover:bg-white/12'
                 }`}
                 title="Notifications"
                 aria-label="Notifications"
               >
                 <Bell className="w-5 h-5" />
                 {unreadNotifsCount > 0 && (
-                  <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                  <span className="absolute top-0 right-0 min-w-4 h-4 px-1 rounded-full bg-[#F4D35E] text-[#062B1F] text-[10px] font-extrabold flex items-center justify-center tabular-nums">
                     {unreadNotifsCount}
                   </span>
                 )}
               </button>
             )}
 
-            {/* Shopping Cart (Always visible on mobile and desktop) */}
             <button
               id="navbar-cart-btn"
               onClick={() => {
@@ -348,29 +382,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                   openCart();
                 }
               }}
-              className="relative p-2 rounded-xl text-[#202B24]/80 hover:text-[#174B35] hover:bg-[#F8FAF7] transition-colors"
+              className="relative p-2 rounded-full bg-white/10 hover:bg-white/18 border border-white/15 text-white transition-colors cursor-pointer"
               title="Shopping Cart"
               aria-label={`Shopping Cart (${totalItems} items)`}
             >
               <ShoppingBag className="w-5 h-5" />
               {totalItems > 0 && (
-                <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#174B35] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#A8E635] text-[#062B1F] text-[10px] font-extrabold flex items-center justify-center tabular-nums shadow-xs">
                   {totalItems}
                 </span>
               )}
             </button>
 
-            {/* Account / Auth Menu */}
             {user ? (
-              <div ref={dropdownRef} className="relative pl-1.5 sm:pl-2.5 border-l border-[#E8EEE8]">
+              <div ref={dropdownRef} className="relative pl-1.5 sm:pl-2.5 border-l border-white/15">
                 <button
                   id="navbar-user-menu-btn"
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2 p-1 rounded-xl hover:bg-[#F8FAF7] transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#174B35]"
+                  className="flex items-center gap-2 p-1 pr-2 rounded-full bg-white/8 hover:bg-white/15 border border-white/15 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] cursor-pointer"
                   aria-label="User account menu"
                   aria-expanded={userDropdownOpen}
                 >
-                  <div className="w-8 h-8 rounded-full bg-[#F8FAF7] border border-[#E8EEE8] overflow-hidden flex items-center justify-center shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-[#145A38] border border-[#A8E635]/60 overflow-hidden flex items-center justify-center shrink-0">
                     {user.avatar ? (
                       <img
                         src={user.avatar}
@@ -379,27 +412,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <span className="font-bold text-[#174B35] text-xs">
+                      <span className="font-bold text-[#A8E635] text-xs">
                         {user.name.slice(0, 2).toUpperCase()}
                       </span>
                     )}
                   </div>
-                  <div className="hidden sm:block text-left leading-tight max-w-[110px]">
-                    <p className="text-xs font-semibold text-[#202B24] truncate">{user.name}</p>
-                    <p className="text-[11px] text-[#77A987] font-medium truncate">{getRoleLabel()}</p>
+                  <div className="hidden sm:block text-left leading-tight max-w-[115px]">
+                    <p className="text-xs font-bold text-white truncate">{user.name}</p>
+                    <p className="text-[10px] text-[#A8E635] font-semibold truncate">{getRoleLabel()}</p>
                   </div>
-                  <ChevronDown className="w-3.5 h-3.5 text-[#202B24]/45 hidden sm:block" />
+                  <ChevronDown className="w-3.5 h-3.5 text-[#DFF4E4]/70 hidden sm:block" />
                 </button>
 
                 {userDropdownOpen && (
                   <div
                     id="user-dropdown-menu"
-                    className="absolute right-0 mt-2 w-60 bg-white rounded-2xl shadow-lg border border-[#E8EEE8] py-2 z-50"
+                    className="absolute right-0 mt-2.5 w-64 lg-glass-dark rounded-2xl py-2 z-50 text-white"
                   >
-                    <div className="px-4 py-2.5 border-b border-[#E8EEE8]">
-                      <div className="font-semibold text-[#202B24] text-xs truncate">{user.name}</div>
-                      <div className="text-[11px] text-[#202B24]/60 truncate">{user.email}</div>
-                      <div className="text-[11px] text-[#174B35] font-medium mt-1 flex items-center gap-1">
+                    <div className="px-4 py-2.5 border-b border-white/12">
+                      <div className="font-bold text-white text-xs truncate">{user.name}</div>
+                      <div className="text-[11px] text-[#DFF4E4]/65 truncate">{user.email}</div>
+                      <div className="text-[11px] text-[#A8E635] font-semibold mt-1 flex items-center gap-1">
                         <MapPin className="w-3 h-3 shrink-0" />
                         <span className="truncate">
                           {user.location.city}, {user.location.province}
@@ -411,9 +444,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {isSellerRole(user.role) && (
                         <button
                           onClick={() => handleNav('farmer_dashboard')}
-                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                          className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
                         >
-                          <LayoutDashboard className="w-4 h-4 text-[#174B35]" />
+                          <LayoutDashboard className="w-4 h-4 text-[#A8E635]" />
                           {user.role === 'fodder_supplier' ? 'Fodder Supplier Portal' : 'Farmer Portal'}
                         </button>
                       )}
@@ -421,9 +454,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {user.role === 'buyer' && (
                         <button
                           onClick={() => handleNav('buyer_dashboard')}
-                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                          className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
                         >
-                          <LayoutDashboard className="w-4 h-4 text-[#174B35]" />
+                          <LayoutDashboard className="w-4 h-4 text-[#A8E635]" />
                           Buyer Hub
                         </button>
                       )}
@@ -431,36 +464,36 @@ export const Navbar: React.FC<NavbarProps> = ({
                       {user.role === 'admin' && (
                         <button
                           onClick={() => handleNav('admin')}
-                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                          className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
                         >
-                          <ShieldCheck className="w-4 h-4 text-[#174B35]" />
+                          <ShieldCheck className="w-4 h-4 text-[#A8E635]" />
                           Admin Portal
                         </button>
                       )}
 
                       <button
                         onClick={() => handleNav('orders')}
-                        className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium cursor-pointer"
                       >
-                        <FileText className="w-4 h-4 text-[#202B24]/60" />
+                        <FileText className="w-4 h-4 text-[#DFF4E4]/70" />
                         Orders & History
                       </button>
 
                       {user.role === 'buyer' && (
                         <button
                           onClick={() => handleNav('favorites')}
-                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                          className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium cursor-pointer"
                         >
-                          <Heart className="w-4 h-4 text-[#202B24]/60" />
+                          <Heart className="w-4 h-4 text-[#DFF4E4]/70" />
                           Saved Produce
                         </button>
                       )}
 
                       <button
                         onClick={() => handleNav('messages', { channel: 'announcements' })}
-                        className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                        className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium cursor-pointer"
                       >
-                        <Megaphone className="w-4 h-4 text-[#202B24]/60" />
+                        <Megaphone className="w-4 h-4 text-[#DFF4E4]/70" />
                         Announcements
                       </button>
 
@@ -471,35 +504,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                             setUserDropdownOpen(false);
                             onOpenSettings();
                           }}
-                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
+                          className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium cursor-pointer"
                         >
-                          <Settings className="w-4 h-4 text-[#202B24]/60" />
+                          <Settings className="w-4 h-4 text-[#DFF4E4]/70" />
                           User Settings
                         </button>
                       )}
 
-                      {onOpenInstallApp && (
-                        <button
-                          onClick={() => {
-                            setUserDropdownOpen(false);
-                            onOpenInstallApp();
-                          }}
-                          className="w-full text-left px-4 py-2 text-xs text-[#202B24] hover:bg-[#F8FAF7] flex items-center gap-2.5 font-medium"
-                        >
-                          <Smartphone className="w-4 h-4 text-[#202B24]/60" />
-                          Android App
-                        </button>
-                      )}
                     </div>
 
-                    <div className="border-t border-[#E8EEE8] mt-1 pt-1">
+                    <div className="border-t border-white/12 mt-1 pt-1">
                       <button
                         id="navbar-logout-btn"
                         onClick={() => {
                           logout();
                           setUserDropdownOpen(false);
                         }}
-                        className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 font-semibold"
+                        className="w-full text-left px-4 py-2 text-xs text-rose-300 hover:bg-rose-500/20 flex items-center gap-2.5 font-bold cursor-pointer"
                       >
                         <LogOut className="w-4 h-4" />
                         Sign Out
@@ -509,29 +530,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-1.5 pl-1.5 sm:pl-2.5 border-l border-[#E8EEE8]">
+              <div className="flex items-center gap-2 pl-1.5 sm:pl-2.5 border-l border-white/15">
                 <button
                   id="navbar-login-btn"
                   onClick={() => onOpenAuth('login')}
-                  className="px-3 py-1.5 text-xs font-semibold text-[#202B24] hover:text-[#174B35] rounded-xl hover:bg-[#F8FAF7] transition-colors whitespace-nowrap"
+                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/25 rounded-full transition-colors whitespace-nowrap cursor-pointer"
                 >
                   Log In
                 </button>
                 <button
                   id="navbar-register-btn"
                   onClick={() => onOpenAuth('register')}
-                  className="hidden sm:inline-flex px-3.5 py-1.5 text-xs font-semibold text-white bg-[#174B35] hover:bg-[#123c2a] rounded-xl transition-colors whitespace-nowrap"
+                  className="hidden sm:inline-flex px-4 py-1.5 text-xs font-bold lg-cta-lime text-[#062B1F] rounded-full transition-all whitespace-nowrap cursor-pointer"
                 >
-                  Register
+                  Get Started
                 </button>
               </div>
             )}
 
-            {/* Mobile Menu Toggle */}
             <button
               id="navbar-mobile-toggle"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-xl text-[#202B24]/75 hover:bg-[#F8FAF7] md:hidden"
+              className="p-2 rounded-full text-[#DFF4E4] hover:bg-white/12 md:hidden cursor-pointer"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -539,14 +559,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Expandable Search Bar (Mobile / Tablet / Compact Desktop) */}
+        {/* Expandable Search Bar (Mobile / Tablet) */}
         {mobileSearchOpen && (
           <form
             onSubmit={handleSearchFormSubmit}
-            className="xl:hidden pb-3 pt-1 border-t border-[#E8EEE8] flex items-center gap-2"
+            className="xl:hidden pb-3 pt-2 border-t border-white/12 flex items-center gap-2"
           >
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-[#202B24]/45 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-[#DFF4E4]/60 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 autoFocus
@@ -556,12 +576,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                   if (onSearchChange) onSearchChange(e.target.value);
                 }}
                 placeholder="Search fresh produce, fodder, or farms..."
-                className="w-full pl-9 pr-3 py-2 text-xs bg-[#F8FAF7] border border-[#E8EEE8] rounded-xl text-[#202B24] focus:outline-none focus:bg-white focus:border-[#77A987]"
+                className="w-full pl-9 pr-3 py-2 text-xs bg-white/12 border border-white/20 rounded-full text-white placeholder:text-[#DFF4E4]/55 focus:outline-none focus:border-[#A8E635]"
               />
             </div>
             <button
               type="submit"
-              className="px-4 py-2 bg-[#174B35] text-white text-xs font-semibold rounded-xl shrink-0"
+              className="px-4 py-2 lg-cta-lime text-[#062B1F] text-xs font-bold rounded-full shrink-0 cursor-pointer"
             >
               Search
             </button>
@@ -569,59 +589,59 @@ export const Navbar: React.FC<NavbarProps> = ({
         )}
       </div>
 
-      {/* Mobile Navigation Drawer */}
+      {/* Mobile Liquid Glass Navigation Drawer */}
       {mobileMenuOpen && (
         <div
           id="mobile-menu-drawer"
-          className="md:hidden border-t border-[#E8EEE8] bg-white px-4 pt-3 pb-6 space-y-3"
+          className="md:hidden border-t border-white/15 bg-[#062B1F]/95 backdrop-blur-2xl px-4 pt-3 pb-6 space-y-3"
         >
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => handleNav('marketplace')}
-              className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] hover:border-[#77A987] border border-[#E8EEE8] font-semibold text-left"
+              className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
             >
-              <Store className="w-4 h-4 text-[#174B35] shrink-0" />
+              <Store className="w-4 h-4 text-[#A8E635] shrink-0" />
               <span>Marketplace</span>
             </button>
 
             <button
-              onClick={() => handleSectionLink('farmbridge-community-section')}
-              className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+              onClick={() => handleSectionLink('farmbridge-community-section', 'community')}
+              className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
             >
-              <Users className="w-4 h-4 text-[#174B35] shrink-0" />
+              <Users className="w-4 h-4 text-[#A8E635] shrink-0" />
               <span>Community</span>
             </button>
 
             <button
-              onClick={() => handleSectionLink('buyer-requests-section')}
-              className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+              onClick={() => handleSectionLink('buyer-requests-section', 'requests')}
+              className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
             >
-              <ClipboardList className="w-4 h-4 text-[#174B35] shrink-0" />
+              <ClipboardList className="w-4 h-4 text-[#A8E635] shrink-0" />
               <span>Buyer Requests</span>
             </button>
 
             {isSellerRole(user?.role) ? (
               <button
                 onClick={() => handleNav('farmer_dashboard')}
-                className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+                className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
               >
-                <LayoutDashboard className="w-4 h-4 text-[#174B35] shrink-0" />
+                <LayoutDashboard className="w-4 h-4 text-[#A8E635] shrink-0" />
                 <span>{user?.role === 'fodder_supplier' ? 'Supplier Hub' : 'Farmer Hub'}</span>
               </button>
             ) : user?.role === 'admin' ? (
               <button
                 onClick={() => handleNav('admin')}
-                className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+                className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
               >
-                <ShieldCheck className="w-4 h-4 text-[#174B35] shrink-0" />
+                <ShieldCheck className="w-4 h-4 text-[#A8E635] shrink-0" />
                 <span>Admin Portal</span>
               </button>
             ) : (
               <button
                 onClick={() => (user ? handleNav('buyer_dashboard') : onOpenAuth('login'))}
-                className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+                className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
               >
-                <LayoutDashboard className="w-4 h-4 text-[#174B35] shrink-0" />
+                <LayoutDashboard className="w-4 h-4 text-[#A8E635] shrink-0" />
                 <span>Buyer Hub</span>
               </button>
             )}
@@ -630,17 +650,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <>
                 <button
                   onClick={() => handleNav('orders')}
-                  className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+                  className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
                 >
-                  <FileText className="w-4 h-4 text-[#174B35] shrink-0" />
+                  <FileText className="w-4 h-4 text-[#A8E635] shrink-0" />
                   <span>Orders</span>
                 </button>
 
                 <button
                   onClick={() => handleNav('messages', { channel: 'direct' })}
-                  className="flex items-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold text-left"
+                  className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
                 >
-                  <MessageSquare className="w-4 h-4 text-[#174B35] shrink-0" />
+                  <MessageSquare className="w-4 h-4 text-[#A8E635] shrink-0" />
                   <span>Messages</span>
                 </button>
               </>
@@ -653,7 +673,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setMobileMenuOpen(false);
                 onOpenAuth('register');
               }}
-              className="w-full py-2.5 rounded-xl bg-[#174B35] text-white text-xs font-semibold"
+              className="w-full py-2.5 rounded-2xl lg-cta-lime text-[#062B1F] text-xs font-extrabold"
             >
               Create Account
             </button>
@@ -665,9 +685,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setMobileMenuOpen(false);
                 onOpenSettings();
               }}
-              className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl text-xs text-[#202B24] bg-[#F8FAF7] border border-[#E8EEE8] font-semibold"
+              className="w-full flex items-center justify-center gap-2 p-2.5 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold"
             >
-              <Settings className="w-4 h-4 text-[#202B24]/65" />
+              <Settings className="w-4 h-4 text-[#A8E635]" />
               <span>User Settings</span>
             </button>
           )}

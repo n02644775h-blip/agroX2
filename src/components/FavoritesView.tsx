@@ -3,7 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Product } from '../types';
 import { ProductCard } from './ProductCard';
-import { Heart, ArrowLeft, ShoppingBag } from 'lucide-react';
+import { LiquidGlassCard, LiquidGlassButton } from './glass';
+import { Heart, ArrowLeft } from 'lucide-react';
 
 interface FavoritesViewProps {
   onBack: () => void;
@@ -26,38 +27,38 @@ export const FavoritesView: React.FC<FavoritesViewProps> = ({ onBack, onSelectPr
 
   return (
     <div className="space-y-8 pb-16">
-      <div className="flex items-center justify-between">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-stone-900 bg-white border border-stone-200 px-3 py-1.5 rounded-xl shadow-2xs hover:bg-stone-50 transition-colors"
-        >
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <LiquidGlassButton variant="light" size="xs" onClick={onBack}>
           <ArrowLeft className="w-4 h-4" />
           Back
-        </button>
+        </LiquidGlassButton>
 
-        <div className="flex items-center gap-2">
-          <Heart className="w-5 h-5 text-rose-500 fill-current" />
-          <h1 className="text-xl font-bold text-stone-900">Your Saved Favorites</h1>
-          <span className="text-xs font-semibold text-stone-500">({favoriteProducts.length} items)</span>
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-2xl bg-rose-500/15 text-rose-600 flex items-center justify-center">
+            <Heart className="w-5 h-5 fill-current" />
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-[#062B1F]">Your Saved Favorites</h1>
+            <span className="text-xs font-semibold text-[#145A38] tabular-nums">
+              {favoriteProducts.length} saved items
+            </span>
+          </div>
         </div>
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-xs text-stone-400">Loading saved items...</div>
+        <div className="py-16 text-center text-xs text-[#0B261C]/55">Loading saved items...</div>
       ) : favoriteProducts.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 space-y-3">
-          <Heart className="w-12 h-12 text-stone-300 mx-auto" />
-          <h3 className="font-bold text-stone-900 text-base">No saved products yet</h3>
-          <p className="text-xs text-stone-500 max-w-sm mx-auto">
-            Click the heart icon on any fresh farm listing in the marketplace to save it for quick weekly reordering.
+        <LiquidGlassCard variant="mint" className="p-12 text-center space-y-4">
+          <Heart className="w-12 h-12 text-[#145A38]/40 mx-auto" />
+          <h3 className="font-extrabold text-[#062B1F] text-base">No saved products yet</h3>
+          <p className="text-xs text-[#0B261C]/65 max-w-sm mx-auto">
+            Tap the heart icon on any fresh farm listing in the marketplace to save it for quick weekly reordering.
           </p>
-          <button
-            onClick={onBack}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl"
-          >
+          <LiquidGlassButton variant="emerald" size="sm" onClick={onBack}>
             Browse Marketplace
-          </button>
-        </div>
+          </LiquidGlassButton>
+        </LiquidGlassCard>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {favoriteProducts.map(product => (

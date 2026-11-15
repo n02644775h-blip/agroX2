@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { isSellerRole } from '../types';
+import { LiquidGlassModal, LiquidGlassButton } from './glass';
 import {
   AlertTriangle,
-  X,
   Lock,
   ShieldAlert,
   Loader2,
@@ -29,7 +29,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   const [confirmPhrase, setConfirmPhrase] = useState('');
   const [password, setPassword] = useState('');
 
-  // Recent auth OTP verification for users signed in via Firestore/OTP fallback (where auth.currentUser is null)
+  // Recent auth OTP verification for users signed in via Firestore/OTP fallback
   const needsPasswordReauth = Boolean(currentUser && currentUser.email);
   const [otpChannel, setOtpChannel] = useState<'email' | 'phone'>(
     user?.phone && user.verificationMethod === 'phone' ? 'phone' : 'email'
@@ -43,7 +43,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  if (!isOpen || !user) return null;
+  if (!user) return null;
 
   const isSeller = isSellerRole(user.role);
   const targetAddress =
@@ -136,42 +136,22 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
-      onClick={() => !submitting && onClose()}
+    <LiquidGlassModal
+      isOpen={isOpen}
+      onClose={() => !submitting && onClose()}
+      title="Delete Account Permanently"
+      subtitle="This action cannot be undone"
+      icon={<ShieldAlert className="w-5 h-5 text-rose-300" />}
+      maxWidthClass="max-w-md"
     >
-      <div
-        className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-stone-200 space-y-5 max-h-[92vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center shrink-0">
-              <ShieldAlert className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <h2 className="font-bold text-stone-900 text-base">Delete Account Permanently</h2>
-              <p className="text-[11px] text-stone-500">This action cannot be undone</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            disabled={submitting}
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700"
-            aria-label="Close delete account modal"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
+      <div className="p-6 space-y-5">
         {/* Warning Box */}
-        <div className="p-4 rounded-2xl bg-red-50/80 border border-red-200 space-y-2 text-xs text-red-900">
-          <div className="font-bold flex items-center gap-1.5">
-            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 space-y-2 text-xs text-rose-950">
+          <div className="font-bold flex items-center gap-1.5 text-rose-800">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>Permanent Deletion Warning</span>
           </div>
-          <ul className="list-disc pl-4 space-y-1 text-[11px] leading-relaxed text-red-800">
+          <ul className="list-disc pl-4 space-y-1 text-[11px] leading-relaxed text-rose-900">
             <li>
               Your FarmBridge profile, login credentials, personal contact details, and saved favorites will be permanently deleted.
             </li>
@@ -187,36 +167,36 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
         </div>
 
         {errorMsg && (
-          <div className="p-3 rounded-xl bg-red-50 border border-red-300 text-red-800 text-xs font-semibold">
+          <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-900 text-xs font-semibold">
             {errorMsg}
           </div>
         )}
 
         <form onSubmit={handleConfirmDelete} className="space-y-4 text-xs">
           {/* Step 1: Acknowledgement */}
-          <label className="flex items-start gap-2.5 p-3 rounded-xl bg-stone-50 border border-stone-200 cursor-pointer">
+          <label className="flex items-start gap-2.5 p-3 rounded-xl bg-white/75 border border-[#062B1F]/12 cursor-pointer">
             <input
               type="checkbox"
               checked={understoodWarning}
               onChange={(e) => setUnderstoodWarning(e.target.checked)}
-              className="mt-0.5 rounded border-stone-300 text-red-600 focus:ring-red-500"
+              className="mt-0.5 rounded border-[#062B1F]/25 text-rose-600 focus:ring-rose-500"
             />
-            <span className="text-stone-700 leading-snug">
+            <span className="text-[#062B1F] leading-snug">
               I understand that deleting <strong>{user.email}</strong> is permanent and my profile and associated content cannot be recovered.
             </span>
           </label>
 
           {/* Step 2: Explicit DELETE confirmation */}
           <div>
-            <label className="font-bold text-stone-700 block mb-1">
-              Type <span className="font-mono text-red-700">DELETE</span> to confirm
+            <label className="font-bold text-[#062B1F] block mb-1">
+              Type <span className="font-mono text-rose-700">DELETE</span> to confirm
             </label>
             <input
               type="text"
               value={confirmPhrase}
               onChange={(e) => setConfirmPhrase(e.target.value)}
               placeholder="DELETE"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 font-mono text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-rose-500/25"
               autoComplete="off"
             />
           </div>
@@ -224,8 +204,8 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
           {/* Step 3: Recent authentication */}
           {needsPasswordReauth ? (
             <div>
-              <label className="font-bold text-stone-700 block mb-1 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-stone-500" />
+              <label className="font-bold text-[#062B1F] mb-1 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-[#0B3D2B]/65" />
                 <span>Re-enter Current Password (Recent Login Check)</span>
               </label>
               <input
@@ -233,19 +213,19 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your account password"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-rose-500/25"
                 autoComplete="current-password"
               />
             </div>
           ) : (
-            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-2.5">
-              <div className="font-bold text-stone-800 flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl bg-white/70 border border-[#062B1F]/12 space-y-2.5">
+              <div className="font-bold text-[#062B1F] flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-stone-500" />
+                  <Lock className="w-3.5 h-3.5 text-[#0B3D2B]/65" />
                   Identity Verification Required
                 </span>
                 {otpVerified && (
-                  <span className="inline-flex items-center gap-1 text-emerald-700 font-bold text-[11px]">
+                  <span className="inline-flex items-center gap-1 text-[#145A38] font-bold text-[11px]">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Verified
                   </span>
@@ -262,14 +242,14 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                         setOtpSent(false);
                         setSandboxHint('');
                       }}
-                      className={`flex-1 py-1.5 px-2.5 rounded-lg border text-[11px] font-semibold flex items-center justify-center gap-1 ${
+                      className={`flex-1 py-1.5 px-2.5 rounded-xl border text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer ${
                         otpChannel === 'email'
-                          ? 'bg-stone-900 text-white border-stone-900'
-                          : 'bg-white text-stone-600 border-stone-200'
+                          ? 'bg-[#062B1F] text-white border-[#062B1F]'
+                          : 'bg-white text-[#0B3D2B] border-[#062B1F]/15'
                       }`}
                     >
                       <Mail className="w-3 h-3" />
-                      Email
+                      <span>Email</span>
                     </button>
                     {user.phone && (
                       <button
@@ -279,34 +259,34 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                           setOtpSent(false);
                           setSandboxHint('');
                         }}
-                        className={`flex-1 py-1.5 px-2.5 rounded-lg border text-[11px] font-semibold flex items-center justify-center gap-1 ${
+                        className={`flex-1 py-1.5 px-2.5 rounded-xl border text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer ${
                           otpChannel === 'phone'
-                            ? 'bg-stone-900 text-white border-stone-900'
-                            : 'bg-white text-stone-600 border-stone-200'
+                            ? 'bg-[#062B1F] text-white border-[#062B1F]'
+                            : 'bg-white text-[#0B3D2B] border-[#062B1F]/15'
                         }`}
                       >
                         <Smartphone className="w-3 h-3" />
-                        SMS Phone
+                        <span>SMS Phone</span>
                       </button>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-stone-500 truncate flex-1">
+                    <span className="text-[11px] text-[#0B3D2B]/70 truncate flex-1">
                       Target: <strong>{targetAddress || 'N/A'}</strong>
                     </span>
                     <button
                       type="button"
                       disabled={otpLoading}
                       onClick={handleSendVerification}
-                      className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-black text-white font-bold text-[11px] shrink-0"
+                      className="px-3 py-1.5 rounded-xl bg-[#062B1F] hover:bg-[#0B3D2B] text-white font-bold text-[11px] shrink-0 cursor-pointer"
                     >
                       {otpLoading ? 'Sending...' : otpSent ? 'Resend Code' : 'Send Code'}
                     </button>
                   </div>
 
                   {sandboxHint && (
-                    <div className="px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-mono text-[11px]">
+                    <div className="px-2.5 py-1.5 rounded-xl bg-[#F4D35E]/25 border border-[#F4D35E]/60 text-[#062B1F] font-mono text-[11px]">
                       {sandboxHint}
                     </div>
                   )}
@@ -319,13 +299,13 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
                         onChange={(e) => setOtpCode(e.target.value)}
                         placeholder="6-digit code"
                         maxLength={6}
-                        className="flex-1 px-3 py-2 rounded-xl border border-stone-300 font-mono text-stone-900 bg-white"
+                        className="flex-1 px-3 py-2 rounded-xl border border-[#062B1F]/15 font-mono text-[#062B1F] bg-white"
                       />
                       <button
                         type="button"
                         disabled={otpLoading}
                         onClick={handleVerifyOtp}
-                        className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[11px]"
+                        className="px-3.5 py-2 rounded-xl bg-[#145A38] hover:bg-[#0B3D2B] text-white font-bold text-[11px] cursor-pointer"
                       >
                         Verify
                       </button>
@@ -337,25 +317,27 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
           )}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            <button
+            <LiquidGlassButton
               type="button"
+              variant="light"
+              size="sm"
               disabled={submitting}
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 font-semibold hover:bg-stone-50"
             >
               Cancel
-            </button>
-            <button
+            </LiquidGlassButton>
+            <LiquidGlassButton
               type="submit"
+              variant="danger"
+              size="sm"
               disabled={submitting}
-              className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white font-bold flex items-center gap-1.5 cursor-pointer"
             >
               {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               <span>{submitting ? 'Deleting Account...' : 'Permanently Delete Account'}</span>
-            </button>
+            </LiquidGlassButton>
           </div>
         </form>
       </div>
-    </div>
+    </LiquidGlassModal>
   );
 };

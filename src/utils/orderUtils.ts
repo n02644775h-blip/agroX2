@@ -1,4 +1,4 @@
-import { DeliveryMethod, OrderStatus, PaymentMethod, PaymentStatus } from '../types';
+import { DeliveryMethod, Order, OrderStatus, PaymentMethod, PaymentStatus } from '../types';
 
 export type CanonicalOrderStage = 'received' | 'packaged' | 'delivering' | 'ready_for_pickup' | 'done' | 'cancelled';
 
@@ -35,6 +35,126 @@ export function normalizeOrderStatus(
     default:
       return 'received';
   }
+}
+
+export function isOrderCompleted(order?: Pick<Order, 'status' | 'deliveryMethod'> | null): boolean {
+  if (!order) return false;
+  return normalizeOrderStatus(order.status, order.deliveryMethod) === 'done';
+}
+
+export function isOrderAttributableToFarmer(order: Order | null | undefined, farmerId: string): boolean {
+  if (!order || !farmerId) return false;
+  if (order.farmerId === farmerId) return true;
+  if (Array.isArray(order.items) && order.items.some(item => item.farmerId === farmerId)) {
+    return true;
+  }
+  return false;
+}
+
+export function calculateFarmerOrderRevenue(order: Order | null | undefined, farmerId: string): number {
+  if (!order || !farmerId) return 0;
+  if (!isOrderCompleted(order)) return 0;
+
+  const roundCurrency = (val: number): number => Math.round(Math.max(0, val) * 100) / 100;
+  const items = Array.isArray(order.items) ? order.items : [];
+
+  if (items.length > 0) {
+    const farmerItems = items.filter(item =>
+      item.farmerId ? item.farmerId === farmerId : order.farmerId === farmerId
+    );
+    if (farmerItems.length === 0) return 0;
+
+    const hasOtherFarmerItems =
+      order.farmerId !== farmerId ||
+      items.some(item => Boolean(item.farmerId) && item.farmerId !== farmerId);
+
+    const itemsTotal = farmerItems.reduce((sum, item) => {
+      const lineSubtotal =
+        typeof item.subtotal === 'number' && Number.isFinite(item.subtotal)
+          ? item.subtotal
+          : Number(item.price || 0) * Number(item.quantity || 0);
+      return sum + (Number.isFinite(lineSubtotal) ? Math.max(0, lineSubtotal) : 0);
+    }, 0);
+
+    if (itemsTotal > 0) {
+      return roundCurrency(itemsTotal);
+    }
+
+    if (hasOtherFarmerItems) {
+      return 0;
+    }
+  } else if (order.farmerId !== farmerId) {
+    return 0;
+  }
+
+  // Fallback for single-farmer orders without item breakdown or with 0 item sum
+  if (typeof order.subtotalAmount === 'number' && Number.isFinite(order.subtotalAmount)) {
+    return roundCurrency(order.subtotalAmount);
+  }
+
+  const total = Number(order.totalAmount || 0);
+  const fee = typeof order.deliveryFee === 'number' && Number.isFinite(order.deliveryFee) ? order.deliveryFee : 0;
+  if (!Number.isFinite(total)) return 0;
+  return roundCurrency(Math.max(0, total - Math.max(0, fee)));
+}
+
+export function calculateFarmerSalesRevenue(orders: Order[], farmerId: string): number {
+  if (!Array.isArray(orders) || !farmerId) return 0;
+  const seenOrderIds = new Set<string>();
+  let total = 0;
+
+  for (const order of orders) {
+    if (!order) continue;
+    if (order.id) {
+      if (seenOrderIds.has(order.id)) continue;
+      seenOrderIds.add(order.id);
+    }
+    total += calculateFarmerOrderRevenue(order, farmerId);
+  }
+
+  return Math.round(total * 100) / 100;
+}
+
+export function calculateFarmerWeeklySalesChart(
+  orders: Order[],
+  farmerId: string
+): { name: string; sales: number; orders: number }[] {
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const buckets = new Map<string, { name: string; sales: number; orders: number }>();
+
+  const today = new Date();
+  const orderedKeys: string[] = [];
+  for (let offset = 6; offset >= 0; offset--) {
+    const d = new Date(today);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - offset);
+    const key = d.toISOString().slice(0, 10);
+    orderedKeys.push(key);
+    buckets.set(key, { name: dayNames[d.getDay()], sales: 0, orders: 0 });
+  }
+
+  const seenOrderIds = new Set<string>();
+  for (const order of orders) {
+    if (!order || !isOrderCompleted(order)) continue;
+    if (order.id) {
+      if (seenOrderIds.has(order.id)) continue;
+      seenOrderIds.add(order.id);
+    }
+    const rev = calculateFarmerOrderRevenue(order, farmerId);
+    if (rev <= 0) continue;
+
+    const dateStr = order.completedAt || order.updatedAt || order.createdAt;
+    const parsed = dateStr ? new Date(dateStr) : null;
+    if (!parsed || isNaN(parsed.getTime())) continue;
+    const dayKey = parsed.toISOString().slice(0, 10);
+    const bucket = buckets.get(dayKey);
+    if (bucket) {
+      bucket.sales = Math.round((bucket.sales + rev) * 100) / 100;
+      bucket.orders += 1;
+    }
+  }
+
+  return orderedKeys.map(k => buckets.get(k)!);
 }
 
 export function getOrderStages(deliveryMethod: DeliveryMethod): OrderStageDef[] {

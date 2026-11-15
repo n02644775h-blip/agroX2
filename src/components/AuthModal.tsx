@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { UserRole, isSellerRole } from '../types';
+import meadowBackdropImg from '../assets/images/meadow_hills_backdrop_1794742070903.jpg';
+import basketProduceImg from '../assets/images/signup_vegetable_basket_1794742072176.jpg';
 import {
   X,
   Lock,
@@ -19,7 +22,8 @@ import {
   Wheat,
   ShieldCheck,
   Send,
-  Loader2
+  Loader2,
+  Check
 } from 'lucide-react';
 
 interface AuthModalProps {
@@ -28,6 +32,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onClose }) => {
+  const prefersReducedMotion = useReducedMotion();
   const { login, signup, resetPassword, loginAdmin, demoLogin } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot_password'>(initialMode);
   const [role, setRole] = useState<UserRole>('buyer');
@@ -35,6 +40,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
   const [phone, setPhone] = useState('');
   const [province, setProvince] = useState('Harare');
   const [city, setCity] = useState('Harare');
@@ -302,556 +308,694 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
     }
   };
 
+  const frostedInputClass =
+    'w-full pl-10 pr-10 py-3 rounded-2xl bg-white/14 border border-white/40 text-white placeholder:text-white/70 text-xs sm:text-sm backdrop-blur-md focus:outline-none focus:bg-white/22 focus:border-[#A8E635] focus:ring-2 focus:ring-[#A8E635]/35 transition-all';
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
-      <div
-        id="auth-dialog"
-        className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden my-6 border border-stone-200 flex flex-col max-h-[92vh]"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Top Header */}
-        <div className="p-6 pb-4 border-b border-stone-100 flex items-center justify-between bg-emerald-900 text-white">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-white text-emerald-800 flex items-center justify-center font-extrabold shadow-sm">
-              <Sprout className="w-6 h-6 text-emerald-700" />
-            </div>
-            <div>
-              <h2 className="font-extrabold text-white text-lg">
-                {mode === 'forgot_password'
-                  ? 'Reset Password'
-                  : mode === 'login'
-                  ? 'Welcome to agroX'
-                  : 'Create an agroX Account'}
-              </h2>
-              <p className="text-xs text-emerald-100/90">
-                {mode === 'forgot_password'
-                  ? 'Receive a secure reset link to your email'
-                  : mode === 'login'
-                  ? 'Sign in to access your farm products, orders & messaging'
-                  : 'Join our verified agricultural & fodder marketplace'}
-              </p>
-            </div>
-          </div>
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-[#062B1F]/80 backdrop-blur-lg flex items-center justify-center p-3 sm:p-6"
+      onClick={onClose}
+    >
+      {mode === 'register' ? (
+        /* REGISTER SPLIT LIQUID GLASS LAYOUT ("From the Farm to Your Table.") */
+        <motion.div
+          id="auth-dialog"
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 12 }}
+          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 360, damping: 28 }}
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-4xl rounded-[32px] overflow-hidden shadow-[0_32px_90px_-16px_rgba(3,20,14,0.85)] border border-white/35 bg-[#062B1F] grid grid-cols-1 md:grid-cols-12 max-h-[94vh]"
+        >
+          {/* Close Button */}
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
             aria-label="Close dialog"
+            className="absolute top-4 right-4 z-30 p-2 rounded-full bg-black/35 hover:bg-black/55 border border-white/25 text-white transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
-        </div>
 
-        {/* Demo Fast Login Ribbon */}
-        {mode !== 'forgot_password' && (
-          <div className="bg-stone-50 p-3.5 border-b border-stone-200/80 space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-              ⚡ Quick Demo Credentials (1-Click Switch)
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => handleDemoSelect('farmer')}
-                className="p-2 rounded-xl bg-white hover:bg-emerald-50 border border-stone-200 hover:border-emerald-300 font-semibold text-emerald-800 transition-colors text-center shadow-2xs"
-              >
-                🌱 Farmer
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoSelect('fodder_supplier')}
-                className="p-2 rounded-xl bg-white hover:bg-amber-50 border border-stone-200 hover:border-amber-300 font-semibold text-amber-800 transition-colors text-center shadow-2xs"
-              >
-                🌾 Fodder
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoSelect('buyer')}
-                className="p-2 rounded-xl bg-white hover:bg-sky-50 border border-stone-200 hover:border-sky-300 font-semibold text-sky-800 transition-colors text-center shadow-2xs"
-              >
-                🛒 Buyer
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoSelect('admin')}
-                className="p-2 rounded-xl bg-white hover:bg-purple-50 border border-stone-200 hover:border-purple-300 font-semibold text-purple-800 transition-colors text-center shadow-2xs"
-              >
-                🛡️ Admin
-              </button>
-            </div>
-          </div>
-        )}
+          {/* Left Visual Basket Showcase Pane */}
+          <div className="md:col-span-5 relative min-h-[210px] md:min-h-full overflow-hidden flex flex-col justify-between p-6 sm:p-8 text-white">
+            <img
+              src={basketProduceImg}
+              alt="Fresh harvest produce basket"
+              className="absolute inset-0 w-full h-full object-cover object-center"
+            />
+            <div className="absolute inset-0 bg-linear-to-b from-[#062B1F]/92 via-[#0B3D2B]/65 to-[#062B1F]/85" />
 
-        {/* Form Container */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
-          {errorMsg && (
-            <div className="p-3 rounded-2xl bg-red-50 border border-red-200 text-red-700 font-semibold flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              <span className="leading-snug">{errorMsg}</span>
-            </div>
-          )}
+            {/* Curved Optical Glass Arcs */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-20 -right-24 w-72 h-72 rounded-full border-2 border-white/25 bg-white/5 backdrop-blur-[2px]"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -bottom-24 -left-16 w-80 h-80 rounded-full border border-[#A8E635]/30 bg-[#145A38]/20"
+            />
 
-          {successMsg && (
-            <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <span className="leading-snug">{successMsg}</span>
-            </div>
-          )}
-
-          {/* Mode Tabs */}
-          {mode !== 'forgot_password' ? (
-            <div className="flex rounded-xl bg-stone-100 p-1">
-              <button
-                type="button"
-                onClick={() => { setMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                  mode === 'login' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-600 hover:text-stone-900'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => { setMode('register'); setErrorMsg(''); setSuccessMsg(''); }}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                  mode === 'register' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-600 hover:text-stone-900'
-                }`}
-              >
-                Create Account
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => { setMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
-              className="inline-flex items-center gap-1.5 font-bold text-emerald-700 hover:text-emerald-800 mb-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Sign In</span>
-            </button>
-          )}
-
-          {/* REGISTER: Role Selection (Buyer, Farmer Producer, Fodder Supplier) */}
-          {mode === 'register' && (
-            <div className="space-y-1.5">
-              <label className="font-bold text-stone-700 block">I am creating an account as:</label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <label
-                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2 ${
-                    role === 'buyer'
-                      ? 'border-emerald-600 bg-emerald-50/70 font-bold text-emerald-900 shadow-2xs'
-                      : 'border-stone-200 text-stone-600 hover:bg-stone-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="authRegRole"
-                    checked={role === 'buyer'}
-                    onChange={() => setRole('buyer')}
-                    className="text-emerald-600 focus:ring-emerald-500 shrink-0"
+            <div className="relative z-10 space-y-4">
+              <div className="inline-flex items-center gap-2.5">
+                <div className="w-9 h-9 flex items-center justify-center shrink-0">
+                  <img
+                    src="/assets/farmbridge-logo-white.png"
+                    alt="FarmBridge logo"
+                    className="w-full h-full object-contain drop-shadow-sm"
                   />
-                  <ShoppingBag className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="leading-tight">Household Buyer</span>
-                </label>
-
-                <label
-                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2 ${
-                    role === 'farmer'
-                      ? 'border-emerald-600 bg-emerald-50/70 font-bold text-emerald-900 shadow-2xs'
-                      : 'border-stone-200 text-stone-600 hover:bg-stone-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="authRegRole"
-                    checked={role === 'farmer'}
-                    onChange={() => setRole('farmer')}
-                    className="text-emerald-600 focus:ring-emerald-500 shrink-0"
-                  />
-                  <Sprout className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="leading-tight">Farmer Producer</span>
-                </label>
-
-                <label
-                  className={`p-3 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-2 ${
-                    role === 'fodder_supplier'
-                      ? 'border-amber-600 bg-amber-50/80 font-bold text-amber-950 shadow-2xs'
-                      : 'border-stone-200 text-stone-600 hover:bg-stone-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="authRegRole"
-                    checked={role === 'fodder_supplier'}
-                    onChange={() => setRole('fodder_supplier')}
-                    className="text-amber-600 focus:ring-amber-500 shrink-0"
-                  />
-                  <Wheat className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="leading-tight">Fodder Supplier</span>
-                </label>
-              </div>
-              {role === 'fodder_supplier' && (
-                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 font-medium">
-                  List lucerne hay bales, maize silage, Rhodes grass &amp; livestock feed directly on the agroX marketplace.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* REGISTER: Full Name */}
-          {mode === 'register' && (
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Full Name *</label>
-              <div className="relative">
-                <User className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={e => setFullName(e.target.value)}
-                  placeholder="e.g. Tendai Moyo"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
-                />
-              </div>
-            </div>
-          )}
-
-          {/* ALL MODES: Email */}
-          <div>
-            <label className="font-bold text-stone-700 block mb-1">
-              {mode === 'login' ? 'Email Address or Admin ID *' : 'Email Address *'}
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type={mode === 'login' ? 'text' : 'email'}
-                value={email}
-                onChange={e => {
-                  setEmail(e.target.value);
-                  if (verifiedTarget?.channel === 'email') setVerifiedTarget(null);
-                }}
-                placeholder={mode === 'login' ? 'name@example.com' : 'name@example.com'}
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                required
-              />
-            </div>
-          </div>
-
-          {/* REGISTER: Phone */}
-          {mode === 'register' && (
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">
-                Phone Number {verificationMethod === 'phone' ? '*' : '(For Order SMS Alerts)'}
-              </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={e => {
-                    setPhone(e.target.value);
-                    if (verifiedTarget?.channel === 'phone') setVerifiedTarget(null);
-                  }}
-                  placeholder="+263 77 123 4567"
-                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required={verificationMethod === 'phone'}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* REGISTER: Email or Phone OTP Verification */}
-          {mode === 'register' && (
-            <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-bold text-stone-800 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                  Account Verification Method *
+                </div>
+                <span className="font-extrabold text-lg tracking-tight text-white">
+                  FarmBridge<span className="text-[#A8E635]">.</span>
                 </span>
-                {isTargetVerified && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Verified
-                  </span>
-                )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2.5 pt-2 md:pt-4">
+                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold leading-[1.08] tracking-tight text-balance">
+                  From the Farm to <span className="text-[#A8E635]">Your Table.</span>
+                </h2>
+                <p className="text-xs sm:text-sm text-[#DFF4E4]/90 leading-relaxed max-w-xs">
+                  Join FarmBridge and trade directly with verified farmers, buyers, and regional fodder suppliers.
+                </p>
+              </div>
+            </div>
+
+            {/* Bottom 1-Click Demo Access */}
+            <div className="relative z-10 hidden md:block pt-6">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#DFF4E4]/70 mb-2">
+                ⚡ Instant Demo Switch
+              </p>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                 <button
                   type="button"
-                  onClick={() => handleVerificationChannelChange('email')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    verificationMethod === 'email'
-                      ? 'bg-white border-emerald-600 text-emerald-900 shadow-2xs'
-                      : 'bg-transparent border-stone-200 text-stone-600 hover:bg-white/60'
-                  }`}
+                  onClick={() => handleDemoSelect('farmer')}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
                 >
-                  <Mail className="w-3.5 h-3.5" />
-                  <span>Verify via Email</span>
+                  🌱 Farmer
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleVerificationChannelChange('phone')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    verificationMethod === 'phone'
-                      ? 'bg-white border-emerald-600 text-emerald-900 shadow-2xs'
-                      : 'bg-transparent border-stone-200 text-stone-600 hover:bg-white/60'
-                  }`}
+                  onClick={() => handleDemoSelect('fodder_supplier')}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
                 >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Verify via Phone</span>
+                  🌾 Fodder
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoSelect('buyer')}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
+                >
+                  🛒 Buyer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoSelect('admin')}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
+                >
+                  🛡️ Admin
                 </button>
               </div>
+            </div>
+          </div>
 
-              {!isTargetVerified && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSendVerificationCode}
-                      disabled={isSendingCode}
-                      className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-stone-300 text-white font-bold text-xs flex items-center gap-1.5 transition-colors shrink-0"
-                    >
-                      {isSendingCode ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Send className="w-3.5 h-3.5" />
-                      )}
-                      <span>{codeSent ? 'Resend Code' : `Send ${verificationMethod === 'email' ? 'Email' : 'SMS'} Code`}</span>
-                    </button>
-                    <span className="text-[11px] text-stone-500 truncate">
-                      {currentTarget ? `Target: ${currentTarget}` : `Enter your ${verificationMethod} above`}
-                    </span>
-                  </div>
+          {/* Right Frosted Glass Signup Form Pane */}
+          <div className="md:col-span-7 relative p-5 sm:p-7 overflow-y-auto max-h-[70vh] md:max-h-[94vh] bg-linear-to-br from-[#0E3F2C]/92 via-[#082E20]/96 to-[#062B1F] text-white">
+            <div className="max-w-md mx-auto space-y-4">
+              <div className="text-center md:text-left pr-6">
+                <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+                  Create Your Account
+                </h3>
+                <p className="text-xs text-[#DFF4E4]/75 mt-0.5">
+                  Join FarmBridge today — select your marketplace role
+                </p>
+              </div>
 
-                  {sandboxOtpNotice && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center justify-between gap-2">
-                      <span>
-                        Sandbox verification code: <strong className="font-mono text-sm tracking-widest">{sandboxOtpNotice}</strong>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setVerificationCodeInput(sandboxOtpNotice)}
-                        className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] shrink-0"
-                      >
-                        Auto-fill
-                      </button>
-                    </div>
-                  )}
+              {/* Mobile Quick Demo Row */}
+              <div className="md:hidden grid grid-cols-4 gap-1.5 text-[11px]">
+                <button type="button" onClick={() => handleDemoSelect('farmer')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🌱 Farmer</button>
+                <button type="button" onClick={() => handleDemoSelect('fodder_supplier')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🌾 Fodder</button>
+                <button type="button" onClick={() => handleDemoSelect('buyer')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🛒 Buyer</button>
+                <button type="button" onClick={() => handleDemoSelect('admin')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🛡️ Admin</button>
+              </div>
 
-                  {codeSent && (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={verificationCodeInput}
-                        onChange={e => setVerificationCodeInput(e.target.value.replace(/\D/g, ''))}
-                        placeholder="Enter 6-digit OTP code"
-                        className="flex-1 px-3 py-2 rounded-xl border border-stone-300 bg-white text-stone-900 font-mono font-bold tracking-widest focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleVerifyOtpCode}
-                        disabled={isVerifyingCode || verificationCodeInput.length < 6}
-                        className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-black disabled:bg-stone-300 text-white font-bold text-xs transition-colors shrink-0"
-                      >
-                        {isVerifyingCode ? 'Checking...' : 'Verify Code'}
-                      </button>
-                    </div>
-                  )}
+              {errorMsg && (
+                <div className="p-3 rounded-2xl bg-rose-500/20 border border-rose-300/40 text-rose-100 text-xs font-semibold flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-300 shrink-0 mt-0.5" />
+                  <span>{errorMsg}</span>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* LOGIN & REGISTER: Password */}
-          {mode !== 'forgot_password' && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="font-bold text-stone-700 block">Password *</label>
-                {mode === 'login' && (
-                  <button
-                    type="button"
-                    onClick={() => { setMode('forgot_password'); setErrorMsg(''); setSuccessMsg(''); }}
-                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800"
-                  >
-                    Forgot Password?
-                  </button>
-                )}
-              </div>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {mode === 'register' && (
-                <p className="text-[10px] text-stone-500 mt-1">Must be at least 6 characters long.</p>
+              {successMsg && (
+                <div className="p-3 rounded-2xl bg-[#A8E635]/20 border border-[#A8E635]/45 text-[#DFF4E4] text-xs font-semibold flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-[#A8E635] shrink-0 mt-0.5" />
+                  <span>{successMsg}</span>
+                </div>
               )}
-            </div>
-          )}
 
-          {/* REGISTER: Confirm Password */}
-          {mode === 'register' && (
-            <div>
-              <label className="font-bold text-stone-700 block mb-1">Confirm Password *</label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-10 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* REGISTER: Farmer / Fodder Supplier Specific Fields */}
-          {mode === 'register' && isSellerRole(role) && (
-            <div className="space-y-3 pt-2 border-t border-stone-100">
-              <div className="text-xs font-bold text-emerald-800 uppercase tracking-wider">
-                {role === 'fodder_supplier' ? 'Fodder Supply Business Details' : 'Farm Information'}
-              </div>
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">
-                  {role === 'fodder_supplier' ? 'Supply Company / Business Name *' : 'Farm / Estate Name *'}
-                </label>
-                <input
-                  type="text"
-                  value={farmName}
-                  onChange={e => setFarmName(e.target.value)}
-                  placeholder={role === 'fodder_supplier' ? 'e.g. GreenBale Forage & Hay Supply' : 'e.g. Green Hills Organic Orchards'}
-                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">
-                  {role === 'fodder_supplier' ? 'Fodder & Animal Feed Specialties (Optional)' : 'Farm Bio (Optional)'}
-                </label>
-                <input
-                  type="text"
-                  value={bio}
-                  onChange={e => setBio(e.target.value)}
-                  placeholder={role === 'fodder_supplier' ? 'e.g. Lucerne hay bales, maize silage, Rhodes grass' : 'e.g. Organic tomatoes, leafy greens & pasture eggs'}
-                  className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Province</label>
-                  <select
-                    value={province}
-                    onChange={e => setProvince(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+                {/* Role Selector Pills */}
+                <div className="grid grid-cols-3 gap-2">
+                  <label
+                    className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
+                      role === 'buyer'
+                        ? 'bg-linear-to-br from-[#A8E635] to-[#63BE2D] border-white/60 text-[#062B1F] font-extrabold shadow-md'
+                        : 'bg-white/10 border-white/25 text-white/85 hover:bg-white/16'
+                    }`}
                   >
-                    {['Harare', 'Mashonaland East', 'Mashonaland West', 'Midlands', 'Manicaland', 'Bulawayo', 'Masvingo'].map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
+                    <input
+                      type="radio"
+                      name="authRegRole"
+                      checked={role === 'buyer'}
+                      onChange={() => setRole('buyer')}
+                      className="sr-only"
+                    />
+                    <ShoppingBag className="w-4 h-4 shrink-0" />
+                    <span className="text-[11px]">Buyer</span>
+                  </label>
+
+                  <label
+                    className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
+                      role === 'farmer'
+                        ? 'bg-linear-to-br from-[#A8E635] to-[#63BE2D] border-white/60 text-[#062B1F] font-extrabold shadow-md'
+                        : 'bg-white/10 border-white/25 text-white/85 hover:bg-white/16'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="authRegRole"
+                      checked={role === 'farmer'}
+                      onChange={() => setRole('farmer')}
+                      className="sr-only"
+                    />
+                    <Sprout className="w-4 h-4 shrink-0" />
+                    <span className="text-[11px]">Farmer</span>
+                  </label>
+
+                  <label
+                    className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
+                      role === 'fodder_supplier'
+                        ? 'bg-linear-to-br from-[#F4D35E] to-[#A8E635] border-white/60 text-[#062B1F] font-extrabold shadow-md'
+                        : 'bg-white/10 border-white/25 text-white/85 hover:bg-white/16'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="authRegRole"
+                      checked={role === 'fodder_supplier'}
+                      onChange={() => setRole('fodder_supplier')}
+                      className="sr-only"
+                    />
+                    <Wheat className="w-4 h-4 shrink-0" />
+                    <span className="text-[11px]">Fodder Supplier</span>
+                  </label>
                 </div>
 
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Town / City</label>
+                {/* Full Name */}
+                <div className="relative">
+                  <User className="w-4 h-4 text-white/75 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
-                    value={city}
-                    onChange={e => setCity(e.target.value)}
-                    placeholder="e.g. Marondera"
-                    className="w-full px-3 py-2 rounded-xl border border-stone-300 text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Full Name *"
+                    className={frostedInputClass}
+                    required
                   />
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* Submit Button */}
+                {/* Email & Phone */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-white/75 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (verifiedTarget?.channel === 'email') setVerifiedTarget(null);
+                      }}
+                      placeholder="Email Address *"
+                      className={frostedInputClass}
+                      required
+                    />
+                  </div>
+
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-white/75 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                        if (verifiedTarget?.channel === 'phone') setVerifiedTarget(null);
+                      }}
+                      placeholder="Phone Number"
+                      className={frostedInputClass}
+                      required={verificationMethod === 'phone'}
+                    />
+                  </div>
+                </div>
+
+                {/* OTP Verification Box */}
+                <div className="p-3.5 rounded-2xl bg-white/10 border border-white/25 space-y-2.5 backdrop-blur-md">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-white flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-[#A8E635]" />
+                      Contact Verification *
+                    </span>
+                    {isTargetVerified && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#A8E635] text-[#062B1F] text-[10px] font-extrabold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Verified
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleVerificationChannelChange('email')}
+                      className={`py-1.5 px-3 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        verificationMethod === 'email'
+                          ? 'bg-white text-[#062B1F] border-white'
+                          : 'bg-white/5 border-white/20 text-white/80 hover:bg-white/12'
+                      }`}
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>Verify Email</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleVerificationChannelChange('phone')}
+                      className={`py-1.5 px-3 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        verificationMethod === 'phone'
+                          ? 'bg-white text-[#062B1F] border-white'
+                          : 'bg-white/5 border-white/20 text-white/80 hover:bg-white/12'
+                      }`}
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      <span>Verify Phone</span>
+                    </button>
+                  </div>
+
+                  {!isTargetVerified && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSendVerificationCode}
+                          disabled={isSendingCode}
+                          className="px-3 py-1.5 rounded-xl bg-[#A8E635] hover:brightness-105 text-[#062B1F] font-extrabold text-[11px] flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          {isSendingCode ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          <span>{codeSent ? 'Resend Code' : 'Send 6-Digit Code'}</span>
+                        </button>
+                        <span className="text-[11px] text-[#DFF4E4]/70 truncate">
+                          {currentTarget ? `Target: ${currentTarget}` : `Enter ${verificationMethod} above`}
+                        </span>
+                      </div>
+
+                      {sandboxOtpNotice && (
+                        <div className="p-2 rounded-xl bg-[#F4D35E]/20 border border-[#F4D35E]/40 text-[#F4D35E] text-[11px] flex items-center justify-between gap-2">
+                          <span>
+                            Code: <strong className="font-mono text-xs tracking-widest text-white">{sandboxOtpNotice}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setVerificationCodeInput(sandboxOtpNotice)}
+                            className="px-2 py-0.5 rounded-lg bg-[#F4D35E] text-[#062B1F] font-bold text-[10px] shrink-0 cursor-pointer"
+                          >
+                            Auto-fill
+                          </button>
+                        </div>
+                      )}
+
+                      {codeSent && (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            value={verificationCodeInput}
+                            onChange={(e) => setVerificationCodeInput(e.target.value.replace(/\D/g, ''))}
+                            placeholder="6-digit OTP"
+                            className="flex-1 px-3 py-2 rounded-xl bg-white/15 border border-white/35 text-white font-mono font-bold tracking-widest focus:outline-none focus:border-[#A8E635]"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleVerifyOtpCode}
+                            disabled={isVerifyingCode || verificationCodeInput.length < 6}
+                            className="px-3.5 py-2 rounded-xl bg-white text-[#062B1F] font-extrabold text-[11px] shrink-0 cursor-pointer disabled:opacity-50"
+                          >
+                            {isVerifyingCode ? 'Checking...' : 'Verify'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Passwords */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-white/75 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Create Password *"
+                      className={frostedInputClass}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/75 hover:text-white cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-white/75 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm Password *"
+                      className={frostedInputClass}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-white/75 hover:text-white cursor-pointer"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Seller Specific Fields */}
+                {isSellerRole(role) && (
+                  <div className="space-y-2.5 pt-2 border-t border-white/15">
+                    <div className="text-[11px] font-bold text-[#A8E635] uppercase tracking-wider">
+                      {role === 'fodder_supplier' ? 'Fodder Business Details' : 'Farm Details'}
+                    </div>
+                    <input
+                      type="text"
+                      value={farmName}
+                      onChange={(e) => setFarmName(e.target.value)}
+                      placeholder={
+                        role === 'fodder_supplier'
+                          ? 'Supply Company / Business Name *'
+                          : 'Farm / Estate Name *'
+                      }
+                      className="w-full px-4 py-2.5 rounded-2xl bg-white/14 border border-white/35 text-white placeholder:text-white/65 focus:outline-none focus:border-[#A8E635]"
+                      required
+                    />
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <select
+                        value={province}
+                        onChange={(e) => setProvince(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-2xl bg-[#0B3D2B] border border-white/30 text-white focus:outline-none focus:border-[#A8E635]"
+                      >
+                        {['Harare', 'Mashonaland East', 'Mashonaland West', 'Midlands', 'Manicaland', 'Bulawayo', 'Masvingo'].map((p) => (
+                          <option key={p} value={p} className="bg-[#062B1F] text-white">
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        placeholder="Town / City"
+                        className="w-full px-3 py-2.5 rounded-2xl bg-white/14 border border-white/35 text-white placeholder:text-white/65 focus:outline-none focus:border-[#A8E635]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full py-3.5 rounded-2xl lg-cta-lime text-[#062B1F] font-extrabold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <span>
+                    {isSubmitting
+                      ? 'Creating Account...'
+                      : isTargetVerified
+                      ? 'Sign Up & Join FarmBridge'
+                      : 'Verify Contact & Sign Up'}
+                  </span>
+                </button>
+
+                <p className="text-center text-xs text-[#DFF4E4]/80 pt-1">
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('login');
+                      setErrorMsg('');
+                      setSuccessMsg('');
+                    }}
+                    className="font-bold text-[#A8E635] hover:underline cursor-pointer"
+                  >
+                    Log In
+                  </button>
+                </p>
+              </form>
+            </div>
+          </div>
+        </motion.div>
+      ) : (
+        /* LOGIN / FORGOT PASSWORD VERTICAL FROSTED MEADOW LIQUID GLASS CARD */
+        <motion.div
+          id="auth-dialog"
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 12 }}
+          animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+          transition={{ type: 'spring', stiffness: 360, damping: 28 }}
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-md rounded-[34px] overflow-hidden shadow-[0_36px_96px_-18px_rgba(3,20,14,0.85)] border border-white/35 min-h-[560px] flex items-center justify-center p-5 sm:p-7"
+        >
+          {/* Full Meadow Landscape Backdrop inside Auth Stage */}
+          <img
+            src={meadowBackdropImg}
+            alt="Sunlit green agricultural meadow"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-linear-to-b from-[#062B1F]/35 via-[#062B1F]/20 to-[#062B1F]/65" />
+
           <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-3.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-stone-300 text-white font-bold text-sm rounded-2xl shadow-md transition-all mt-3 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+            type="button"
+            onClick={onClose}
+            aria-label="Close dialog"
+            className="absolute top-4 right-4 z-30 p-2 rounded-full bg-black/35 hover:bg-black/55 border border-white/30 text-white transition-colors cursor-pointer"
           >
-            {isSubmitting ? (
-              <span>
-                {mode === 'forgot_password'
-                  ? 'Sending reset email...'
-                  : mode === 'login'
-                  ? 'Signing in...'
-                  : 'Creating account...'}
-              </span>
-            ) : mode === 'forgot_password' ? (
-              <>
-                <KeyRound className="w-4 h-4" />
-                <span>Send Reset Link</span>
-              </>
-            ) : mode === 'login' ? (
-              <span>Sign In</span>
-            ) : (
-              <span>{isTargetVerified ? 'Complete Verified Registration' : 'Verify Contact & Create Account'}</span>
-            )}
+            <X className="w-4 h-4" />
           </button>
 
-          {/* Footer toggle links */}
-          <div className="pt-2 text-center text-stone-500">
-            {mode === 'login' ? (
-              <p>
-                Don't have an account?{' '}
+          {/* Centered Frosted Liquid Glass Login Card */}
+          <div className="relative z-10 w-full rounded-[28px] lg-glass-frosted p-6 sm:p-7 text-white space-y-5">
+            <div className="space-y-1">
+              {mode === 'forgot_password' && (
                 <button
                   type="button"
-                  onClick={() => { setMode('register'); setErrorMsg(''); setSuccessMsg(''); }}
-                  className="font-bold text-emerald-700 hover:underline"
+                  onClick={() => {
+                    setMode('login');
+                    setErrorMsg('');
+                    setSuccessMsg('');
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#A8E635] hover:underline mb-1 cursor-pointer"
                 >
-                  Create Account
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back to Login
                 </button>
+              )}
+
+              <div className="inline-flex items-center gap-2 pb-1">
+                <div className="w-8 h-8 flex items-center justify-center shrink-0">
+                  <img
+                    src="/assets/farmbridge-logo-white.png"
+                    alt="FarmBridge logo"
+                    className="w-full h-full object-contain drop-shadow-sm"
+                  />
+                </div>
+                <span className="font-extrabold text-base tracking-tight text-white">
+                  FarmBridge<span className="text-[#A8E635]">.</span>
+                </span>
+              </div>
+
+              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+                {mode === 'forgot_password' ? 'Reset Password' : 'Login'}
+              </h2>
+              <p className="text-xs text-white/85">
+                {mode === 'forgot_password'
+                  ? 'Enter your email to receive a password reset link'
+                  : 'Welcome back please login to your account'}
               </p>
-            ) : mode === 'register' ? (
-              <p>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => { setMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
-                  className="font-bold text-emerald-700 hover:underline"
-                >
-                  Sign In
-                </button>
-              </p>
-            ) : (
-              <p>
-                Remember your password?{' '}
-                <button
-                  type="button"
-                  onClick={() => { setMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
-                  className="font-bold text-emerald-700 hover:underline"
-                >
-                  Sign In
-                </button>
-              </p>
+            </div>
+
+            {errorMsg && (
+              <div className="p-3 rounded-2xl bg-rose-600/30 border border-rose-200/45 text-white text-xs font-semibold flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-200 shrink-0 mt-0.5" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="p-3 rounded-2xl bg-[#A8E635]/25 border border-[#A8E635]/50 text-white text-xs font-semibold flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-[#A8E635] shrink-0 mt-0.5" />
+                <span>{successMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+              <div className="relative">
+                <User className="w-4 h-4 text-white/85 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type={mode === 'login' ? 'text' : 'email'}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={mode === 'login' ? 'User Email or ID' : 'Email Address'}
+                  className="w-full pl-4 pr-11 py-3 rounded-2xl bg-white/14 border border-white/45 text-white placeholder:text-white/75 text-xs sm:text-sm backdrop-blur-md focus:outline-none focus:bg-white/22 focus:border-[#A8E635] transition-all"
+                  required
+                />
+              </div>
+
+              {mode === 'login' && (
+                <>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Password"
+                      className="w-full pl-4 pr-11 py-3 rounded-2xl bg-white/14 border border-white/45 text-white placeholder:text-white/75 text-xs sm:text-sm backdrop-blur-md focus:outline-none focus:bg-white/22 focus:border-[#A8E635] transition-all"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/85 hover:text-white cursor-pointer"
+                    >
+                      {showPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-0.5">
+                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                      <span
+                        onClick={() => setRememberMe(!rememberMe)}
+                        className={`w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
+                          rememberMe
+                            ? 'bg-[#A8E635] border-white text-[#062B1F]'
+                            : 'bg-white/15 border-white/45'
+                        }`}
+                      >
+                        {rememberMe && <Check className="w-3 h-3 stroke-[3]" />}
+                      </span>
+                      <span className="text-white/90 font-medium">Remember me</span>
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('forgot_password');
+                        setErrorMsg('');
+                        setSuccessMsg('');
+                      }}
+                      className="text-[#DFF4E4] hover:text-[#A8E635] font-semibold cursor-pointer"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3.5 rounded-2xl lg-cta-lime text-[#062B1F] font-extrabold text-sm shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-1"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : mode === 'forgot_password' ? (
+                  <KeyRound className="w-4 h-4" />
+                ) : null}
+                <span>
+                  {isSubmitting
+                    ? mode === 'forgot_password'
+                      ? 'Sending link...'
+                      : 'Logging in...'
+                    : mode === 'forgot_password'
+                    ? 'Send Reset Link'
+                    : 'Login'}
+                </span>
+              </button>
+            </form>
+
+            {mode === 'login' && (
+              <>
+                <div className="pt-2 border-t border-white/20 space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-white/75 text-center">
+                    Quick Demo Switch
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => handleDemoSelect('farmer')}
+                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
+                    >
+                      🌱 Farmer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDemoSelect('fodder_supplier')}
+                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
+                    >
+                      🌾 Fodder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDemoSelect('buyer')}
+                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
+                    >
+                      🛒 Buyer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDemoSelect('admin')}
+                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
+                    >
+                      🛡️ Admin
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-center text-xs text-white/90">
+                  Don’t have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('register');
+                      setErrorMsg('');
+                      setSuccessMsg('');
+                    }}
+                    className="font-extrabold text-[#A8E635] hover:underline cursor-pointer"
+                  >
+                    Signup
+                  </button>
+                </p>
+              </>
             )}
           </div>
-        </form>
-      </div>
+        </motion.div>
+      )}
     </div>
   );
 };

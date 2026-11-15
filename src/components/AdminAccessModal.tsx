@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Lock, User, Key, Eye, EyeOff, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { LiquidGlassModal, LiquidGlassButton } from './glass';
 
 interface AdminAccessModalProps {
   isOpen: boolean;
@@ -20,8 +21,6 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-
-  if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,44 +52,52 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden">
-        {/* Header with Dark Luxury / Admin styling */}
-        <div className="bg-stone-900 px-6 py-5 text-white flex items-center justify-between border-b border-stone-800">
+    <LiquidGlassModal
+      isOpen={isOpen}
+      onClose={onClose}
+      hideHeader
+      tone="dark"
+      maxWidthClass="max-w-md"
+    >
+      <div>
+        {/* Deep Forest Liquid Glass Header */}
+        <div className="px-6 py-5 bg-[#062B1F]/85 text-white flex items-center justify-between border-b border-white/15">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-[#A8E635]/20 text-[#A8E635] border border-[#A8E635]/40 flex items-center justify-center">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base text-white">Administrator Access</h3>
-              <p className="text-xs text-stone-400">Restricted agroX Management Portal</p>
+              <h3 className="font-extrabold text-base text-white">Administrator Access</h3>
+              <p className="text-xs text-[#DFF4E4]/75">Restricted FarmBridge Management Portal</p>
             </div>
           </div>
           <button
             id="close-admin-modal-btn"
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800 transition-colors"
+            aria-label="Close admin access modal"
+            className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-[#DFF4E4] hover:text-white transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content Body */}
         <div className="p-6 space-y-5">
           {error && (
-            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-2xl bg-rose-500/20 border border-rose-400/40 text-rose-100 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-300" />
               <div>
-                <span className="font-semibold">Authentication Failed:</span> {error}
+                <span className="font-bold">Authentication Failed:</span> {error}
               </div>
             </div>
           )}
 
           {success && (
-            <div className="p-3.5 rounded-xl bg-green-50 border border-green-200 text-green-800 text-xs flex items-center gap-2.5 animate-in fade-in">
-              <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+            <div className="p-3.5 rounded-2xl bg-[#A8E635]/20 border border-[#A8E635]/45 text-[#DFF4E4] text-xs flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-[#A8E635] shrink-0" />
               <div>
-                <span className="font-bold">Access Granted!</span> Loading Administrator Dashboard...
+                <span className="font-bold text-white">Access Granted!</span> Loading Administrator Dashboard...
               </div>
             </div>
           )}
@@ -98,11 +105,11 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Username */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider">
+              <label className="block text-xs font-bold text-[#DFF4E4]/85 uppercase tracking-wider">
                 Admin Username
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#A8E635]/80">
                   <User className="w-4 h-4" />
                 </div>
                 <input
@@ -110,21 +117,21 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="ULLY"
+                  placeholder="Enter admin ID"
                   autoFocus
                   required
-                  className="w-full pl-9 pr-3 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-sm font-semibold tracking-wider text-stone-900 placeholder:text-stone-400 uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-3 py-2.5 bg-white/10 border border-white/20 rounded-xl text-sm font-semibold tracking-wider text-white placeholder:text-white/40 uppercase focus:bg-white/15 focus:outline-none focus:ring-2 focus:ring-[#A8E635]/50 transition-all"
                 />
               </div>
             </div>
 
             {/* Password */}
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider">
+              <label className="block text-xs font-bold text-[#DFF4E4]/85 uppercase tracking-wider">
                 Admin Password
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#A8E635]/80">
                   <Key className="w-4 h-4" />
                 </div>
                 <input
@@ -134,12 +141,13 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pl-9 pr-10 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-sm font-semibold tracking-wider text-stone-900 placeholder:text-stone-400 uppercase focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-10 py-2.5 bg-white/10 border border-white/20 rounded-xl text-sm font-semibold tracking-wider text-white placeholder:text-white/40 uppercase focus:bg-white/15 focus:outline-none focus:ring-2 focus:ring-[#A8E635]/50 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-600"
+                  aria-label="Toggle password visibility"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#DFF4E4]/65 hover:text-white cursor-pointer"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -147,15 +155,17 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
             </div>
 
             <div className="pt-2">
-              <button
+              <LiquidGlassButton
                 id="submit-admin-auth-btn"
                 type="submit"
+                variant="lime"
+                size="md"
                 disabled={loading || success}
-                className="w-full py-3 px-4 rounded-xl bg-stone-900 hover:bg-purple-900 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                className="w-full"
               >
                 {loading ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <div className="w-4 h-4 border-2 border-[#062B1F]/30 border-t-[#062B1F] rounded-full animate-spin" />
                     <span>Verifying Access...</span>
                   </>
                 ) : (
@@ -164,17 +174,17 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
                     <span>Sign In to Admin Portal</span>
                   </>
                 )}
-              </button>
+              </LiquidGlassButton>
             </div>
           </form>
 
-          <div className="border-t border-stone-100 pt-3 text-center">
-            <p className="text-[11px] text-stone-400">
-              Only authorized agroX platform administrators have security clearance to access this portal.
+          <div className="border-t border-white/12 pt-3 text-center">
+            <p className="text-[11px] text-[#DFF4E4]/60">
+              Only authorized FarmBridge platform administrators have clearance to access this portal.
             </p>
           </div>
         </div>
       </div>
-    </div>
+    </LiquidGlassModal>
   );
 };

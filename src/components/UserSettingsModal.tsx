@@ -2,15 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { isSellerRole } from '../types';
 import { DeleteAccountModal } from './DeleteAccountModal';
+import { LiquidGlassModal, LiquidGlassButton } from './glass';
 import {
-  X,
   User as UserIcon,
   MapPin,
   Phone,
   Mail,
   CheckCircle2,
   Loader2,
-  ShieldCheck
+  ShieldCheck,
+  Settings
 } from 'lucide-react';
 
 interface UserSettingsModalProps {
@@ -63,7 +64,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
     }
   }, [user, isOpen]);
 
-  if (!isOpen || !user) return null;
+  if (!user) return null;
 
   const isSeller = isSellerRole(user.role);
   const isAdmin = user.role === 'admin';
@@ -106,58 +107,43 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
   return (
     <>
-      <div
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-        onClick={onClose}
+      <LiquidGlassModal
+        isOpen={isOpen}
+        onClose={onClose}
+        title="User Settings"
+        subtitle="Manage your personal profile, delivery details, and account preferences"
+        icon={<Settings className="w-5 h-5 text-[#A8E635]" />}
+        maxWidthClass="max-w-lg"
       >
-        <div
-          className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-stone-200 space-y-6 max-h-[90vh] overflow-y-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-center justify-between border-b border-stone-100 pb-4">
-            <div>
-              <h2 className="text-lg font-extrabold text-stone-900">User Settings</h2>
-              <p className="text-xs text-stone-500">
-                Manage your personal profile, delivery details, and account preferences
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-full hover:bg-stone-100 text-stone-400 hover:text-stone-700"
-              aria-label="Close user settings"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
+        <div className="p-6 sm:p-7 space-y-6">
           {savedMsg && (
-            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className="p-3.5 rounded-2xl bg-[#DFF4E4]/85 border border-[#145A38]/25 text-[#062B1F] text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#145A38] shrink-0" />
               <span>{savedMsg}</span>
             </div>
           )}
 
           {errorMsg && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
+            <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-800 text-xs font-semibold">
               {errorMsg}
             </div>
           )}
 
           <form onSubmit={handleSave} className="space-y-4 text-xs">
-            <div className="flex items-center gap-3 p-3 rounded-2xl bg-stone-50 border border-stone-200">
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/75 border border-white shadow-xs">
               <img
                 src={user.avatar}
                 alt={user.name}
-                className="w-12 h-12 rounded-full object-cover border border-stone-300 shrink-0"
+                referrerPolicy="no-referrer"
+                className="w-12 h-12 rounded-full object-cover border-2 border-[#A8E635]/60 shrink-0"
               />
               <div className="min-w-0 flex-1">
-                <div className="font-bold text-stone-900 truncate">{user.name}</div>
-                <div className="text-[11px] text-stone-500 flex items-center gap-1 truncate">
+                <div className="font-extrabold text-[#062B1F] truncate">{user.name}</div>
+                <div className="text-[11px] text-[#0B3D2B]/70 flex items-center gap-1 truncate">
                   <Mail className="w-3 h-3" />
                   <span>{user.email}</span>
                 </div>
-                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 mt-0.5 capitalize">
+                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-[#145A38] mt-0.5 capitalize">
                   <ShieldCheck className="w-3 h-3" />
                   <span>{user.role.replace('_', ' ')} Account</span>
                 </div>
@@ -166,22 +152,22 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="font-bold text-stone-700 block mb-1 flex items-center gap-1">
-                  <UserIcon className="w-3.5 h-3.5 text-stone-400" />
+                <label className="font-bold text-[#062B1F] mb-1 flex items-center gap-1">
+                  <UserIcon className="w-3.5 h-3.5 text-[#145A38]" />
                   Full Name
                 </label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
                   required
                 />
               </div>
 
               <div>
-                <label className="font-bold text-stone-700 block mb-1 flex items-center gap-1">
-                  <Phone className="w-3.5 h-3.5 text-stone-400" />
+                <label className="font-bold text-[#062B1F] mb-1 flex items-center gap-1">
+                  <Phone className="w-3.5 h-3.5 text-[#145A38]" />
                   Phone Number
                 </label>
                 <input
@@ -189,19 +175,19 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+263 77 ..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-stone-700 block mb-1 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-stone-400" />
+                <label className="font-bold text-[#062B1F] mb-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-[#145A38]" />
                   Province
                 </label>
                 <select
                   value={province}
                   onChange={(e) => setProvince(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 bg-white text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
                 >
                   {PROVINCES.map((prov) => (
                     <option key={prov} value={prov}>
@@ -212,19 +198,19 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-stone-700 block mb-1">City / District</label>
+                <label className="font-bold text-[#062B1F] block mb-1">City / District</label>
                 <input
                   type="text"
                   value={city}
                   onChange={(e) => setCity(e.target.value)}
                   placeholder="Harare"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
                 />
               </div>
 
               {!isSeller && (
                 <div className="sm:col-span-2">
-                  <label className="font-bold text-stone-700 block mb-1">
+                  <label className="font-bold text-[#062B1F] block mb-1">
                     Default Delivery Address
                   </label>
                   <input
@@ -232,32 +218,28 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     placeholder="Street address, suburb, landmarks"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
                   />
                 </div>
               )}
             </div>
 
             <div className="flex justify-end pt-1">
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer"
-              >
+              <LiquidGlassButton type="submit" variant="emerald" size="sm" disabled={saving}>
                 {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 <span>{saving ? 'Saving...' : 'Save Settings'}</span>
-              </button>
+              </LiquidGlassButton>
             </div>
           </form>
 
           {/* Account Management / Danger Zone (Buyers & Farmers/Suppliers) */}
           {!isAdmin && (
-            <div className="pt-4 border-t border-stone-200 flex items-center justify-between gap-4">
+            <div className="pt-4 border-t border-[#062B1F]/10 flex items-center justify-between gap-4">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#0B3D2B]/55">
                   Account Management
                 </div>
-                <p className="text-[11px] text-stone-500">
+                <p className="text-[11px] text-[#0B3D2B]/70">
                   Permanently close your FarmBridge account and remove personal data.
                 </p>
               </div>
@@ -265,14 +247,14 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 type="button"
                 id="user-settings-delete-account-btn"
                 onClick={() => setShowDeleteModal(true)}
-                className="text-xs font-medium text-red-600 hover:text-red-700 hover:underline shrink-0 cursor-pointer"
+                className="text-xs font-medium text-rose-600 hover:text-rose-700 hover:underline shrink-0 cursor-pointer"
               >
                 Delete Account
               </button>
             </div>
           )}
         </div>
-      </div>
+      </LiquidGlassModal>
 
       <DeleteAccountModal
         isOpen={showDeleteModal}

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { Product, ReportReason } from '../types';
-import { Flag, X, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { LiquidGlassModal, LiquidGlassButton } from './glass';
+import { Flag, CheckCircle2, Loader2 } from 'lucide-react';
 
 interface ReportModalProps {
   product: Product | null;
@@ -41,37 +42,33 @@ export const ReportModal: React.FC<ReportModalProps> = ({ product, onClose }) =>
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div
-        className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-stone-200 space-y-5"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-red-600 font-bold text-lg">
-            <Flag className="w-5 h-5" />
-            <span>Report Listing</span>
-          </div>
-          <button onClick={onClose} className="p-1 text-stone-400 hover:text-stone-700">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <LiquidGlassModal
+      isOpen={!!product}
+      onClose={onClose}
+      maxWidthClass="max-w-md"
+      title="Report Listing"
+      subtitle={product.name}
+      icon={<Flag className="w-5 h-5 text-rose-400" />}
+    >
+      <div className="p-5 sm:p-6">
         {submitted ? (
-          <div className="text-center py-6 space-y-2">
-            <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
-            <h3 className="font-bold text-stone-900 text-sm">Report Submitted</h3>
-            <p className="text-xs text-stone-500">
-              Thank you for keeping agroX safe. Our moderation team has received your ticket.
+          <div className="text-center py-6 space-y-3">
+            <div className="w-14 h-14 rounded-2xl bg-[#DFF4E4] text-[#145A38] flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+            <h3 className="font-extrabold text-[#062B1F] text-base">Report Submitted</h3>
+            <p className="text-xs text-[#2B4338] leading-relaxed">
+              Thank you for keeping FarmBridge safe. Our moderation team has received your ticket.
             </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 text-xs">
             <div>
-              <label className="font-bold text-stone-700 block mb-1">Reason for Report</label>
+              <label className="font-bold text-[#062B1F] block mb-1">Reason for Report</label>
               <select
                 value={reason}
-                onChange={e => setReason(e.target.value as ReportReason)}
-                className="w-full px-3 py-2.5 bg-stone-50 rounded-xl border border-stone-300 text-stone-900"
+                onChange={(e) => setReason(e.target.value as ReportReason)}
+                className="w-full px-3.5 py-2.5 bg-white rounded-xl border border-[#0B3D2B]/18 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
               >
                 <option value="incorrect_information">Incorrect / Misleading Information</option>
                 <option value="pricing_issue">Extortionate or Fake Pricing</option>
@@ -83,27 +80,30 @@ export const ReportModal: React.FC<ReportModalProps> = ({ product, onClose }) =>
             </div>
 
             <div>
-              <label className="font-bold text-stone-700 block mb-1">Details & Context</label>
+              <label className="font-bold text-[#062B1F] block mb-1">Details & Context</label>
               <textarea
                 rows={3}
                 value={description}
-                onChange={e => setDescription(e.target.value)}
+                onChange={(e) => setDescription(e.target.value)}
                 placeholder="Explain the issue to help our moderation team review this listing..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-stone-900"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-[#0B3D2B]/18 bg-white text-[#062B1F] placeholder-[#2B4338]/50 focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
                 required
               />
             </div>
 
-            <button
+            <LiquidGlassButton
               type="submit"
+              variant="danger"
+              size="md"
               disabled={isSubmitting}
-              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors"
+              className="w-full"
             >
-              {isSubmitting ? 'Submitting...' : 'Submit Flag to Admin Team'}
-            </button>
+              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>{isSubmitting ? 'Submitting...' : 'Submit Flag to Admin Team'}</span>
+            </LiquidGlassButton>
           </form>
         )}
       </div>
-    </div>
+    </LiquidGlassModal>
   );
 };
