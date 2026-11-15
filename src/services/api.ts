@@ -17,7 +17,10 @@ import {
   AdStatus,
   MediaPost,
   BuyerRequest,
-  BuyerRequestStatus
+  BuyerRequestStatus,
+  SupportRequest,
+  SupportRequestStatus,
+  AdminAuditLog
 } from '../types';
 
 const API_BASE = '/api';
@@ -601,11 +604,67 @@ class ApiService {
     return user;
   }
 
-  async updateUser(id: string, updates: Partial<User>): Promise<User> {
+  async updateUser(id: string, updates: Partial<User> & { actingUserId?: string }): Promise<User> {
     return this.request<User>(`/users/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(updates)
+      body: JSON.stringify({ ...updates, actingUserId: updates.actingUserId || id })
     });
+  }
+
+  async adminUpdateFarmerProfile(
+    userId: string,
+    payload: {
+      actingAdminId: string;
+      name: string;
+      phone: string;
+      email?: string;
+      avatar?: string;
+      role?: User['role'];
+      location: User['location'];
+      farmerProfile: Partial<NonNullable<User['farmerProfile']>>;
+      note?: string;
+    }
+  ): Promise<{ user: User; auditLog: AdminAuditLog }> {
+    return this.request<{ user: User; auditLog: AdminAuditLog }>(
+      `/admin/users/${encodeURIComponent(userId)}/profile`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  }
+
+  async getSupportRequests(params?: { userId?: string; status?: string }): Promise<SupportRequest[]> {
+    const query = new URLSearchParams();
+    if (params?.userId) query.append('userId', params.userId);
+    if (params?.status) query.append('status', params.status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request<SupportRequest[]>(`/support-requests${qs}`);
+  }
+
+  async createSupportRequest(
+    payload: Omit<SupportRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'> & { id?: string }
+  ): Promise<SupportRequest> {
+    return this.request<SupportRequest>('/support-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async updateSupportRequest(
+    id: string,
+    payload: { actingAdminId: string; status: SupportRequestStatus; adminNotes?: string }
+  ): Promise<SupportRequest> {
+    return this.request<SupportRequest>(`/support-requests/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async getAdminAuditLogs(actingAdminId: string, affectedUserId?: string): Promise<AdminAuditLog[]> {
+    const query = new URLSearchParams({ actingAdminId });
+    if (affectedUserId) query.append('affectedUserId', affectedUserId);
+    return this.request<AdminAuditLog[]>(`/admin/audit-logs?${query.toString()}`);
   }
 
   async toggleUserStatus(id: string, status: 'active' | 'suspended' | 'pending_verification', email?: string): Promise<User> {

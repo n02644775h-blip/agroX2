@@ -492,7 +492,6 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
   const handleCategorySelect = (catId: string) => {
     const nextCat = filters.category === catId ? 'all' : catId;
     setFilters(prev => ({ ...prev, category: nextCat }));
-    scrollToElement('fresh-from-farmers');
   };
 
   const handleQuickTagClick = (tag: string) => {
@@ -500,7 +499,6 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
     setFilters(nextFilters);
     if (onSearchQueryChange) onSearchQueryChange(tag);
     loadData(nextFilters);
-    scrollToElement('fresh-from-farmers');
   };
 
   const resetFilters = () => {
@@ -723,41 +721,41 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
         </div>
 
         {/* Floating Live Marketplace Metrics Glass Strip (Computed strictly from real app state) */}
-        <div className="relative z-10 px-6 sm:px-10 lg:px-12 pb-6">
-          <div className="lg:max-w-2xl rounded-2xl lg-glass-frosted px-5 py-3.5 grid grid-cols-3 gap-4 divide-x divide-white/20 text-white">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#A8E635]">
-                <Users className="w-4 h-4" />
+        <div className="relative z-10 px-4 sm:px-10 lg:px-12 pb-6">
+          <div className="lg:max-w-2xl rounded-2xl lg-glass-frosted px-2.5 sm:px-5 py-3 sm:py-3.5 grid grid-cols-3 gap-2 sm:gap-4 divide-x divide-white/20 text-white">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#A8E635]">
+                <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-base sm:text-xl font-extrabold tabular-nums leading-tight">
+                <div className="text-sm sm:text-xl font-extrabold tabular-nums leading-tight">
                   {farmersLoading ? '—' : farmers.length}
                 </div>
-                <div className="text-[11px] text-[#DFF4E4]/80 truncate">Active Producers</div>
+                <div className="text-[10px] sm:text-[11px] text-[#DFF4E4]/80 truncate">Active Producers</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pl-4">
-              <div className="w-9 h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#A8E635]">
-                <ShoppingBag className="w-4 h-4" />
+            <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#A8E635]">
+                <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-base sm:text-xl font-extrabold tabular-nums leading-tight">
+                <div className="text-sm sm:text-xl font-extrabold tabular-nums leading-tight">
                   {loading ? '—' : products.length}
                 </div>
-                <div className="text-[11px] text-[#DFF4E4]/80 truncate">Products Listed</div>
+                <div className="text-[10px] sm:text-[11px] text-[#DFF4E4]/80 truncate">Products Listed</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pl-4">
-              <div className="w-9 h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#F4D35E]">
-                <MapPin className="w-4 h-4" />
+            <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#F4D35E]">
+                <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-base sm:text-xl font-extrabold tabular-nums leading-tight">
+                <div className="text-sm sm:text-xl font-extrabold tabular-nums leading-tight">
                   {provincesCovered || '1'}
                 </div>
-                <div className="text-[11px] text-[#DFF4E4]/80 truncate">Regions Connected</div>
+                <div className="text-[10px] sm:text-[11px] text-[#DFF4E4]/80 truncate">Regions Connected</div>
               </div>
             </div>
           </div>

@@ -18,7 +18,9 @@ import { db } from '../firebase/config';
 import { handleFirestoreError, OperationType } from '../firebase/errorHandler';
 import { deleteFirebaseStorageFile } from './firebaseStorage';
 import { normalizeOrderStatus } from '../utils/orderUtils';
-import { User, UserRole } from '../types';
+import { createFirebaseAdminAuditLog } from './firebaseSupportRequests';
+import { createFirebaseNotification } from './firebaseNotifications';
+import { AdminAuditLog, User, UserRole } from '../types';
 
 export interface FirebaseSignupStats {
   totalSignups: number;
@@ -560,6 +562,154 @@ export async function deleteFirebaseUserAccount(params: {
       }
     }
   }
+}
+
+/**
+ * Administrative farmer/fodder supplier profile update synced across Firestore
+ * (user document, producer products, immutable admin audit log, and farmer notification).
+ * Strictly excludes password or credential fields.
+ */
+export async function adminUpdateFarmerProfileInFirebase(params: {
+  targetUser: User;
+  updates: {
+    name: string;
+    phone: string;
+    location: {
+      country?: string;
+      province: string;
+      city: string;
+      address?: string;
+      community?: string;
+    };
+    farmerProfile: {
+      farmName: string;
+      address?: string;
+      bio?: string;
+      farmDescription?: string;
+      farmSize?: string;
+      practices?: string[];
+      farmingPractices?: string[];
+      whatsapp?: string;
+    };
+  };
+  admin: { id: string; name: string };
+  auditLog?: AdminAuditLog;
+  note?: string;
+}): Promise<void> {
+  const { targetUser, updates, admin, auditLog, note } = params;
+  const userRef = doc(db, 'users', targetUser.id);
+  const nowIso = new Date().toISOString();
+
+  const mergedFarmerProfile = {
+    ...(targetUser.farmerProfile || {}),
+    ...updates.farmerProfile,
+    farmName: updates.farmerProfile.farmName.trim(),
+    address: (updates.farmerProfile.address ?? updates.location.address ?? targetUser.farmerProfile?.address ?? '').trim(),
+    bio: (updates.farmerProfile.bio ?? targetUser.farmerProfile?.bio ?? '').trim(),
+    farmDescription: (updates.farmerProfile.farmDescription ?? updates.farmerProfile.bio ?? targetUser.farmerProfile?.farmDescription ?? '').trim(),
+    farmSize: (updates.farmerProfile.farmSize ?? targetUser.farmerProfile?.farmSize ?? '').trim(),
+    practices: updates.farmerProfile.practices ?? targetUser.farmerProfile?.practices ?? [],
+    farmingPractices: updates.farmerProfile.farmingPractices ?? updates.farmerProfile.practices ?? targetUser.farmerProfile?.farmingPractices ?? []
+  };
+
+  const mergedLocation = {
+    country: 'Zimbabwe',
+    province: updates.location.province.trim(),
+    city: updates.location.city.trim(),
+    address: (updates.location.address ?? mergedFarmerProfile.address ?? '').trim(),
+    ...(updates.location.community ? { community: updates.location.community } : {})
+  };
+
+  const firestorePayload: Record<string, any> = {
+    uid: targetUser.id,
+    id: targetUser.id,
+    fullName: updates.name.trim(),
+    name: updates.name.trim(),
+    phone: updates.phone.trim(),
+    email: targetUser.email || '',
+    role: targetUser.role,
+    avatar: targetUser.avatar || '',
+    status: targetUser.status || 'active',
+    location: mergedLocation,
+    farmerProfile: mergedFarmerProfile,
+    updatedAt: serverTimestamp(),
+    lastAdminEditedAt: nowIso,
+    lastAdminEditedBy: admin.id
+  };
+
+  try {
+    await setDoc(userRef, firestorePayload, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${targetUser.id}`);
+  }
+
+  // Sync matching UID docs if docId differs
+  const uidSnap = await getDocs(
+    query(collection(db, 'users'), where('uid', '==', targetUser.id))
+  ).catch(() => null);
+  if (uidSnap && !uidSnap.empty) {
+    for (const d of uidSnap.docs) {
+      if (d.id !== targetUser.id) {
+        await setDoc(d.ref, firestorePayload, { merge: true }).catch(() => {});
+      }
+    }
+  }
+
+  // Keep producer listings' farmerName & farmName in sync in Firestore
+  const prodsSnap = await getDocs(
+    query(collection(db, 'products'), where('farmerId', '==', targetUser.id))
+  ).catch(() => null);
+  if (prodsSnap && !prodsSnap.empty) {
+    for (const pDoc of prodsSnap.docs) {
+      await updateDoc(pDoc.ref, {
+        farmerName: updates.name.trim(),
+        farmName: mergedFarmerProfile.farmName,
+        updatedAt: nowIso
+      }).catch(() => {});
+    }
+  }
+
+  const postsSnap = await getDocs(
+    query(collection(db, 'mediaPosts'), where('farmerId', '==', targetUser.id))
+  ).catch(() => null);
+  if (postsSnap && !postsSnap.empty) {
+    for (const postDoc of postsSnap.docs) {
+      await updateDoc(postDoc.ref, {
+        farmerName: updates.name.trim(),
+        farmName: mergedFarmerProfile.farmName,
+        updatedAt: nowIso
+      }).catch(() => {});
+    }
+  }
+
+  const finalAuditLog: AdminAuditLog = auditLog || {
+    id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    adminId: admin.id,
+    adminName: admin.name,
+    action: 'edit_farmer_profile',
+    affectedUserId: targetUser.id,
+    affectedUserName: updates.name.trim(),
+    changedFields: {
+      name: { before: targetUser.name, after: updates.name.trim() },
+      phone: { before: targetUser.phone || '', after: updates.phone.trim() },
+      farmName: {
+        before: targetUser.farmerProfile?.farmName || '',
+        after: mergedFarmerProfile.farmName
+      }
+    },
+    note: note || 'Updated farmer profile from Admin Panel',
+    timestamp: nowIso
+  };
+
+  await createFirebaseAdminAuditLog(finalAuditLog);
+
+  await createFirebaseNotification({
+    userId: targetUser.id,
+    title: 'Profile Updated by FarmBridge Support',
+    message: `An administrator updated your farmer profile details (${mergedFarmerProfile.farmName}).`,
+    type: 'system',
+    metadata: { auditLogId: finalAuditLog.id }
+  }).catch(() => {});
 }
 
 /**

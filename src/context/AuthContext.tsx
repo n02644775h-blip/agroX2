@@ -41,9 +41,9 @@ import { User, UserRole, Notification, isSellerRole } from '../types';
 import { api } from '../services/api';
 
 const SUSPENDED_ACCOUNT_MESSAGE =
-  'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.';
+  'Your account has been suspended by the FarmBridge administration. Please contact support at farmbridge2026@gmail.com for assistance.';
 const DELETED_ACCOUNT_MESSAGE =
-  'This account has been permanently deleted by the agroX administration.';
+  'This account has been permanently deleted by the FarmBridge administration.';
 
 function createSuspendedError(message: string = SUSPENDED_ACCOUNT_MESSAGE): Error & { code?: string } {
   const err = new Error(message) as Error & { code?: string };
@@ -154,8 +154,6 @@ interface AuthContextType {
   deleteAccount: (options?: { password?: string }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   register: (userData: Partial<User>) => Promise<void>; // Backward-compatible alias
-  switchDemoRole: (role: UserRole | string) => Promise<void>;
-  demoLogin: (role: UserRole | string) => Promise<void>;
   updateUserProfile: (updates: Partial<User>) => Promise<void>;
   refreshUserData: () => Promise<void>;
   toggleFavorite: (productId: string) => Promise<boolean>;
@@ -291,38 +289,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         userStatus = fsData.status || 'active';
 
-        // Merge giving local edits priority so recently saved farm profile changes are preserved
+        // Authoritative Firestore data takes precedence over stale localStorage so admin edits persist everywhere
         const resolvedRole = (
-          localCachedUser?.role ||
           fsData.role ||
+          localCachedUser?.role ||
           (uid.startsWith('supplier') ? 'fodder_supplier' : uid.startsWith('farmer') ? 'farmer' : uid.startsWith('admin') ? 'admin' : 'buyer')
         ) as UserRole;
 
         profileData = {
           uid,
-          fullName: localCachedUser?.name || fsData.fullName || fbUser?.displayName || 'Producer User',
-          email: fsData.email || localCachedUser?.email || fbUser?.email || `${uid}@agrox.org`,
+          fullName: fsData.fullName || fsData.name || fbUser?.displayName || localCachedUser?.name || 'Producer User',
+          email: fsData.email || fbUser?.email || localCachedUser?.email || `${uid}@farmbridge.local`,
           role: resolvedRole,
-          phone: localCachedUser?.phone || fsData.phone || '',
-          avatar: localCachedUser?.avatar || fsData.avatar || fbUser?.photoURL || '',
-          emailVerified: Boolean(localCachedUser?.emailVerified ?? fsData.emailVerified),
-          phoneVerified: Boolean(localCachedUser?.phoneVerified ?? fsData.phoneVerified),
-          verificationMethod: localCachedUser?.verificationMethod || fsData.verificationMethod,
+          phone: fsData.phone ?? localCachedUser?.phone ?? '',
+          avatar: fsData.avatar || fbUser?.photoURL || localCachedUser?.avatar || '',
+          emailVerified: Boolean(fsData.emailVerified ?? localCachedUser?.emailVerified),
+          phoneVerified: Boolean(fsData.phoneVerified ?? localCachedUser?.phoneVerified),
+          verificationMethod: fsData.verificationMethod || localCachedUser?.verificationMethod,
           location: {
             country: 'Zimbabwe',
             province: 'Harare',
             city: 'Harare',
-            ...(fsData.location || {}),
-            ...(localCachedUser?.location || {})
+            ...(localCachedUser?.location || {}),
+            ...(fsData.location || {})
           },
-          farmerProfile: {
-            ...(fsData.farmerProfile || {}),
-            ...(localCachedUser?.farmerProfile || {})
-          },
-          buyerProfile: {
-            ...(fsData.buyerProfile || {}),
-            ...(localCachedUser?.buyerProfile || {})
-          }
+          farmerProfile:
+            fsData.farmerProfile || localCachedUser?.farmerProfile
+              ? {
+                  ...(localCachedUser?.farmerProfile || {}),
+                  ...(fsData.farmerProfile || {})
+                }
+              : undefined,
+          buyerProfile:
+            fsData.buyerProfile || localCachedUser?.buyerProfile
+              ? {
+                  ...(localCachedUser?.buyerProfile || {}),
+                  ...(fsData.buyerProfile || {})
+                }
+              : undefined
         };
       } else {
         // If document does not exist in Firestore yet:
@@ -558,7 +562,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.warn('Real-time notice: Account has been suspended by administration.');
       forceRevokeSuspendedSession(
         user.id,
-        'Notice: Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for appeal.'
+        'Notice: Your account has been suspended by the FarmBridge administration. Please contact support at farmbridge2026@gmail.com for appeal.'
       );
     };
 
@@ -571,12 +575,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const statusUnsubById = onSnapshot(
       activeUserDocRef,
       (snap) => {
-        const st = snap.exists() ? snap.data()?.status : undefined;
+        if (!snap.exists()) return;
+        const fsData = snap.data() as any;
+        const st = fsData?.status;
         if (st === 'suspended') {
           handleRealtimeSuspension();
-        } else if (st === 'deleted') {
-          handleRealtimeDeletion();
+          return;
         }
+        if (st === 'deleted') {
+          handleRealtimeDeletion();
+          return;
+        }
+
+        // Real-time sync when Admin or another tab updates the active profile in Firestore
+        const incomingName = fsData.fullName || fsData.name;
+        const incomingPhone = fsData.phone !== undefined ? fsData.phone : undefined;
+        setUser(prev => {
+          if (!prev || prev.id !== user.id) return prev;
+          const nextUser: User = {
+            ...prev,
+            name: incomingName || prev.name,
+            phone: incomingPhone !== undefined ? incomingPhone : prev.phone,
+            avatar: fsData.avatar || prev.avatar,
+            location: fsData.location ? { ...prev.location, ...fsData.location } : prev.location,
+            farmerProfile: fsData.farmerProfile
+              ? { ...(prev.farmerProfile || {}), ...fsData.farmerProfile }
+              : prev.farmerProfile,
+            buyerProfile: fsData.buyerProfile
+              ? { ...(prev.buyerProfile || {}), ...fsData.buyerProfile }
+              : prev.buyerProfile
+          };
+          if (JSON.stringify(nextUser) === JSON.stringify(prev)) return prev;
+          persistUserSession(nextUser);
+          setUserProfile({
+            uid: nextUser.id,
+            fullName: nextUser.name,
+            email: nextUser.email,
+            role: nextUser.role,
+            phone: nextUser.phone,
+            avatar: nextUser.avatar,
+            location: nextUser.location,
+            farmerProfile: nextUser.farmerProfile,
+            buyerProfile: nextUser.buyerProfile
+          });
+          return nextUser;
+        });
       },
       () => {}
     );
@@ -952,14 +995,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         location: fsAdminData?.location || cachedAdmin?.location || baseAdmin.location
       };
 
-      // Sync merged admin avatar back to backend API store if different
-      if (mergedAdmin.avatar !== baseAdmin.avatar || mergedAdmin.name !== baseAdmin.name) {
-        api.updateUser('admin-1', { avatar: mergedAdmin.avatar, name: mergedAdmin.name }).catch(() => {});
-      }
-
       const token = apiRes?.token || 'token_admin-1';
       persistUserSession(mergedAdmin, token);
       api.setToken(token);
+
+      // Sync merged admin avatar back to backend API store if different
+      if (mergedAdmin.avatar !== baseAdmin.avatar || mergedAdmin.name !== baseAdmin.name) {
+        api.updateUser('admin-1', { avatar: mergedAdmin.avatar, name: mergedAdmin.name, actingUserId: 'admin-1' }).catch(() => {});
+      }
+
       setUser(mergedAdmin);
       setUserProfile({
         uid: 'admin-1',
@@ -1198,107 +1242,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Demo Switcher for fast testing
-  const switchDemoRole = async (target: string) => {
-    setLoading(true);
-    setSuspensionNotice(null);
-    let targetEmail = 'grace.chidzero@gmail.com';
-    let targetId = 'buyer-1';
-    if (target === 'farmer' || target === 'farmer-1') {
-      targetEmail = 'tendai.moyo@greenfields.co.zw';
-      targetId = 'farmer-1';
-    } else if (target === 'farmer-2') {
-      targetEmail = 'chipo@sunrisepoultry.co.zw';
-      targetId = 'farmer-2';
-    } else if (target === 'fodder_supplier' || target === 'supplier-1') {
-      targetEmail = 'tawanda@greenbale.co.zw';
-      targetId = 'supplier-1';
-    } else if (target === 'buyer' || target === 'buyer-1') {
-      targetEmail = 'grace.chidzero@gmail.com';
-      targetId = 'buyer-1';
-    } else if (target === 'buyer-2') {
-      targetEmail = 'kuda.restocatering@gmail.com';
-      targetId = 'buyer-2';
-    } else if (target === 'admin' || target === 'admin-1') {
-      targetEmail = 'admin@agrox.org';
-      targetId = 'admin-1';
-    } else {
-      targetEmail = target;
-      targetId = target;
-    }
-
-    try {
-      await enforceNotSuspended(targetId, targetEmail);
-      const res = await api.login(targetEmail).catch((err) => {
-        if (err?.message?.toLowerCase().includes('suspended')) {
-          throw createSuspendedError(err.message);
-        }
-        return null;
-      });
-      if (res?.user) {
-        if (res.user.status === 'suspended') {
-          await forceRevokeSuspendedSession(res.user.id);
-          throw createSuspendedError();
-        }
-        await enforceNotSuspended(res.user.id, res.user.email);
-        persistUserSession(res.user, res.token);
-        await syncUserProfile(null, res.user.id);
-      } else {
-        await syncUserProfile(null, targetId);
-      }
-    } catch (err: any) {
-      console.error('Demo switch failed:', err);
-      if (isSuspendedError(err)) {
-        throw err;
-      }
-      await syncUserProfile(null, targetId);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 6. User Profile Update
+  // 6. User Profile Update (locks protected full name & phone for non-admin users, confirms DB save before updating UI)
   const updateUserProfile = async (updates: Partial<User>) => {
-    if (!user) return;
+    if (!user) {
+      throw new Error('You must be signed in to update your profile.');
+    }
+
+    const isAdminUser = user.role === 'admin';
+    if (!isAdminUser) {
+      const incomingName = updates.name !== undefined ? updates.name.trim() : undefined;
+      const incomingPhone = updates.phone !== undefined ? updates.phone.trim() : undefined;
+      const nameChanged = incomingName !== undefined && incomingName !== (user.name || '').trim();
+      const phoneChanged = incomingPhone !== undefined && incomingPhone !== (user.phone || '').trim();
+      if (nameChanged || phoneChanged) {
+        throw new Error('Full name and phone number are protected and can only be changed through FarmBridge Support.');
+      }
+    }
 
     try {
       const userDocRef = doc(db, 'users', user.id);
 
-      // Deeply merge into updated user object
+      // Build sanitized update payload keeping locked fields immutable for non-admin users
       const updatedUser: User = {
         ...user,
         ...updates,
-        name: updates.name ? updates.name.trim() : user.name,
-        phone: updates.phone !== undefined ? updates.phone.trim() : user.phone,
+        name: isAdminUser && updates.name ? updates.name.trim() : user.name,
+        phone: isAdminUser && updates.phone !== undefined ? updates.phone.trim() : user.phone,
         avatar: updates.avatar || user.avatar,
-        location: updates.location ? {
-          ...(user.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' }),
-          ...updates.location
-        } : user.location,
-        farmerProfile: (isSellerRole(user.role) || updates.farmerProfile) ? {
-          ...(user.farmerProfile || {}),
-          ...(updates.farmerProfile || {})
-        } : user.farmerProfile,
-        buyerProfile: (user.role === 'buyer' || updates.buyerProfile) ? {
-          ...(user.buyerProfile || {}),
-          ...(updates.buyerProfile || {})
-        } : user.buyerProfile
+        location: updates.location
+          ? {
+              ...(user.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' }),
+              ...updates.location
+            }
+          : user.location,
+        farmerProfile:
+          isSellerRole(user.role) || updates.farmerProfile
+            ? {
+                ...(user.farmerProfile || {}),
+                ...(updates.farmerProfile || {})
+              }
+            : user.farmerProfile,
+        buyerProfile:
+          user.role === 'buyer' || updates.buyerProfile
+            ? {
+                ...(user.buyerProfile || {}),
+                ...(updates.buyerProfile || {})
+              }
+            : user.buyerProfile
       };
 
-      // 1. Immediately save to persistent multi-layer storage (cookies, localStorage, sessionStorage)
-      persistUserSession(updatedUser);
-
-      // 2. Prepare comprehensive Firestore document payload
+      // 1. Prepare Firestore document payload (never rewrite name/phone for non-admin accounts)
       const firestoreDocPayload: Record<string, any> = {
         uid: user.id,
-        fullName: updatedUser.name,
         email: updatedUser.email,
         role: updatedUser.role,
-        phone: updatedUser.phone || '',
         avatar: updatedUser.avatar,
         location: sanitizeForFirestore(updatedUser.location),
         updatedAt: serverTimestamp()
       };
+      if (isAdminUser) {
+        firestoreDocPayload.fullName = updatedUser.name;
+        firestoreDocPayload.name = updatedUser.name;
+        firestoreDocPayload.phone = updatedUser.phone || '';
+      }
 
       if (isSellerRole(updatedUser.role) && updatedUser.farmerProfile) {
         firestoreDocPayload.farmerProfile = sanitizeForFirestore(updatedUser.farmerProfile);
@@ -1307,21 +1313,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         firestoreDocPayload.buyerProfile = sanitizeForFirestore(updatedUser.buyerProfile);
       }
 
-      // 3. Write to Firestore using setDoc with merge: true (creates or updates reliably)
-      await setDoc(userDocRef, sanitizeForFirestore(firestoreDocPayload), { merge: true }).catch(err => {
-        console.warn('Could not write profile to Firestore, relying on local persistence:', err);
-      });
+      // 2. Confirm persistence against Backend API and Cloud Firestore BEFORE updating local state or showing success
+      const apiUpdates: Partial<User> & { actingUserId: string } = {
+        actingUserId: user.id,
+        avatar: updatedUser.avatar,
+        location: updatedUser.location,
+        ...(isAdminUser ? { name: updatedUser.name, phone: updatedUser.phone } : {}),
+        ...(updatedUser.farmerProfile ? { farmerProfile: updatedUser.farmerProfile } : {}),
+        ...(updatedUser.buyerProfile ? { buyerProfile: updatedUser.buyerProfile } : {})
+      };
 
-      if (currentUser && updates.name) {
+      await Promise.all([
+        setDoc(userDocRef, sanitizeForFirestore(firestoreDocPayload), { merge: true }),
+        api.updateUser(user.id, apiUpdates)
+      ]);
+
+      if (currentUser && isAdminUser && updates.name) {
         await updateProfile(currentUser, { displayName: updates.name.trim() }).catch(() => {});
       }
 
-      // 4. Update backend API store
-      await api.updateUser(user.id, updatedUser).catch(err => {
-        console.warn('API store user update warning:', err);
-      });
-
-      // 5. Update local React state
+      // 3. Persist locally and update React state immediately AFTER DB confirmation succeeds
+      persistUserSession(updatedUser);
       setUser(updatedUser);
       setUserProfile({
         uid: user.id,
@@ -1388,8 +1400,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteAccount,
         resetPassword,
         register,
-        switchDemoRole,
-        demoLogin: switchDemoRole,
         updateUserProfile,
         refreshUserData: () => syncUserProfile(currentUser),
         toggleFavorite,

@@ -8,6 +8,19 @@ export interface OrderStageDef {
   description: string;
 }
 
+const usdCurrencyFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
+export function formatCurrency(amount: number | string | null | undefined): string {
+  const num = Number(amount ?? 0);
+  if (!Number.isFinite(num)) return '$0.00';
+  return usdCurrencyFormatter.format(num);
+}
+
 export function normalizeOrderStatus(
   status: OrderStatus | string,
   deliveryMethod: DeliveryMethod = 'delivery'

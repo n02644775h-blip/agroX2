@@ -138,7 +138,7 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
   const [showNewChatPicker, setShowNewChatPicker] = useState(false);
   const [directorySearch, setDirectorySearch] = useState('');
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const conversations = useMemo(
     () => mergeConversationsLists(fbConversations, apiConversations),
@@ -344,7 +344,10 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
   }, [activeConvId, user?.id]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, [messages.length, activeConvId]);
 
   const startChatWithUser = async (targetUser: User) => {
@@ -566,7 +569,7 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
       {/* Primary Channel Selector Header Bar */}
       <LiquidGlassCard variant="mint" className="p-2.5 sm:p-3">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
             <button
               id="tab-public-announcements-chat"
               type="button"
@@ -818,7 +821,10 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                   </div>
 
                   {/* Messages Thread Container */}
-                  <div className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-[#F8FAF7]/55 max-h-[460px]">
+                  <div
+                    ref={messagesContainerRef}
+                    className="flex-1 p-4 sm:p-6 overflow-y-auto space-y-4 bg-[#F8FAF7]/55 max-h-[460px]"
+                  >
                     {attachedProduct && (
                       <div className="max-w-md mx-auto p-3 rounded-2xl bg-[#DFF4E4]/90 border border-[#145A38]/25 flex items-center justify-between gap-3 shadow-xs">
                         <div className="flex items-center gap-3 min-w-0">
@@ -1030,7 +1036,6 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
                         );
                       })
                     )}
-                    <div ref={messagesEndRef} />
                   </div>
 
                   {sendError && (

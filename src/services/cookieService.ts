@@ -236,8 +236,10 @@ export function clearUserSession(uid?: string): void {
     localStorage.removeItem('agrox_current_user');
     localStorage.removeItem('agrox_active_uid');
     localStorage.removeItem('agriconnect_token');
+    localStorage.removeItem('agrox_current_view');
     sessionStorage.removeItem('agrox_current_user');
     sessionStorage.removeItem('agrox_active_uid');
+    sessionStorage.removeItem('agrox_current_view');
     removeCookie('agrox_uid');
     removeCookie('agrox_user');
     removeCookie('agriconnect_token');

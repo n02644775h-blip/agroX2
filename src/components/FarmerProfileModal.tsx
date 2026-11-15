@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { User } from '../types';
 import { LiquidGlassModal, LiquidGlassButton } from './glass';
+import { ContactSupportModal } from './ContactSupportModal';
 import {
   User as UserIcon,
   Camera,
@@ -14,7 +15,9 @@ import {
   Sparkles,
   CreditCard,
   Sprout,
-  Wheat
+  Wheat,
+  Lock,
+  Headphones
 } from 'lucide-react';
 
 interface FarmerProfileModalProps {
@@ -111,6 +114,7 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [successMsg, setSuccessMsg] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showSupportModal, setShowSupportModal] = useState(false);
 
   const togglePractice = (tag: string) => {
     if (selectedPractices.includes(tag)) {
@@ -141,15 +145,22 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    setErrorMsg('');
+
+    if (!farmName.trim()) {
+      setErrorMsg('Public Farm / Brand Name cannot be empty.');
+      return;
+    }
+    if (!city.trim()) {
+      setErrorMsg('City / District cannot be empty.');
+      return;
+    }
 
     setIsSaving(true);
-    setErrorMsg('');
 
     try {
       const updates: Partial<User> = {
-        name: name.trim() || user.name,
         avatar,
-        phone: phone.trim(),
         location: {
           country: 'Zimbabwe',
           province,
@@ -181,7 +192,7 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
         setSuccessMsg(false);
         if (onSuccess) onSuccess();
         onClose();
-      }, 1200);
+      }, 900);
     } catch (err: any) {
       console.error('Failed to update farmer profile:', err);
       setErrorMsg(err.message || 'Failed to update profile.');
@@ -221,7 +232,7 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
         {successMsg && (
           <div className="p-3.5 rounded-xl bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] font-bold flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-[#145A38] shrink-0" />
-            <span>Farmer profile and store settings saved successfully!</span>
+            <span>Changes saved successfully!</span>
           </div>
         )}
 
@@ -311,23 +322,23 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
             <div className="flex items-center justify-between mb-1">
               <label className="font-bold text-[#062B1F] flex items-center gap-1.5">
                 <UserIcon className="w-3.5 h-3.5 text-[#145A38]" />
-                <span>Producer Full Name *</span>
+                <span>Producer Full Name</span>
               </label>
-              <span className="text-[10px] font-semibold text-[#145A38] bg-[#DFF4E4] px-2 py-0.5 rounded-md border border-[#145A38]/20">
-                Editable
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                <Lock className="w-2.5 h-2.5" />
+                Locked
               </span>
             </div>
             <input
               id="farmer-name-input"
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Tendai Moyo"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F] font-semibold focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
-              required
+              disabled
+              readOnly
+              className="w-full px-3.5 py-2.5 rounded-xl bg-stone-100 border border-[#0B3D2B]/12 text-[#062B1F]/70 font-semibold cursor-not-allowed"
             />
             <p className="text-[10px] text-[#0B3D2B]/65 mt-1">
-              Your primary producer and account contact name.
+              Protected identity field — contact FarmBridge Support to request changes.
             </p>
           </div>
 
@@ -353,16 +364,21 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
         {/* 3. Contact Numbers */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="font-bold text-[#062B1F] block mb-1">Contact Phone *</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-bold text-[#062B1F] block">Contact Phone</label>
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-800">
+                <Lock className="w-2.5 h-2.5" />
+                Locked
+              </span>
+            </div>
             <div className="relative">
-              <Phone className="w-3.5 h-3.5 text-[#145A38]/60 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Phone className="w-3.5 h-3.5 text-[#145A38]/50 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+263 77 123 4567"
-                className="w-full pl-8 pr-3 py-2 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F]"
-                required
+                value={phone || 'Not provided'}
+                disabled
+                readOnly
+                className="w-full pl-8 pr-3 py-2 rounded-xl bg-stone-100 border border-[#0B3D2B]/12 text-[#062B1F]/70 cursor-not-allowed"
               />
             </div>
           </div>
@@ -394,6 +410,22 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
               />
             </div>
           </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-start gap-2 text-[11px] text-amber-900 font-medium">
+            <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+            <span>Full name and phone number can only be changed through FarmBridge Support.</span>
+          </div>
+          <button
+            type="button"
+            id="farmer-modal-contact-support-btn"
+            onClick={() => setShowSupportModal(true)}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-[#145A38] text-[#062B1F] hover:text-white border border-amber-300 font-bold text-[11px] transition-colors shrink-0 cursor-pointer"
+          >
+            <Headphones className="w-3.5 h-3.5" />
+            <span>Contact Support to Update Details</span>
+          </button>
         </div>
 
         {/* 4. Bio */}
@@ -574,7 +606,7 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#0B3D2B]/10">
-          <LiquidGlassButton variant="light" size="sm" onClick={onClose}>
+          <LiquidGlassButton type="button" variant="light" size="sm" onClick={onClose} disabled={isSaving}>
             Cancel
           </LiquidGlassButton>
           <LiquidGlassButton
@@ -585,10 +617,14 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
             disabled={isSaving}
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{isSaving ? 'Saving Profile...' : 'Save Profile Changes'}</span>
+            <span>{isSaving ? 'Saving Changes...' : 'Save Changes'}</span>
           </LiquidGlassButton>
         </div>
       </form>
+      <ContactSupportModal
+        isOpen={showSupportModal}
+        onClose={() => setShowSupportModal(false)}
+      />
     </LiquidGlassModal>
   );
 };

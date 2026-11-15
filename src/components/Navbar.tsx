@@ -139,6 +139,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Left: FarmBridge Brand Mark */}
           <div className="flex items-center gap-4 lg:gap-6 shrink-0">
             <button
+              type="button"
               id="navbar-brand-logo"
               onClick={() => handleNav('marketplace')}
               className="flex items-center gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] rounded-xl cursor-pointer"
@@ -166,6 +167,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="hidden md:flex items-center gap-1 p-1 rounded-full bg-white/8 border border-white/12 text-[13px] font-medium"
             >
               <button
+                type="button"
                 id="nav-marketplace-btn"
                 onClick={() => handleNav('marketplace')}
                 className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -179,6 +181,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
 
               <button
+                type="button"
                 id="nav-community-btn"
                 onClick={() => handleSectionLink('farmbridge-community-section', 'community')}
                 className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -192,6 +195,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
 
               <button
+                type="button"
                 id="nav-buyer-requests-btn"
                 onClick={() => handleSectionLink('buyer-requests-section', 'requests')}
                 className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -206,6 +210,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {isSellerRole(user?.role) && (
                 <button
+                  type="button"
                   id="nav-farmer-portal-btn"
                   onClick={() => handleNav('farmer_dashboard')}
                   className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -223,6 +228,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {user?.role === 'buyer' && (
                 <button
+                  type="button"
                   id="nav-buyer-hub-btn"
                   onClick={() => handleNav('buyer_dashboard')}
                   className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -238,6 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {user?.role === 'admin' && (
                 <button
+                  type="button"
                   id="nav-admin-portal-btn"
                   onClick={() => handleNav('admin')}
                   className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -253,6 +260,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               {user && (
                 <button
+                  type="button"
                   id="nav-orders-btn"
                   onClick={() => handleNav('orders')}
                   className={`relative px-3.5 py-1.5 rounded-full transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -316,6 +324,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {isSellerRole(user?.role) && onOpenAddProduct && (
               <button
+                type="button"
                 id="navbar-add-product-btn"
                 onClick={onOpenAddProduct}
                 className="hidden lg:inline-flex items-center gap-1.5 px-3.5 py-1.5 lg-cta-lime text-[#062B1F] text-xs font-bold rounded-full transition-all whitespace-nowrap shrink-0 cursor-pointer"
@@ -327,6 +336,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {user && (
               <button
+                type="button"
                 id="navbar-messages-btn"
                 onClick={() => handleNav('messages', { channel: 'direct' })}
                 className={`relative p-2 rounded-full transition-colors cursor-pointer ${
@@ -348,6 +358,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {user && (
               <button
+                type="button"
                 id="navbar-notifications-btn"
                 onClick={() => {
                   if (onOpenNotifications) {
@@ -374,6 +385,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             <button
+              type="button"
               id="navbar-cart-btn"
               onClick={() => {
                 if (onOpenCart) {
@@ -397,6 +409,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {user ? (
               <div ref={dropdownRef} className="relative pl-1.5 sm:pl-2.5 border-l border-white/15">
                 <button
+                  type="button"
                   id="navbar-user-menu-btn"
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
                   className="flex items-center gap-2 p-1 pr-2 rounded-full bg-white/8 hover:bg-white/15 border border-white/15 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] cursor-pointer"
@@ -427,7 +440,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {userDropdownOpen && (
                   <div
                     id="user-dropdown-menu"
-                    className="absolute right-0 mt-2.5 w-64 lg-glass-dark rounded-2xl py-2 z-50 text-white"
+                    className="absolute right-0 mt-2.5 w-64 max-w-[calc(100vw-1.5rem)] lg-glass-dark rounded-2xl py-2 z-50 text-white"
                   >
                     <div className="px-4 py-2.5 border-b border-white/12">
                       <div className="font-bold text-white text-xs truncate">{user.name}</div>
@@ -443,6 +456,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <div className="py-1">
                       {isSellerRole(user.role) && (
                         <button
+                          type="button"
                           onClick={() => handleNav('farmer_dashboard')}
                           className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
                         >
@@ -453,6 +467,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                       {user.role === 'buyer' && (
                         <button
+                          type="button"
                           onClick={() => handleNav('buyer_dashboard')}
                           className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
                         >
@@ -463,6 +478,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                       {user.role === 'admin' && (
                         <button
+                          type="button"
                           onClick={() => handleNav('admin')}
                           className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
                         >
@@ -472,6 +488,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       )}
 
                       <button
+                        type="button"
                         onClick={() => handleNav('orders')}
                         className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium cursor-pointer"
                       >
@@ -481,6 +498,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                       {user.role === 'buyer' && (
                         <button
+                          type="button"
                           onClick={() => handleNav('favorites')}
                           className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium cursor-pointer"
                         >
@@ -490,6 +508,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       )}
 
                       <button
+                        type="button"
                         onClick={() => handleNav('messages', { channel: 'announcements' })}
                         className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium cursor-pointer"
                       >
@@ -499,6 +518,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                       {onOpenSettings && (
                         <button
+                          type="button"
                           id="navbar-user-settings-btn"
                           onClick={() => {
                             setUserDropdownOpen(false);
@@ -515,6 +535,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                     <div className="border-t border-white/12 mt-1 pt-1">
                       <button
+                        type="button"
                         id="navbar-logout-btn"
                         onClick={() => {
                           logout();
@@ -532,6 +553,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             ) : (
               <div className="flex items-center gap-2 pl-1.5 sm:pl-2.5 border-l border-white/15">
                 <button
+                  type="button"
                   id="navbar-login-btn"
                   onClick={() => onOpenAuth('login')}
                   className="px-3.5 py-1.5 text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/25 rounded-full transition-colors whitespace-nowrap cursor-pointer"
@@ -539,6 +561,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Log In
                 </button>
                 <button
+                  type="button"
                   id="navbar-register-btn"
                   onClick={() => onOpenAuth('register')}
                   className="hidden sm:inline-flex px-4 py-1.5 text-xs font-bold lg-cta-lime text-[#062B1F] rounded-full transition-all whitespace-nowrap cursor-pointer"
@@ -549,6 +572,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             <button
+              type="button"
               id="navbar-mobile-toggle"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-full text-[#DFF4E4] hover:bg-white/12 md:hidden cursor-pointer"
@@ -569,7 +593,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Search className="w-4 h-4 text-[#DFF4E4]/60 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                autoFocus
                 value={localSearch}
                 onChange={(e) => {
                   setLocalSearch(e.target.value);
@@ -597,24 +620,27 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <div className="grid grid-cols-2 gap-2">
             <button
+              type="button"
               onClick={() => handleNav('marketplace')}
-              className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+              className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
             >
               <Store className="w-4 h-4 text-[#A8E635] shrink-0" />
               <span>Marketplace</span>
             </button>
 
             <button
+              type="button"
               onClick={() => handleSectionLink('farmbridge-community-section', 'community')}
-              className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+              className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
             >
               <Users className="w-4 h-4 text-[#A8E635] shrink-0" />
               <span>Community</span>
             </button>
 
             <button
+              type="button"
               onClick={() => handleSectionLink('buyer-requests-section', 'requests')}
-              className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+              className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
             >
               <ClipboardList className="w-4 h-4 text-[#A8E635] shrink-0" />
               <span>Buyer Requests</span>
@@ -622,24 +648,27 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {isSellerRole(user?.role) ? (
               <button
+                type="button"
                 onClick={() => handleNav('farmer_dashboard')}
-                className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+                className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
               >
                 <LayoutDashboard className="w-4 h-4 text-[#A8E635] shrink-0" />
                 <span>{user?.role === 'fodder_supplier' ? 'Supplier Hub' : 'Farmer Hub'}</span>
               </button>
             ) : user?.role === 'admin' ? (
               <button
+                type="button"
                 onClick={() => handleNav('admin')}
-                className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+                className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
               >
                 <ShieldCheck className="w-4 h-4 text-[#A8E635] shrink-0" />
                 <span>Admin Portal</span>
               </button>
             ) : (
               <button
+                type="button"
                 onClick={() => (user ? handleNav('buyer_dashboard') : onOpenAuth('login'))}
-                className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+                className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
               >
                 <LayoutDashboard className="w-4 h-4 text-[#A8E635] shrink-0" />
                 <span>Buyer Hub</span>
@@ -649,16 +678,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             {user && (
               <>
                 <button
+                  type="button"
                   onClick={() => handleNav('orders')}
-                  className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+                  className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
                 >
                   <FileText className="w-4 h-4 text-[#A8E635] shrink-0" />
                   <span>Orders</span>
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => handleNav('messages', { channel: 'direct' })}
-                  className="flex items-center gap-2 p-3 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left"
+                  className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer"
                 >
                   <MessageSquare className="w-4 h-4 text-[#A8E635] shrink-0" />
                   <span>Messages</span>
@@ -669,11 +700,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {!user && (
             <button
+              type="button"
               onClick={() => {
                 setMobileMenuOpen(false);
                 onOpenAuth('register');
               }}
-              className="w-full py-2.5 rounded-2xl lg-cta-lime text-[#062B1F] text-xs font-extrabold"
+              className="w-full py-2.5 min-h-[44px] rounded-2xl lg-cta-lime text-[#062B1F] text-xs font-extrabold cursor-pointer"
             >
               Create Account
             </button>
@@ -681,11 +713,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {user && onOpenSettings && (
             <button
+              type="button"
               onClick={() => {
                 setMobileMenuOpen(false);
                 onOpenSettings();
               }}
-              className="w-full flex items-center justify-center gap-2 p-2.5 rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold"
+              className="w-full flex items-center justify-center gap-2 p-2.5 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold cursor-pointer"
             >
               <Settings className="w-4 h-4 text-[#A8E635]" />
               <span>User Settings</span>

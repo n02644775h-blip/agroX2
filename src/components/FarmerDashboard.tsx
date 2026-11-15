@@ -9,7 +9,8 @@ import {
   ProductAvailability,
   PaymentStatus,
   BuyerRequest,
-  Review
+  Review,
+  isSellerRole
 } from '../types';
 import { subscribeToFirebaseProducts, deleteProductFromFirebase } from '../services/firebaseProducts';
 import {
@@ -31,7 +32,8 @@ import {
   getOrderStages,
   getOrderStatusMeta,
   getPaymentMethodLabel,
-  getPaymentStatusMeta
+  getPaymentStatusMeta,
+  formatCurrency
 } from '../utils/orderUtils';
 import heroFarmlandImg from '../assets/images/hero_farmland_sunrise_1794742072298.jpg';
 import { FarmerProfileModal } from './FarmerProfileModal';
@@ -39,6 +41,7 @@ import { FarmerAdvertModal } from './FarmerAdvertModal';
 import { FarmerPostsTab } from './FarmerPostsTab';
 import { FarmerBuyerRequestsPanel } from './FarmerBuyerRequestsPanel';
 import { DeleteAccountModal } from './DeleteAccountModal';
+import { ContactSupportModal } from './ContactSupportModal';
 import {
   LiquidGlassCard,
   LiquidGlassButton,
@@ -86,7 +89,13 @@ import {
   Bell,
   Menu,
   Zap,
-  ImagePlus
+  ImagePlus,
+  Lock,
+  Headphones,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import {
   AreaChart,
@@ -133,7 +142,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   onOpenNotifications,
   onOpenSettings
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUserProfile } = useAuth();
   const prefersReducedMotion = useReducedMotion();
 
   const [, setStats] = useState<any>(null);
@@ -165,14 +174,94 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
   // Ratings & Reviews
   const [farmerReviews, setFarmerReviews] = useState<Review[]>([]);
 
-  // Modals
+  // Modals & Inline Collapsible Profile Editor
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAdvertModal, setShowAdvertModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
+
+  const [isProfileEditExpanded, setIsProfileEditExpanded] = useState(false);
+  const [editFarmName, setEditFarmName] = useState(user?.farmerProfile?.farmName || '');
+  const [editProvince, setEditProvince] = useState(user?.location?.province || 'Harare');
+  const [editCity, setEditCity] = useState(user?.location?.city || 'Harare');
+  const [editFarmSize, setEditFarmSize] = useState(user?.farmerProfile?.farmSize || '');
+  const [editAddress, setEditAddress] = useState(user?.farmerProfile?.address || '');
+  const [editWhatsapp, setEditWhatsapp] = useState(
+    user?.farmerProfile?.whatsapp || user?.phone || ''
+  );
+  const [editBio, setEditBio] = useState(user?.farmerProfile?.bio || '');
+  const [savingInlineProfile, setSavingInlineProfile] = useState(false);
+  const [inlineProfileSuccess, setInlineProfileSuccess] = useState('');
+  const [inlineProfileError, setInlineProfileError] = useState('');
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (!user) return;
+    setEditFarmName(
+      user.farmerProfile?.farmName ||
+        (user.role === 'fodder_supplier' ? `${user.name}'s Fodder Supply` : `${user.name}'s Farm`)
+    );
+    setEditProvince(user.location?.province || 'Harare');
+    setEditCity(user.location?.city || 'Harare');
+    setEditFarmSize(user.farmerProfile?.farmSize || '15 Hectares');
+    setEditAddress(user.farmerProfile?.address || '');
+    setEditWhatsapp(user.farmerProfile?.whatsapp || user.phone || '');
+    setEditBio(user.farmerProfile?.bio || '');
+  }, [user]);
+
+  const handleSaveInlineProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setInlineProfileError('');
+    setInlineProfileSuccess('');
+
+    const cleanFarmName = editFarmName.trim();
+    const cleanCity = editCity.trim();
+    const cleanAddress = editAddress.trim();
+
+    if (!cleanFarmName) {
+      setInlineProfileError('Farm / Business Name cannot be empty.');
+      return;
+    }
+    if (!cleanCity) {
+      setInlineProfileError('City / District cannot be empty.');
+      return;
+    }
+    if (!cleanAddress) {
+      setInlineProfileError('Dispatch / Collection address cannot be empty.');
+      return;
+    }
+
+    setSavingInlineProfile(true);
+    try {
+      await updateUserProfile({
+        location: {
+          country: 'Zimbabwe',
+          province: editProvince,
+          city: cleanCity,
+          address: cleanAddress
+        },
+        farmerProfile: {
+          ...user.farmerProfile,
+          farmName: cleanFarmName,
+          farmSize: editFarmSize.trim() || '15 Hectares',
+          address: cleanAddress,
+          whatsapp: editWhatsapp.trim(),
+          bio: editBio.trim()
+        }
+      });
+      setInlineProfileSuccess('Changes saved successfully!');
+      setIsProfileEditExpanded(false);
+      await loadFarmerData();
+    } catch (err: any) {
+      setInlineProfileError(err?.message || 'Failed to save changes. Please try again.');
+    } finally {
+      setSavingInlineProfile(false);
+    }
+  };
 
   const mergeIncomingOrders = (incoming: Order[]) => {
     const currentFarmerId = user?.id;
@@ -670,7 +759,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
             <div>
               <div className="text-[#A8E635]">New Order Received! ({newOrderBanner.orderNumber})</div>
               <div className="text-[11px] text-[#DFF4E4]/90 font-medium tabular-nums">
-                {newOrderBanner.buyerName} placed an order for ${newOrderBanner.totalAmount.toFixed(2)}{' '}
+                {newOrderBanner.buyerName} placed an order for {formatCurrency(newOrderBanner.totalAmount)}{' '}
                 • {newOrderBanner.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'}
               </div>
             </div>
@@ -727,7 +816,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
         <div className="flex-1 min-w-0 w-full space-y-6">
           {/* Top Translucent Search & Quick Toolbar */}
           <div className="lg-glass-dark rounded-3xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-white">
-            <div className="flex items-center gap-2.5 flex-1 min-w-[200px]">
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
               <button
                 type="button"
                 onClick={() => setMobileSidebarOpen(true)}
@@ -906,7 +995,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                         Total Sales Revenue
                       </p>
                       <div className="text-2xl font-extrabold text-white tabular-nums tracking-tight">
-                        ${totalSalesRevenue.toFixed(2)}
+                        {formatCurrency(totalSalesRevenue)}
                       </div>
                       <p className="text-[11px] text-[#A8E635] font-semibold">
                         From {completedOrdersCount} completed{' '}
@@ -1051,7 +1140,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                             color: '#FFFFFF',
                             fontSize: '12px'
                           }}
-                          formatter={(val: number) => [`$${Number(val).toFixed(2)}`, 'Completed Sales']}
+                          formatter={(val: number) => [formatCurrency(Number(val)), 'Completed Sales']}
                         />
                         <Area
                           type="monotone"
@@ -1117,8 +1206,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                                     {order.items?.[0]?.productName || order.orderNumber}
                                   </div>
                                   <div className="text-[11px] text-[#0B3D2B]/70 truncate tabular-nums">
-                                    {order.orderNumber} • {order.buyerName} • $
-                                    {order.totalAmount.toFixed(2)}
+                                    {order.orderNumber} • {order.buyerName} •{' '}
+                                    {formatCurrency(order.totalAmount)}
                                   </div>
                                 </div>
                               </div>
@@ -1227,7 +1316,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                               {prod.name}
                             </div>
                             <div className="text-[11px] font-extrabold text-[#145A38] tabular-nums">
-                              ${prod.price.toFixed(2)}{' '}
+                              {formatCurrency(prod.price)}{' '}
                               <span className="font-medium text-[#0B3D2B]/65">/ {prod.unit}</span>
                             </div>
                             <span
@@ -1376,7 +1465,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                     </p>
                   </div>
                   <div className="px-4 py-2 rounded-2xl bg-[#062B1F] text-[#A8E635] font-extrabold text-sm tabular-nums">
-                    Total Earned: ${totalSalesRevenue.toFixed(2)}
+                    Total Earned: {formatCurrency(totalSalesRevenue)}
                   </div>
                 </div>
 
@@ -1403,7 +1492,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                           color: '#FFFFFF',
                           fontSize: '12px'
                         }}
-                        formatter={(val: number) => [`$${Number(val).toFixed(2)}`, 'Completed Sales']}
+                        formatter={(val: number) => [formatCurrency(Number(val)), 'Completed Sales']}
                       />
                       <Area
                         type="monotone"
@@ -1440,7 +1529,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                           </div>
                         </div>
                         <div className="font-extrabold text-[#145A38] text-sm tabular-nums">
-                          ${row.revenue.toFixed(2)}
+                          {formatCurrency(row.revenue)}
                         </div>
                       </div>
                     ))}
@@ -1515,7 +1604,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-5 gap-2 text-[11px] min-w-[260px]">
+                <div className="grid grid-cols-5 gap-1.5 sm:gap-2 text-[11px] w-full md:w-auto min-w-0">
                   {([5, 4, 3, 2, 1] as const).map((star) => (
                     <div
                       key={star}
@@ -1584,7 +1673,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
 
                           <div className="text-left sm:text-right tabular-nums">
                             <div className="text-lg font-black text-[#062B1F]">
-                              ${order.totalAmount.toFixed(2)}
+                              {formatCurrency(order.totalAmount)}
                             </div>
                             <div className="text-[11px] text-[#0B3D2B]/60">
                               {new Date(order.createdAt).toLocaleString(undefined, {
@@ -1651,8 +1740,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                                     {item.productName}
                                   </div>
                                   <div className="text-[#0B3D2B]/75 tabular-nums">
-                                    {item.quantity} {item.unit} × ${item.price.toFixed(2)} ={' '}
-                                    <strong>${item.subtotal.toFixed(2)}</strong>
+                                    {item.quantity} {item.unit} × {formatCurrency(item.price)} ={' '}
+                                    <strong>{formatCurrency(item.subtotal)}</strong>
                                   </div>
                                 </div>
                               </div>
@@ -2106,7 +2195,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                             {prod.categoryName}
                           </td>
                           <td className="px-4 py-3 font-extrabold text-[#062B1F] tabular-nums">
-                            ${prod.price.toFixed(2)}{' '}
+                            {formatCurrency(prod.price)}{' '}
                             <span className="text-[#0B3D2B]/60 font-normal">/ {prod.unit}</span>
                           </td>
                           <td className="px-4 py-3 font-semibold tabular-nums">
@@ -2286,61 +2375,99 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
 
           {/* TAB: PROFILE & SETTINGS */}
           {activeTab === 'profile' && (
-            <LiquidGlassCard variant="light" className="p-6 sm:p-8 space-y-6">
+            <LiquidGlassCard variant="light" className="p-5 sm:p-8 space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#0B3D2B]/10 pb-5">
                 <div>
                   <h2 className="text-xl font-extrabold text-[#062B1F]">
                     Farm &amp; Producer Profile Settings
                   </h2>
                   <p className="text-xs text-[#0B3D2B]/75 mt-1">
-                    Your public producer profile, verified contact numbers, and payment details
+                    Your public producer profile, protected identity details, and farm dispatch information
                   </p>
                 </div>
-                <LiquidGlassButton
-                  id="open-profile-edit-modal-btn"
-                  variant="lime"
-                  size="sm"
-                  onClick={() => setShowProfileModal(true)}
-                >
-                  <Edit2 className="w-4 h-4" />
-                  <span>Edit Profile &amp; Picture (400×400p)</span>
-                </LiquidGlassButton>
+                <div className="flex flex-wrap items-center gap-2">
+                  <LiquidGlassButton
+                    id="toggle-inline-farm-profile-btn"
+                    type="button"
+                    variant="emerald"
+                    size="sm"
+                    onClick={() => {
+                      setIsProfileEditExpanded((prev) => !prev);
+                      setInlineProfileError('');
+                    }}
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>{isProfileEditExpanded ? 'Minimize Editor' : 'Edit Farm Details'}</span>
+                    {isProfileEditExpanded ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </LiquidGlassButton>
+
+                  <LiquidGlassButton
+                    id="open-profile-edit-modal-btn"
+                    type="button"
+                    variant="lime"
+                    size="sm"
+                    onClick={() => setShowProfileModal(true)}
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Photo &amp; Full Modal</span>
+                  </LiquidGlassButton>
+                </div>
               </div>
+
+              {inlineProfileSuccess && (
+                <div className="p-3.5 rounded-2xl bg-[#DFF4E4]/90 border border-[#145A38]/25 text-[#062B1F] font-bold text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-[#145A38] shrink-0" />
+                  <span>{inlineProfileSuccess}</span>
+                </div>
+              )}
+
+              {inlineProfileError && (
+                <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/25 text-rose-800 font-semibold text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{inlineProfileError}</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="p-5 rounded-2xl bg-[#DFF4E4]/45 border border-[#145A38]/15 space-y-4 text-xs">
-                  <div className="font-bold text-[#062B1F] text-sm flex items-center gap-2">
-                    <UserIcon className="w-4 h-4 text-[#145A38]" />
-                    <span>Producer Identity &amp; Contacts</span>
+                  <div className="font-bold text-[#062B1F] text-sm flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-[#145A38]" />
+                      <span>Producer Identity &amp; Contacts</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/80 text-[#0B3D2B] border border-[#0B3D2B]/15">
+                      Protected
+                    </span>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between py-1.5 border-b border-[#0B3D2B]/10">
+                    <div className="flex items-center justify-between gap-2 py-1.5 border-b border-[#0B3D2B]/10">
                       <span className="text-[#0B3D2B]/70 flex items-center gap-1.5">
                         <UserIcon className="w-3.5 h-3.5 text-[#145A38]" />
                         Producer Full Name:
                       </span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-[#062B1F]">{user?.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowProfileModal(true)}
-                          className="text-[10px] text-[#145A38] font-bold bg-white px-2 py-0.5 rounded-lg border border-[#145A38]/20 hover:bg-[#DFF4E4] cursor-pointer"
-                        >
-                          Edit
-                        </button>
-                      </div>
+                      <span className="font-bold text-[#062B1F] inline-flex items-center gap-1.5">
+                        <span>{user?.name}</span>
+                        <Lock className="w-3 h-3 text-[#0B3D2B]/50" />
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-between py-1.5 border-b border-[#0B3D2B]/10">
+                    <div className="flex items-center justify-between gap-2 py-1.5 border-b border-[#0B3D2B]/10">
                       <span className="text-[#0B3D2B]/70 flex items-center gap-1.5">
                         <Phone className="w-3.5 h-3.5 text-[#145A38]/60" />
                         Contact Phone:
                       </span>
-                      <span className="font-bold text-[#062B1F]">{user?.phone || 'Not set'}</span>
+                      <span className="font-bold text-[#062B1F] inline-flex items-center gap-1.5">
+                        <span>{user?.phone || 'Not set'}</span>
+                        <Lock className="w-3 h-3 text-[#0B3D2B]/50" />
+                      </span>
                     </div>
 
-                    <div className="flex items-center justify-between py-1.5 border-b border-[#0B3D2B]/10">
+                    <div className="flex items-center justify-between gap-2 py-1.5 border-b border-[#0B3D2B]/10">
                       <span className="text-[#0B3D2B]/70 flex items-center gap-1.5">
                         <Phone className="w-3.5 h-3.5 text-[#145A38]" />
                         WhatsApp Direct:
@@ -2350,13 +2477,32 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center justify-between gap-2 py-1.5">
                       <span className="text-[#0B3D2B]/70 flex items-center gap-1.5">
                         <Mail className="w-3.5 h-3.5 text-[#145A38]/60" />
                         Email Address:
                       </span>
-                      <span className="font-semibold text-[#062B1F]">{user?.email}</span>
+                      <span className="font-semibold text-[#062B1F] truncate max-w-[200px]">
+                        {user?.email}
+                      </span>
                     </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#0B3D2B]/10 space-y-2.5">
+                    <p className="text-[11px] text-[#0B3D2B]/80 leading-relaxed">
+                      Full name and phone number can only be changed through FarmBridge Support.
+                    </p>
+                    {isSellerRole(user?.role) && (
+                      <button
+                        type="button"
+                        id="farmer-contact-support-btn"
+                        onClick={() => setShowSupportModal(true)}
+                        className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Headphones className="w-3.5 h-3.5 text-[#145A38]" />
+                        <span>Contact Support to Update Details</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2395,6 +2541,186 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Collapsible Inline Farm Profile Editor */}
+              {isProfileEditExpanded && (
+                <form
+                  onSubmit={handleSaveInlineProfile}
+                  className="p-5 rounded-2xl bg-white/80 border border-[#145A38]/20 space-y-4 text-xs"
+                >
+                  <div className="flex items-center justify-between border-b border-[#0B3D2B]/10 pb-3">
+                    <div className="font-extrabold text-[#062B1F] text-sm">
+                      Edit Editable Farm &amp; Dispatch Information
+                    </div>
+                    <span className="text-[11px] text-[#0B3D2B]/65">
+                      Name &amp; phone stay locked for buyer trust
+                    </span>
+                  </div>
+
+                  {/* Read-only locked fields reminder */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-[#062B1F] mb-1 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-[#145A38]" />
+                        <span>Producer Full Name</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={user?.name || ''}
+                        disabled
+                        readOnly
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-stone-100 border border-[#062B1F]/10 text-[#062B1F]/70 cursor-not-allowed"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-[#062B1F] mb-1 flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-[#145A38]" />
+                        <span>Contact Phone Number</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={user?.phone || ''}
+                        disabled
+                        readOnly
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-stone-100 border border-[#062B1F]/10 text-[#062B1F]/70 cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-bold text-[#062B1F] block mb-1">
+                        Farm / Business Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={editFarmName}
+                        onChange={(e) => setEditFarmName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#062B1F] block mb-1">
+                        Farm Size / Area
+                      </label>
+                      <input
+                        type="text"
+                        value={editFarmSize}
+                        onChange={(e) => setEditFarmSize(e.target.value)}
+                        placeholder="e.g. 25 Hectares"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#062B1F] block mb-1">Province *</label>
+                      <select
+                        value={editProvince}
+                        onChange={(e) => setEditProvince(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                      >
+                        {[
+                          'Harare',
+                          'Bulawayo',
+                          'Manicaland',
+                          'Mashonaland Central',
+                          'Mashonaland East',
+                          'Mashonaland West',
+                          'Masvingo',
+                          'Matabeleland North',
+                          'Matabeleland South',
+                          'Midlands'
+                        ].map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#062B1F] block mb-1">
+                        City / District *
+                      </label>
+                      <input
+                        type="text"
+                        value={editCity}
+                        onChange={(e) => setEditCity(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#062B1F] block mb-1">
+                        WhatsApp Direct
+                      </label>
+                      <input
+                        type="tel"
+                        value={editWhatsapp}
+                        onChange={(e) => setEditWhatsapp(e.target.value)}
+                        placeholder="+263 77 ..."
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-[#062B1F] block mb-1">
+                        Dispatch / Collection Address *
+                      </label>
+                      <input
+                        type="text"
+                        value={editAddress}
+                        onChange={(e) => setEditAddress(e.target.value)}
+                        placeholder="Plot number, road, farm gate..."
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-[#062B1F] block mb-1">
+                      Farm Bio / Description
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={editBio}
+                      onChange={(e) => setEditBio(e.target.value)}
+                      placeholder="Describe your farm practices, harvest freshness, and delivery options..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
+                    <LiquidGlassButton
+                      type="button"
+                      variant="light"
+                      size="sm"
+                      onClick={() => setIsProfileEditExpanded(false)}
+                      disabled={savingInlineProfile}
+                    >
+                      Cancel
+                    </LiquidGlassButton>
+                    <LiquidGlassButton
+                      id="farmer-inline-save-changes-btn"
+                      type="submit"
+                      variant="lime"
+                      size="sm"
+                      disabled={savingInlineProfile}
+                    >
+                      {savingInlineProfile ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4" />
+                      )}
+                      <span>{savingInlineProfile ? 'Saving Changes...' : 'Save Changes'}</span>
+                    </LiquidGlassButton>
+                  </div>
+                </form>
+              )}
 
               {/* Account Management / Danger Zone */}
               <div className="pt-5 border-t border-[#0B3D2B]/10 flex items-center justify-between gap-4">
@@ -2438,7 +2764,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
           <div className="p-6 space-y-4">
             <div className="grid grid-cols-2 gap-3 text-xs bg-[#DFF4E4]/50 p-3.5 rounded-2xl border border-[#145A38]/15 tabular-nums">
               <div>
-                <strong>Amount Due:</strong> ${viewingPopOrder.totalAmount.toFixed(2)}
+                <strong>Amount Due:</strong> {formatCurrency(viewingPopOrder.totalAmount)}
               </div>
               <div>
                 <strong>Reference:</strong> {viewingPopOrder.paymentReference || 'N/A'}
@@ -2527,6 +2853,12 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
           setShowDeleteAccountModal(false);
           if (onNavigate) onNavigate('marketplace');
         }}
+      />
+
+      {/* Contact Support Modal for Locked Name/Phone Updates */}
+      <ContactSupportModal
+        isOpen={showSupportModal}
+        onClose={() => setShowSupportModal(false)}
       />
     </div>
   );

@@ -529,3 +529,36 @@ export interface BuyerRequest {
   updatedAt: string;
 }
 
+export type SupportRequestStatus = 'pending' | 'in_review' | 'resolved' | 'rejected';
+
+export interface SupportRequest {
+  id: string;
+  userId: string;
+  userRole: UserRole;
+  currentName: string;
+  currentPhone?: string;
+  userEmail: string;
+  requestType: 'name' | 'phone' | 'both';
+  requestedName?: string;
+  requestedPhone?: string;
+  reason: string;
+  status: SupportRequestStatus;
+  adminNotes?: string;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminAuditLog {
+  id: string;
+  adminId: string;
+  adminName: string;
+  action: 'edit_farmer_profile' | 'resolve_support_request' | string;
+  affectedUserId: string;
+  affectedUserName: string;
+  changedFields: Record<string, { before: unknown; after: unknown }>;
+  note?: string;
+  timestamp: string;
+}
+

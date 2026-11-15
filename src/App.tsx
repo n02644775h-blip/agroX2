@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useCart } from './context/CartContext';
 import { mobileService } from './services/mobileService';
@@ -40,9 +40,19 @@ import {
   X
 } from 'lucide-react';
 
+const PROTECTED_VIEWS = new Set([
+  'farmer_dashboard',
+  'buyer_dashboard',
+  'admin',
+  'orders',
+  'messages',
+  'favorites'
+]);
+
 export function App() {
   const {
     user,
+    loading: authLoading,
     suspensionNotice,
     clearSuspensionNotice,
     accountDeletionNotice,
@@ -53,7 +63,14 @@ export function App() {
   // Navigation State with persistence across refreshes
   const [currentView, setCurrentView] = useState<string>(() => {
     try {
-      return localStorage.getItem('agrox_current_view') || 'marketplace';
+      const saved = localStorage.getItem('agrox_current_view') || 'marketplace';
+      if (PROTECTED_VIEWS.has(saved)) {
+        const hasSession =
+          Boolean(localStorage.getItem('agrox_user')) ||
+          Boolean(localStorage.getItem('fb_active_user'));
+        return hasSession ? saved : 'marketplace';
+      }
+      return saved;
     } catch {
       return 'marketplace';
     }
@@ -77,7 +94,6 @@ export function App() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
   const [confirmedOrders, setConfirmedOrders] = useState<Order[] | null>(null);
-  const [farmerRefreshKey, setFarmerRefreshKey] = useState(0);
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
   const [reportProduct, setReportProduct] = useState<Product | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -92,18 +108,101 @@ export function App() {
   const [pendingScrollSection, setPendingScrollSection] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState<'support' | 'privacy' | 'terms' | null>(null);
 
-  // Redirect to marketplace cleanly when signed out or account is deleted while on a protected view
+  const wasSignedInRef = useRef<boolean>(false);
+
+  const clearProtectedSessionUi = () => {
+    setSelectedProduct(null);
+    setEditingProduct(null);
+    setIsAddProductOpen(false);
+    setConfirmedOrders(null);
+    setReviewOrder(null);
+    setReportProduct(null);
+    setIsNotificationsOpen(false);
+    setIsAdminAccessOpen(false);
+    setIsFarmerProfileOpen(false);
+    setIsUserSettingsOpen(false);
+    setSelectedFarmerId(null);
+    setSelectedOrderForTracking(null);
+    setChatRecipientId(null);
+    setChatRecipientUser(null);
+    setChatProductId(null);
+    setChatProduct(null);
+    setChatPost(null);
+    setChatBuyerRequest(null);
+    setPendingChatProduct(null);
+    setPendingChatPost(null);
+    setPendingChatUser(null);
+    setCurrentView('marketplace');
+    try {
+      localStorage.removeItem('agrox_current_view');
+      sessionStorage.removeItem('agrox_current_view');
+    } catch {}
+  };
+
+  // Enforce Sign-Out -> Login redirect + block protected views + prevent Back-button restoration
   useEffect(() => {
-    if (
-      !user &&
-      ['farmer_dashboard', 'buyer_dashboard', 'admin', 'messages', 'favorites'].includes(currentView)
-    ) {
-      setCurrentView('marketplace');
-      try {
-        localStorage.setItem('agrox_current_view', 'marketplace');
-      } catch {}
+    if (authLoading) return;
+
+    if (user) {
+      wasSignedInRef.current = true;
+      if (window.location.hash === '#login') {
+        try {
+          window.history.replaceState({ view: currentView }, '', `#${currentView}`);
+        } catch {}
+      }
+      return;
     }
-  }, [user, currentView]);
+
+    const justSignedOut = wasSignedInRef.current;
+    if (justSignedOut) {
+      wasSignedInRef.current = false;
+      clearProtectedSessionUi();
+      try {
+        window.history.replaceState({ view: 'marketplace', auth: 'login', loggedOut: true }, '', '#login');
+      } catch {}
+      setAuthMode('login');
+      setIsAuthOpen(true);
+      return;
+    }
+
+    if (PROTECTED_VIEWS.has(currentView)) {
+      clearProtectedSessionUi();
+      try {
+        window.history.replaceState({ view: 'marketplace', auth: 'login', loggedOut: true }, '', '#login');
+      } catch {}
+      setAuthMode('login');
+      setIsAuthOpen(true);
+    }
+  }, [user, authLoading, currentView]);
+
+  // Browser Back / Forward guard for protected views when unauthenticated
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const targetView =
+        (event.state && typeof event.state.view === 'string' && event.state.view) ||
+        window.location.hash.replace(/^#/, '') ||
+        'marketplace';
+
+      if (!user && !authLoading) {
+        if (PROTECTED_VIEWS.has(targetView) || PROTECTED_VIEWS.has(currentView) || window.location.hash === '#login') {
+          clearProtectedSessionUi();
+          try {
+            window.history.replaceState({ view: 'marketplace', auth: 'login', loggedOut: true }, '', '#login');
+          } catch {}
+          setAuthMode('login');
+          setIsAuthOpen(true);
+          return;
+        }
+      }
+
+      if (targetView && targetView !== 'login' && (user || !PROTECTED_VIEWS.has(targetView))) {
+        setCurrentView(targetView);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [user, authLoading, currentView]);
 
   // Initialize native Capacitor mobile services (Splash Screen, Status Bar, Back Button)
   useEffect(() => {
@@ -177,8 +276,9 @@ export function App() {
     setCurrentView('messages');
     try {
       localStorage.setItem('agrox_current_view', 'messages');
+      window.history.pushState({ view: 'messages' }, '', '#messages');
     } catch {}
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const openChatWithPost = (post: MediaPost) => {
@@ -211,8 +311,9 @@ export function App() {
     setCurrentView('messages');
     try {
       localStorage.setItem('agrox_current_view', 'messages');
+      window.history.pushState({ view: 'messages' }, '', '#messages');
     } catch {}
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const handleRequestQuoteFromPost = (post: MediaPost) => {
@@ -251,8 +352,9 @@ export function App() {
     setCurrentView('messages');
     try {
       localStorage.setItem('agrox_current_view', 'messages');
+      window.history.pushState({ view: 'messages' }, '', '#messages');
     } catch {}
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   // Automatically open pending 1-on-1 chat once user completes login
@@ -280,7 +382,10 @@ export function App() {
       setChatBuyerRequest(null);
       setMessagesChannel('direct');
       setCurrentView('messages');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      try {
+        window.history.pushState({ view: 'messages' }, '', '#messages');
+      } catch {}
+      window.scrollTo({ top: 0, behavior: 'auto' });
     }
   }, [user, pendingChatProduct, pendingChatPost, pendingChatUser]);
 
@@ -316,20 +421,29 @@ export function App() {
 
   const handleNavigate = (view: string, data?: any) => {
     mobileService.triggerHaptic('light');
+    if (!user && PROTECTED_VIEWS.has(view)) {
+      setAuthMode('login');
+      setIsAuthOpen(true);
+      return;
+    }
     if (view === 'messages' && data?.channel) {
       setMessagesChannel(data.channel);
     }
     if (data?.scrollTo) {
       setPendingScrollSection(data.scrollTo);
     }
+    const isViewChanging = view !== currentView;
     setCurrentView(view);
     try {
       localStorage.setItem('agrox_current_view', view);
+      if (isViewChanging) {
+        window.history.pushState({ view }, '', `#${view}`);
+      }
     } catch (e) {
       console.warn('Could not save current view:', e);
     }
-    if (!data?.scrollTo) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (isViewChanging && !data?.scrollTo) {
+      window.scrollTo({ top: 0, behavior: 'auto' });
     }
 
     if (view === 'orders' && data?.selectedOrder) {
@@ -341,7 +455,10 @@ export function App() {
     setSelectedFarmerId(farmerId);
     setSelectedProduct(null);
     setCurrentView('farm_profile');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      window.history.pushState({ view: 'farm_profile' }, '', '#farm_profile');
+    } catch {}
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const handleContactFarmerFromProduct = (prod: Product) => {
@@ -368,7 +485,10 @@ export function App() {
     setChatProduct(null);
     setMessagesChannel('direct');
     setCurrentView('messages');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      window.history.pushState({ view: 'messages' }, '', '#messages');
+    } catch {}
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const handleContactFromOrder = (recipientId: string, _orderId?: string) => {
@@ -383,7 +503,10 @@ export function App() {
     setChatProduct(null);
     setMessagesChannel('direct');
     setCurrentView('messages');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    try {
+      window.history.pushState({ view: 'messages' }, '', '#messages');
+    } catch {}
+    window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
   const handleSelectNotification = (notif: AppNotification) => {
@@ -464,6 +587,7 @@ export function App() {
                 <span>{accountDeletionNotice}</span>
               </div>
               <button
+                type="button"
                 onClick={clearAccountDeletionNotice}
                 className="p-1.5 rounded-xl hover:bg-[#145A38]/10 text-[#145A38] transition-colors shrink-0 cursor-pointer"
                 aria-label="Dismiss account deletion confirmation"
@@ -483,6 +607,7 @@ export function App() {
                 <span>{suspensionNotice}</span>
               </div>
               <button
+                type="button"
                 onClick={clearSuspensionNotice}
                 className="p-1.5 rounded-xl hover:bg-rose-100 text-rose-700 transition-colors shrink-0 cursor-pointer"
                 aria-label="Dismiss suspension notice"
@@ -511,7 +636,6 @@ export function App() {
 
           {currentView === 'farmer_dashboard' && (
             <FarmerDashboard
-              key={`farmer-dash-${farmerRefreshKey}`}
               initialTab={farmerInitialTab}
               onOpenAddProduct={() => {
                 setEditingProduct(null);
@@ -543,7 +667,7 @@ export function App() {
               onOpenMessagesForRequest={() => {
                 setMessagesChannel('direct');
                 setCurrentView('messages');
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.scrollTo({ top: 0, behavior: 'auto' });
               }}
             />
           )}
@@ -721,15 +845,25 @@ export function App() {
                 <div className="space-y-2 text-[#DFF4E4]/75">
                   <div className="flex items-center gap-2">
                     <Phone className="w-3.5 h-3.5 text-[#A8E635] shrink-0" />
-                    <span>+263 77 123 4567</span>
+                    <a
+                      href="tel:+263716930165"
+                      className="hover:text-[#A8E635] transition-colors"
+                    >
+                      +263 716 930 165
+                    </a>
                   </div>
                   <div className="flex items-center gap-2">
                     <Mail className="w-3.5 h-3.5 text-[#A8E635] shrink-0" />
-                    <span>support@agrox.market</span>
+                    <a
+                      href="mailto:farmbridge2026@gmail.com"
+                      className="hover:text-[#A8E635] transition-colors break-all"
+                    >
+                      farmbridge2026@gmail.com
+                    </a>
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-3.5 h-3.5 text-[#A8E635] shrink-0" />
-                    <span>Harare & Provincial Hubs</span>
+                    <span>Bulawayo, Zimbabwe</span>
                   </div>
                 </div>
                 <div className="pt-1 flex flex-wrap items-center gap-3 text-[11px]">
@@ -793,7 +927,10 @@ export function App() {
             onSuccess={() => {
               setIsAdminAccessOpen(false);
               setCurrentView('admin');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+              try {
+                window.history.pushState({ view: 'admin' }, '', '#admin');
+              } catch {}
+              window.scrollTo({ top: 0, behavior: 'auto' });
             }}
           />
         )}
@@ -808,7 +945,6 @@ export function App() {
             onSuccess={() => {
               setIsAddProductOpen(false);
               setEditingProduct(null);
-              setFarmerRefreshKey(k => k + 1);
             }}
           />
         )}
@@ -884,7 +1020,7 @@ export function App() {
           <FarmerProfileModal
             onClose={() => setIsFarmerProfileOpen(false)}
             onSuccess={() => {
-              setFarmerRefreshKey(k => k + 1);
+              setIsFarmerProfileOpen(false);
             }}
           />
         )}
@@ -945,16 +1081,20 @@ export function App() {
                 </p>
                 <div className="p-4 rounded-2xl lg-glass-mint border border-[#145A38]/15 space-y-2.5">
                   <div className="flex items-center gap-2 font-semibold text-[#062B1F]">
-                    <Phone className="w-4 h-4 text-[#145A38]" />
-                    <span>+263 77 123 4567 (Mon–Sat, 08:00–17:00)</span>
+                    <Phone className="w-4 h-4 text-[#145A38] shrink-0" />
+                    <a href="tel:+263716930165" className="hover:underline">
+                      +263 716 930 165 (Mon–Sat, 08:00–17:00)
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 font-semibold text-[#062B1F]">
-                    <Mail className="w-4 h-4 text-[#145A38]" />
-                    <span>support@agrox.market</span>
+                    <Mail className="w-4 h-4 text-[#145A38] shrink-0" />
+                    <a href="mailto:farmbridge2026@gmail.com" className="hover:underline break-all">
+                      farmbridge2026@gmail.com
+                    </a>
                   </div>
                   <div className="flex items-center gap-2 font-semibold text-[#062B1F]">
-                    <MapPin className="w-4 h-4 text-[#145A38]" />
-                    <span>Harare & Provincial Agricultural Hubs</span>
+                    <MapPin className="w-4 h-4 text-[#145A38] shrink-0" />
+                    <span>Bulawayo, Zimbabwe</span>
                   </div>
                 </div>
               </div>
@@ -983,7 +1123,7 @@ export function App() {
             )}
 
             <div className="pt-2 flex justify-end">
-              <LiquidGlassButton variant="emerald" size="sm" onClick={() => setInfoModal(null)}>
+              <LiquidGlassButton type="button" variant="emerald" size="sm" onClick={() => setInfoModal(null)}>
                 Close
               </LiquidGlassButton>
             </div>

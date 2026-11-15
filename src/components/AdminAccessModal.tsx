@@ -118,7 +118,6 @@ export const AdminAccessModal: React.FC<AdminAccessModalProps> = ({
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Enter admin ID"
-                  autoFocus
                   required
                   className="w-full pl-10 pr-3 py-2.5 bg-white/10 border border-white/20 rounded-xl text-sm font-semibold tracking-wider text-white placeholder:text-white/40 uppercase focus:bg-white/15 focus:outline-none focus:ring-2 focus:ring-[#A8E635]/50 transition-all"
                 />

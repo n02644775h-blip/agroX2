@@ -16,7 +16,10 @@ import {
   PaymentStatus,
   MediaPost,
   BuyerRequest,
-  BuyerRequestStatus
+  BuyerRequestStatus,
+  SupportRequest,
+  SupportRequestStatus,
+  AdminAuditLog
 } from '../src/types';
 import {
   INITIAL_USERS,
@@ -54,6 +57,8 @@ class MarketplaceStore {
   private adRequests: AdRequest[] = [...INITIAL_AD_REQUESTS];
   private mediaPosts: MediaPost[] = [...INITIAL_MEDIA_POSTS];
   private buyerRequests: BuyerRequest[] = [...INITIAL_BUYER_REQUESTS];
+  private supportRequests: SupportRequest[] = [];
+  private adminAuditLogs: AdminAuditLog[] = [];
   private deletedUserIds: Set<string> = new Set();
   private deletedEmails: Set<string> = new Set();
   private favorites: Record<string, string[]> = {
@@ -1650,6 +1655,289 @@ class MarketplaceStore {
     if (buyerId && this.buyerRequests[idx].buyerId !== buyerId) return 'forbidden';
     this.buyerRequests.splice(idx, 1);
     return 'deleted';
+  }
+
+  // --- Admin Farmer Profile Edits & Audit Logs ---
+  adminUpdateFarmerProfile(
+    targetUserId: string,
+    payload: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      avatar?: string;
+      role?: User['role'];
+      location?: Partial<User['location']>;
+      farmerProfile?: Partial<NonNullable<User['farmerProfile']>>;
+    },
+    admin: { id: string; name: string },
+    note?: string
+  ): { user: User; auditLog: AdminAuditLog } | undefined {
+    let existing = this.getUserById(targetUserId);
+    if (!existing) {
+      // Allow upserting Firebase-registered users that are not yet cached in memory store
+      existing = this.updateUser(targetUserId, {
+        name: payload.name || 'Farmer',
+        email: payload.email || `${targetUserId}@farmbridge.local`,
+        phone: payload.phone || '',
+        role: payload.role || 'farmer',
+        avatar:
+          payload.avatar ||
+          'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+        location: {
+          country: 'Zimbabwe',
+          province: payload.location?.province || 'Harare',
+          city: payload.location?.city || 'Harare',
+          address: payload.location?.address || payload.farmerProfile?.address || ''
+        },
+        farmerProfile: {
+          farmName: payload.farmerProfile?.farmName || `${payload.name || 'Farmer'}'s Farm`
+        }
+      });
+    }
+    if (!existing) return undefined;
+
+    const changedFields: Record<string, { before: unknown; after: unknown }> = {};
+    const recordChange = (field: string, beforeVal: unknown, afterVal: unknown) => {
+      if (afterVal === undefined) return;
+      const beforeNorm = Array.isArray(beforeVal) ? JSON.stringify(beforeVal) : String(beforeVal ?? '');
+      const afterNorm = Array.isArray(afterVal) ? JSON.stringify(afterVal) : String(afterVal ?? '');
+      if (beforeNorm !== afterNorm) {
+        changedFields[field] = { before: beforeVal ?? '', after: afterVal };
+      }
+    };
+
+    const nextName = payload.name !== undefined ? payload.name.trim() : existing.name;
+    const nextPhone = payload.phone !== undefined ? payload.phone.trim() : existing.phone;
+    const nextLocation: User['location'] = {
+      country: existing.location?.country || 'Zimbabwe',
+      province: payload.location?.province !== undefined ? payload.location.province.trim() : existing.location?.province || 'Harare',
+      city: payload.location?.city !== undefined ? payload.location.city.trim() : existing.location?.city || 'Harare',
+      community: payload.location?.community !== undefined ? payload.location.community : existing.location?.community,
+      address: payload.location?.address !== undefined ? payload.location.address.trim() : existing.location?.address
+    };
+    const prevFp = existing.farmerProfile || { farmName: `${existing.name}'s Farm` };
+    const nextFp = {
+      ...prevFp,
+      ...(payload.farmerProfile || {}),
+      farmName:
+        payload.farmerProfile?.farmName !== undefined
+          ? payload.farmerProfile.farmName.trim()
+          : prevFp.farmName || `${nextName}'s Farm`,
+      address:
+        payload.farmerProfile?.address !== undefined
+          ? payload.farmerProfile.address.trim()
+          : payload.location?.address !== undefined
+            ? payload.location.address.trim()
+            : prevFp.address
+    };
+
+    recordChange('name', existing.name, nextName);
+    recordChange('phone', existing.phone, nextPhone);
+    recordChange('farmName', prevFp.farmName, nextFp.farmName);
+    recordChange('province', existing.location?.province, nextLocation.province);
+    recordChange('city', existing.location?.city, nextLocation.city);
+    recordChange('address', prevFp.address || existing.location?.address, nextFp.address);
+    recordChange('bio', prevFp.bio || prevFp.farmDescription, nextFp.bio ?? nextFp.farmDescription);
+    recordChange('farmSize', prevFp.farmSize, nextFp.farmSize);
+    if (payload.farmerProfile?.farmingPractices !== undefined) {
+      recordChange('farmingPractices', prevFp.farmingPractices || [], nextFp.farmingPractices || []);
+    }
+
+    const updatedUser = this.updateUser(targetUserId, {
+      name: nextName,
+      phone: nextPhone,
+      location: nextLocation,
+      farmerProfile: nextFp
+    })!;
+
+    // Keep producer's marketplace products, posts, ads, and conversations consistent
+    const now = new Date().toISOString();
+    this.products = this.products.map(p =>
+      p.farmerId === targetUserId
+        ? {
+            ...p,
+            farmerName: nextName,
+            farmName: nextFp.farmName,
+            updatedAt: now
+          }
+        : p
+    );
+    this.mediaPosts = this.mediaPosts.map(post =>
+      post.farmerId === targetUserId
+        ? {
+            ...post,
+            farmerName: nextName,
+            farmName: nextFp.farmName,
+            updatedAt: now
+          }
+        : post
+    );
+    this.adRequests = this.adRequests.map(ad =>
+      ad.farmerId === targetUserId
+        ? {
+            ...ad,
+            farmerName: nextName,
+            farmName: nextFp.farmName,
+            farmerPhone: nextPhone || ad.farmerPhone,
+            updatedAt: now
+          }
+        : ad
+    );
+    this.conversations = this.conversations.map(conv => ({
+      ...conv,
+      participants: conv.participants.map(part =>
+        part.id === targetUserId
+          ? { ...part, name: nextName, farmName: nextFp.farmName }
+          : part
+      )
+    }));
+
+    const auditLog: AdminAuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      adminId: admin.id,
+      adminName: admin.name,
+      action: 'edit_farmer_profile',
+      affectedUserId: targetUserId,
+      affectedUserName: nextName,
+      changedFields,
+      note: note || 'Updated farmer profile from Admin Panel',
+      timestamp: now
+    };
+    this.adminAuditLogs.unshift(auditLog);
+
+    const changedKeys = Object.keys(changedFields);
+    this.createNotification({
+      userId: targetUserId,
+      title: 'Profile Updated by FarmBridge Support',
+      message:
+        changedKeys.length > 0
+          ? `An administrator updated your profile details (${changedKeys.join(', ')}).`
+          : 'An administrator reviewed and saved your farmer profile.',
+      type: 'system',
+      createdAt: now,
+      metadata: { auditLogId: auditLog.id }
+    });
+
+    return { user: updatedUser, auditLog };
+  }
+
+  getAdminAuditLogs(affectedUserId?: string): AdminAuditLog[] {
+    const list = affectedUserId
+      ? this.adminAuditLogs.filter(l => l.affectedUserId === affectedUserId)
+      : [...this.adminAuditLogs];
+    return list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
+  // --- Support Requests for Protected Details ---
+  createSupportRequest(
+    data: Omit<SupportRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'> & {
+      id?: string;
+      status?: SupportRequestStatus;
+    }
+  ): SupportRequest {
+    const now = new Date().toISOString();
+    const id = data.id || `sup-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const existingIdx = this.supportRequests.findIndex(r => r.id === id);
+
+    const requestRecord: SupportRequest = {
+      ...data,
+      id,
+      status: data.status || 'pending',
+      createdAt: existingIdx >= 0 ? this.supportRequests[existingIdx].createdAt : now,
+      updatedAt: now
+    };
+
+    if (existingIdx >= 0) {
+      this.supportRequests[existingIdx] = requestRecord;
+    } else {
+      this.supportRequests.unshift(requestRecord);
+      // Notify active administrators
+      this.users
+        .filter(u => u.role === 'admin' && u.status !== 'suspended')
+        .forEach(admin => {
+          this.createNotification({
+            userId: admin.id,
+            title: `Account Update Request from ${requestRecord.currentName}`,
+            message: `${requestRecord.currentName} (${requestRecord.userRole}) requested a protected ${requestRecord.requestType} update.`,
+            type: 'system',
+            link: '/admin',
+            createdAt: now,
+            metadata: { supportRequestId: requestRecord.id, userId: requestRecord.userId }
+          });
+        });
+    }
+
+    return requestRecord;
+  }
+
+  getSupportRequests(filters?: { userId?: string; status?: string }): SupportRequest[] {
+    let list = [...this.supportRequests];
+    if (filters?.userId) {
+      list = list.filter(r => r.userId === filters.userId);
+    }
+    if (filters?.status && filters.status !== 'all') {
+      list = list.filter(r => r.status === filters.status);
+    }
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  updateSupportRequest(
+    id: string,
+    updates: {
+      status: SupportRequestStatus;
+      adminNotes?: string;
+      resolvedBy?: string;
+      adminName?: string;
+    }
+  ): SupportRequest | undefined {
+    const idx = this.supportRequests.findIndex(r => r.id === id);
+    if (idx === -1) return undefined;
+    const now = new Date().toISOString();
+    const existing = this.supportRequests[idx];
+
+    const updated: SupportRequest = {
+      ...existing,
+      status: updates.status,
+      adminNotes: updates.adminNotes !== undefined ? updates.adminNotes : existing.adminNotes,
+      resolvedBy: updates.resolvedBy || existing.resolvedBy,
+      resolvedAt:
+        updates.status === 'resolved' || updates.status === 'rejected' ? now : existing.resolvedAt,
+      updatedAt: now
+    };
+    this.supportRequests[idx] = updated;
+
+    const auditLog: AdminAuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      adminId: updates.resolvedBy || 'admin-1',
+      adminName: updates.adminName || 'FarmBridge Admin',
+      action: 'resolve_support_request',
+      affectedUserId: existing.userId,
+      affectedUserName: existing.currentName,
+      changedFields: {
+        supportRequestStatus: { before: existing.status, after: updates.status }
+      },
+      note: updates.adminNotes || `Support request marked ${updates.status}`,
+      timestamp: now
+    };
+    this.adminAuditLogs.unshift(auditLog);
+
+    if (existing.userId) {
+      this.createNotification({
+        userId: existing.userId,
+        title: `Support Request ${updates.status === 'resolved' ? 'Resolved' : updates.status === 'rejected' ? 'Declined' : 'Updated'}`,
+        message:
+          updates.status === 'resolved'
+            ? `Your protected detail update request has been resolved.${updates.adminNotes ? ` Note: ${updates.adminNotes}` : ''}`
+            : updates.status === 'rejected'
+              ? `Your protected detail update request could not be approved.${updates.adminNotes ? ` Reason: ${updates.adminNotes}` : ''}`
+              : `Your support request is now ${updates.status.replace('_', ' ')}.`,
+        type: 'system',
+        createdAt: now,
+        metadata: { supportRequestId: updated.id }
+      });
+    }
+
+    return updated;
   }
 }
 

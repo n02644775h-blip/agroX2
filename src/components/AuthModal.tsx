@@ -33,7 +33,7 @@ interface AuthModalProps {
 
 export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onClose }) => {
   const prefersReducedMotion = useReducedMotion();
-  const { login, signup, resetPassword, loginAdmin, demoLogin } = useAuth();
+  const { login, signup, resetPassword, loginAdmin } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot_password'>(initialMode);
   const [role, setRole] = useState<UserRole>('buyer');
   const [fullName, setFullName] = useState('');
@@ -294,20 +294,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
     }
   };
 
-  const handleDemoSelect = async (demoRole: UserRole) => {
-    setErrorMsg('');
-    setSuccessMsg('');
-    setIsSubmitting(true);
-    try {
-      await demoLogin(demoRole);
-      onClose();
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Unable to sign in with this account.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const frostedInputClass =
     'w-full pl-10 pr-10 py-3 rounded-2xl bg-white/14 border border-white/40 text-white placeholder:text-white/70 text-xs sm:text-sm backdrop-blur-md focus:outline-none focus:bg-white/22 focus:border-[#A8E635] focus:ring-2 focus:ring-[#A8E635]/35 transition-all';
 
@@ -378,43 +364,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                 </p>
               </div>
             </div>
-
-            {/* Bottom 1-Click Demo Access */}
-            <div className="relative z-10 hidden md:block pt-6">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-[#DFF4E4]/70 mb-2">
-                ⚡ Instant Demo Switch
-              </p>
-              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => handleDemoSelect('farmer')}
-                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
-                >
-                  🌱 Farmer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoSelect('fodder_supplier')}
-                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
-                >
-                  🌾 Fodder
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoSelect('buyer')}
-                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
-                >
-                  🛒 Buyer
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoSelect('admin')}
-                  className="px-2.5 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold text-left cursor-pointer transition-colors"
-                >
-                  🛡️ Admin
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Right Frosted Glass Signup Form Pane */}
@@ -427,14 +376,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                 <p className="text-xs text-[#DFF4E4]/75 mt-0.5">
                   Join FarmBridge today — select your marketplace role
                 </p>
-              </div>
-
-              {/* Mobile Quick Demo Row */}
-              <div className="md:hidden grid grid-cols-4 gap-1.5 text-[11px]">
-                <button type="button" onClick={() => handleDemoSelect('farmer')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🌱 Farmer</button>
-                <button type="button" onClick={() => handleDemoSelect('fodder_supplier')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🌾 Fodder</button>
-                <button type="button" onClick={() => handleDemoSelect('buyer')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🛒 Buyer</button>
-                <button type="button" onClick={() => handleDemoSelect('admin')} className="p-1.5 rounded-xl bg-white/12 border border-white/20 text-white font-semibold">🛡️ Admin</button>
               </div>
 
               {errorMsg && (
@@ -940,58 +881,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             </form>
 
             {mode === 'login' && (
-              <>
-                <div className="pt-2 border-t border-white/20 space-y-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-white/75 text-center">
-                    Quick Demo Switch
-                  </div>
-                  <div className="grid grid-cols-4 gap-1.5 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => handleDemoSelect('farmer')}
-                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
-                    >
-                      🌱 Farmer
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDemoSelect('fodder_supplier')}
-                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
-                    >
-                      🌾 Fodder
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDemoSelect('buyer')}
-                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
-                    >
-                      🛒 Buyer
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDemoSelect('admin')}
-                      className="py-1.5 px-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/25 text-white font-semibold cursor-pointer"
-                    >
-                      🛡️ Admin
-                    </button>
-                  </div>
-                </div>
-
-                <p className="text-center text-xs text-white/90">
-                  Don’t have an account?{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('register');
-                      setErrorMsg('');
-                      setSuccessMsg('');
-                    }}
-                    className="font-extrabold text-[#A8E635] hover:underline cursor-pointer"
-                  >
-                    Signup
-                  </button>
-                </p>
-              </>
+              <p className="text-center text-xs text-white/90 pt-1">
+                Don’t have an account?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('register');
+                    setErrorMsg('');
+                    setSuccessMsg('');
+                  }}
+                  className="font-extrabold text-[#A8E635] hover:underline cursor-pointer"
+                >
+                  Signup
+                </button>
+              </p>
             )}
           </div>
         </motion.div>

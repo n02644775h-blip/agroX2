@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import { User, Product, Report, Announcement, ProductCategory, AdRequest, AdStatus, isSellerRole } from '../types';
+import {
+  User,
+  Product,
+  Report,
+  Announcement,
+  ProductCategory,
+  AdRequest,
+  AdStatus,
+  SupportRequest,
+  SupportRequestStatus,
+  AdminAuditLog,
+  isSellerRole
+} from '../types';
 import {
   subscribeToFirebaseUsers,
   fetchAllFirebaseUsers,
@@ -9,6 +21,12 @@ import {
   FirebaseSignupStats,
   calculateSignupStats
 } from '../services/firebaseUsers';
+import {
+  subscribeToFirebaseSupportRequests,
+  updateFirebaseSupportRequestStatus,
+  subscribeToFirebaseAdminAuditLogs
+} from '../services/firebaseSupportRequests';
+import { AdminEditFarmerModal } from './AdminEditFarmerModal';
 import {
   subscribeToFirebaseAnnouncements,
   createFirebaseAnnouncement,
@@ -58,7 +76,12 @@ import {
   Upload,
   LayoutDashboard,
   Megaphone,
-  Menu
+  Menu,
+  Edit2,
+  Headphones,
+  History,
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 import {
   BarChart,
@@ -82,6 +105,7 @@ const ADMIN_PRESET_AVATARS = [
 type AdminTabId =
   | 'overview'
   | 'users'
+  | 'support_requests'
   | 'advertisers'
   | 'products'
   | 'reports'
@@ -99,6 +123,14 @@ export const AdminDashboard: React.FC = () => {
   const [adRequests, setAdRequests] = useState<AdRequest[]>([]);
   const [activeTab, setActiveTab] = useState<AdminTabId>('overview');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // Farmer Edit & Support Queue / Audit Trail
+  const [editingFarmer, setEditingFarmer] = useState<User | null>(null);
+  const [supportRequests, setSupportRequests] = useState<SupportRequest[]>([]);
+  const [adminAuditLogs, setAdminAuditLogs] = useState<AdminAuditLog[]>([]);
+  const [supportStatusFilter, setSupportStatusFilter] = useState<'all' | SupportRequestStatus>('all');
+  const [supportNoteDrafts, setSupportNoteDrafts] = useState<Record<string, string>>({});
+  const [updatingSupportId, setUpdatingSupportId] = useState<string | null>(null);
 
   // Admin Profile Picture Edit Modal
   const [showAdminAvatarModal, setShowAdminAvatarModal] = useState(false);
@@ -149,14 +181,26 @@ export const AdminDashboard: React.FC = () => {
 
   const loadAdminData = async () => {
     try {
-      const [statsData, apiUsersData, prodsData, repsData, catsData, annsData, adsData] = await Promise.all([
+      const [
+        statsData,
+        apiUsersData,
+        prodsData,
+        repsData,
+        catsData,
+        annsData,
+        adsData,
+        apiSupportData,
+        apiAuditData
+      ] = await Promise.all([
         api.getAdminStats(),
         api.getUsers().catch(() => []),
         api.getProducts({}),
         api.getReports(),
         api.getCategories(),
         api.getAnnouncements(),
-        api.getAdRequests().catch(() => [])
+        api.getAdRequests().catch(() => []),
+        adminUser?.id ? api.getSupportRequests(adminUser.id).catch(() => []) : Promise.resolve([]),
+        adminUser?.id ? api.getAdminAuditLogs(adminUser.id).catch(() => []) : Promise.resolve([])
       ]);
       setStats(statsData);
       setProducts(prodsData);
@@ -164,6 +208,27 @@ export const AdminDashboard: React.FC = () => {
       setCategories(catsData);
       setAnnouncementsList(annsData);
       setAdRequests(adsData);
+
+      if (apiSupportData.length > 0) {
+        setSupportRequests(prev => {
+          const map = new Map<string, SupportRequest>();
+          prev.forEach(r => map.set(r.id, r));
+          apiSupportData.forEach(r => map.set(r.id, r));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      }
+      if (apiAuditData.length > 0) {
+        setAdminAuditLogs(prev => {
+          const map = new Map<string, AdminAuditLog>();
+          prev.forEach(l => map.set(l.id, l));
+          apiAuditData.forEach(l => map.set(l.id, l));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+        });
+      }
 
       if (users.length === 0 && apiUsersData.length > 0) {
         setUsers(apiUsersData);
@@ -206,15 +271,49 @@ export const AdminDashboard: React.FC = () => {
       }
     );
 
+    const unsubscribeSupport = subscribeToFirebaseSupportRequests(
+      (fbRequests) => {
+        setSupportRequests(prev => {
+          const map = new Map<string, SupportRequest>();
+          prev.forEach(r => map.set(r.id, r));
+          fbRequests.forEach(r => map.set(r.id, r));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      },
+      (err) => {
+        console.warn('Real-time Firestore support requests listener issue:', err);
+      }
+    );
+
+    const unsubscribeAuditLogs = subscribeToFirebaseAdminAuditLogs(
+      (fbLogs) => {
+        setAdminAuditLogs(prev => {
+          const map = new Map<string, AdminAuditLog>();
+          prev.forEach(l => map.set(l.id, l));
+          fbLogs.forEach(l => map.set(l.id, l));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+        });
+      },
+      (err) => {
+        console.warn('Real-time Firestore admin audit logs listener issue:', err);
+      }
+    );
+
     const adTicker = setInterval(() => setNowMs(Date.now()), 30000);
 
     return () => {
       unsubscribeUsers();
       unsubscribeAnnouncements();
       unsubscribeAds();
+      unsubscribeSupport();
+      unsubscribeAuditLogs();
       clearInterval(adTicker);
     };
-  }, []);
+  }, [adminUser?.id]);
 
   const handleManualSync = async () => {
     setIsManualSyncing(true);
@@ -410,6 +509,78 @@ export const AdminDashboard: React.FC = () => {
     } finally {
       setDeletingUserId(null);
     }
+  };
+
+  const handleAdminFarmerSaved = (updatedUser: User, auditLog?: AdminAuditLog) => {
+    setUsers(prev => {
+      const next = prev.map(u => (u.id === updatedUser.id ? updatedUser : u));
+      setSignupStats(calculateSignupStats(next, true));
+      return next;
+    });
+    if (auditLog) {
+      setAdminAuditLogs(prev => [auditLog, ...prev.filter(l => l.id !== auditLog.id)]);
+    }
+    loadAdminData();
+    setSyncToast(`Updated ${updatedUser.name}'s farmer profile & logged audit record.`);
+    setTimeout(() => setSyncToast(null), 4500);
+  };
+
+  const handleUpdateSupportRequest = async (req: SupportRequest, status: SupportRequestStatus) => {
+    if (!adminUser?.id) return;
+    setUpdatingSupportId(req.id);
+    const adminNotes = (supportNoteDrafts[req.id] ?? req.adminNotes ?? '').trim();
+    try {
+      await Promise.all([
+        updateFirebaseSupportRequestStatus(req.id, {
+          status,
+          adminNotes: adminNotes || undefined,
+          resolvedBy: adminUser.id
+        }),
+        api
+          .updateSupportRequest(req.id, {
+            actingAdminId: adminUser.id,
+            status,
+            adminNotes: adminNotes || undefined
+          })
+          .catch(() => null)
+      ]);
+      setSupportRequests(prev =>
+        prev.map(item =>
+          item.id === req.id
+            ? { ...item, status, adminNotes: adminNotes || item.adminNotes, updatedAt: new Date().toISOString() }
+            : item
+        )
+      );
+      setSyncToast(`Support request ${req.id} marked as ${status.replace('_', ' ')}.`);
+      setTimeout(() => setSyncToast(null), 3500);
+    } catch (err) {
+      console.error('Failed to update support request:', err);
+    } finally {
+      setUpdatingSupportId(null);
+    }
+  };
+
+  const handleOpenFarmerFromSupport = (req: SupportRequest) => {
+    const matched = users.find(
+      u =>
+        u.id === req.userId ||
+        (req.userEmail && u.email?.toLowerCase() === req.userEmail.toLowerCase())
+    );
+    if (matched) {
+      setEditingFarmer(matched);
+      return;
+    }
+    setEditingFarmer({
+      id: req.userId,
+      name: req.requestedName || req.currentName,
+      email: req.userEmail,
+      phone: req.requestedPhone || req.currentPhone,
+      role: req.userRole,
+      avatar: 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
+      location: { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+      status: 'active',
+      createdAt: req.createdAt
+    });
   };
 
   const handleResolveReport = async (reportId: string, status: 'resolved' | 'dismissed') => {
@@ -644,9 +815,22 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const pendingSupportCount = supportRequests.filter(r => r.status === 'pending' || r.status === 'in_review').length;
+
+  const filteredSupportRequests = supportRequests.filter(r =>
+    supportStatusFilter === 'all' ? true : r.status === supportStatusFilter
+  );
+
   const sidebarItems: SidebarNavItem[] = [
     { id: 'overview', label: 'Platform Analytics', icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'users', label: 'Users & Signups', icon: <Users className="w-4 h-4" />, badge: users.length },
+    {
+      id: 'support_requests',
+      label: 'Support Queue',
+      icon: <Headphones className="w-4 h-4" />,
+      badge: pendingSupportCount > 0 ? pendingSupportCount : undefined,
+      buttonId: 'admin-sidebar-support-btn'
+    },
     {
       id: 'advertisers',
       label: 'Advertisements',
@@ -1181,11 +1365,23 @@ export const AdminDashboard: React.FC = () => {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <div className="inline-flex items-center justify-end gap-1.5">
+                            <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                              {isSellerRole(u.role) && (
+                                <button
+                                  id={`admin-edit-farmer-${u.id}`}
+                                  type="button"
+                                  onClick={() => setEditingFarmer(u)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 sm:py-1 rounded-xl font-bold text-xs bg-[#DFF4E4] hover:bg-[#c8ebd0] text-[#062B1F] border border-[#145A38]/20 transition-colors cursor-pointer"
+                                  title={`Edit ${u.name}'s farmer profile & info`}
+                                >
+                                  <Edit2 className="w-3.5 h-3.5 text-[#145A38]" />
+                                  <span>Edit Farmer Info</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => handleToggleUserStatus(u.id, u.status, u.email)}
-                                className={`px-3 py-1 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                                className={`px-3 py-1.5 sm:py-1 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
                                   u.status === 'active'
                                     ? 'bg-white border border-[#062B1F]/15 hover:bg-white/90 text-[#062B1F]'
                                     : 'bg-[#145A38] hover:bg-[#0B3D2B] text-white'
@@ -1198,7 +1394,7 @@ export const AdminDashboard: React.FC = () => {
                                   id={`admin-delete-user-${u.id}`}
                                   type="button"
                                   onClick={() => handleOpenDeleteUserModal(u)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-xs bg-rose-500/10 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-500/25 hover:border-rose-600 transition-colors cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 sm:py-1 rounded-xl font-bold text-xs bg-rose-500/10 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-500/25 hover:border-rose-600 transition-colors cursor-pointer"
                                   title={`Permanently delete ${u.name}'s account`}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
@@ -1316,7 +1512,7 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3 bg-white/65 px-4 py-2.5 rounded-2xl border border-white/80 text-xs tabular-nums">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white/65 px-4 py-2.5 rounded-2xl border border-white/80 text-xs tabular-nums">
                         <div>
                           <span className="text-[#0B3D2B]/60 font-semibold block text-[11px]">Start Date</span>
                           <span className="font-bold text-[#062B1F]">{formatAdDate(lifecycle.startDateIso)}</span>
@@ -1738,6 +1934,255 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </LiquidGlassCard>
         )}
+
+        {/* TAB: SUPPORT REQUESTS & ADMIN AUDIT LOGS */}
+        {activeTab === 'support_requests' && (
+          <div className="space-y-6">
+            <LiquidGlassCard variant="light" className="p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Headphones className="w-5 h-5 text-[#145A38]" />
+                    <h2 className="text-lg font-extrabold text-[#062B1F]">
+                      Identity Update Support Queue
+                    </h2>
+                  </div>
+                  <p className="text-xs text-[#0B3D2B]/70 mt-0.5">
+                    Review buyer &amp; farmer requests to update locked Full Name or Phone Number details.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                  {(
+                    [
+                      { id: 'all', label: 'All' },
+                      { id: 'pending', label: 'Pending' },
+                      { id: 'in_review', label: 'In Review' },
+                      { id: 'resolved', label: 'Resolved' },
+                      { id: 'rejected', label: 'Rejected' }
+                    ] as const
+                  ).map(pill => (
+                    <button
+                      key={pill.id}
+                      type="button"
+                      onClick={() => setSupportStatusFilter(pill.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                        supportStatusFilter === pill.id
+                          ? 'bg-[#062B1F] text-[#A8E635] shadow-xs'
+                          : 'bg-white/75 text-[#0B3D2B]/75 hover:bg-white'
+                      }`}
+                    >
+                      {pill.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </LiquidGlassCard>
+
+            {filteredSupportRequests.length === 0 ? (
+              <LiquidGlassCard variant="light" className="text-center py-12 p-6 space-y-2">
+                <Headphones className="w-10 h-10 text-[#145A38]/40 mx-auto" />
+                <h3 className="font-bold text-[#062B1F] text-sm">No support requests in this view</h3>
+                <p className="text-xs text-[#0B3D2B]/65">
+                  Requests submitted via &ldquo;Contact Support to Update Details&rdquo; appear here automatically.
+                </p>
+              </LiquidGlassCard>
+            ) : (
+              <div className="space-y-4">
+                {filteredSupportRequests.map(req => {
+                  const statusColor =
+                    req.status === 'resolved'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : req.status === 'in_review'
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : req.status === 'rejected'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : 'bg-sky-50 text-sky-700 border-sky-200';
+
+                  return (
+                    <LiquidGlassCard key={req.id} variant="light" className="p-5 space-y-4 text-xs">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#062B1F]/10 pb-3">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-extrabold text-[#062B1F] text-sm">
+                              {req.currentName}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#DFF4E4] text-[#062B1F]">
+                              {req.userRole.replace('_', ' ')}
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusColor}`}>
+                              {req.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-[#0B3D2B]/70 mt-0.5">
+                            {req.userEmail} • Current Phone: <strong>{req.currentPhone || 'Not set'}</strong> • Ref: <span className="font-mono">{req.id}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-[#0B3D2B]/60 flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>{new Date(req.createdAt).toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white/75 p-3.5 rounded-2xl border border-[#062B1F]/10">
+                        {req.requestedName && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-[#0B3D2B]/60 block">
+                              Requested New Full Name
+                            </span>
+                            <span className="font-extrabold text-[#145A38] text-sm">
+                              {req.requestedName}
+                            </span>
+                          </div>
+                        )}
+                        {req.requestedPhone && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-[#0B3D2B]/60 block">
+                              Requested New Phone Number
+                            </span>
+                            <span className="font-extrabold text-[#145A38] text-sm">
+                              {req.requestedPhone}
+                            </span>
+                          </div>
+                        )}
+                        <div className="sm:col-span-2">
+                          <span className="text-[10px] font-bold uppercase text-[#0B3D2B]/60 block">
+                            User Reason
+                          </span>
+                          <p className="text-[#062B1F] font-medium mt-0.5 leading-relaxed">
+                            {req.reason}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <input
+                          type="text"
+                          value={supportNoteDrafts[req.id] ?? req.adminNotes ?? ''}
+                          onChange={e =>
+                            setSupportNoteDrafts(prev => ({ ...prev, [req.id]: e.target.value }))
+                          }
+                          placeholder="Add admin resolution note..."
+                          className="flex-1 px-3.5 py-2 rounded-xl bg-white/90 border border-[#062B1F]/15 text-xs text-[#062B1F]"
+                        />
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isSellerRole(req.userRole) && (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenFarmerFromSupport(req)}
+                              className="px-3 py-2 rounded-xl bg-[#DFF4E4] hover:bg-[#c8ebd0] border border-[#145A38]/20 text-[#062B1F] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-[#145A38]" />
+                              <span>Edit Farmer Info</span>
+                            </button>
+                          )}
+
+                          {req.status !== 'in_review' && req.status !== 'resolved' && (
+                            <button
+                              type="button"
+                              disabled={updatingSupportId === req.id}
+                              onClick={() => handleUpdateSupportRequest(req, 'in_review')}
+                              className="px-3 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold cursor-pointer disabled:opacity-50"
+                            >
+                              Mark In Review
+                            </button>
+                          )}
+
+                          {req.status !== 'resolved' && (
+                            <button
+                              type="button"
+                              disabled={updatingSupportId === req.id}
+                              onClick={() => handleUpdateSupportRequest(req, 'resolved')}
+                              className="px-3 py-2 rounded-xl bg-[#145A38] hover:bg-[#0B3D2B] text-white font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Resolve</span>
+                            </button>
+                          )}
+
+                          {req.status !== 'rejected' && req.status !== 'resolved' && (
+                            <button
+                              type="button"
+                              disabled={updatingSupportId === req.id}
+                              onClick={() => handleUpdateSupportRequest(req, 'rejected')}
+                              className="px-3 py-2 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-800 font-bold cursor-pointer disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </LiquidGlassCard>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Immutable Admin Audit Trail */}
+            <LiquidGlassCard variant="light" className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between gap-2 border-b border-[#062B1F]/10 pb-3">
+                <div className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-[#145A38]" />
+                  <h3 className="font-extrabold text-[#062B1F] text-sm">
+                    Immutable Admin Audit Trail
+                  </h3>
+                </div>
+                <span className="text-[11px] font-bold text-[#0B3D2B]/65">
+                  {adminAuditLogs.length} recorded edits
+                </span>
+              </div>
+
+              {adminAuditLogs.length === 0 ? (
+                <p className="text-xs text-[#0B3D2B]/65 py-4 text-center">
+                  Admin farmer profile edits will appear here with before/after field diffs.
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                  {adminAuditLogs.map(log => (
+                    <div
+                      key={log.id}
+                      className="p-3.5 rounded-2xl bg-white/75 border border-[#062B1F]/10 text-xs space-y-1.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-bold text-[#062B1F]">
+                          {log.adminName} updated{' '}
+                          <span className="text-[#145A38]">{log.affectedUserName}</span>
+                        </div>
+                        <span className="text-[11px] text-[#0B3D2B]/60">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                      {log.note && (
+                        <div className="text-[11px] text-[#0B3D2B]/80 italic">
+                          Note: {log.note}
+                        </div>
+                      )}
+                      <div className="space-y-1 pt-1">
+                        {Object.entries(log.changedFields || {}).map(([field, diff]) => {
+                          const diffObj = diff as { before?: unknown; after?: unknown } | undefined;
+                          return (
+                            <div key={field} className="text-[11px] text-[#0B3D2B]/80">
+                              <span className="font-bold text-[#062B1F]">{field}:</span>{' '}
+                              <span className="line-through text-rose-700/80">
+                                {String(diffObj?.before ?? '—')}
+                              </span>{' '}
+                              &rarr;{' '}
+                              <span className="font-semibold text-[#145A38]">
+                                {String(diffObj?.after ?? '—')}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </LiquidGlassCard>
+          </div>
+        )}
       </div>
 
       {/* POP Full-Screen Inspection Modal */}
@@ -2016,6 +2461,17 @@ export const AdminDashboard: React.FC = () => {
           </div>
         )}
       </LiquidGlassModal>
+
+      {/* Admin Edit Farmer Information Modal */}
+      {adminUser && (
+        <AdminEditFarmerModal
+          isOpen={Boolean(editingFarmer)}
+          onClose={() => setEditingFarmer(null)}
+          farmer={editingFarmer}
+          adminUser={adminUser}
+          onSaved={handleAdminFarmerSaved}
+        />
+      )}
     </div>
   );
 };

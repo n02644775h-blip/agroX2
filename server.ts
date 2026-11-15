@@ -415,7 +415,7 @@ async function startServer() {
         `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
         `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
       ]);
-      return res.status(403).json({ error: 'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.' });
+      return res.status(403).json({ error: 'Your account has been suspended by the FarmBridge administration. Please contact support at farmbridge2026@gmail.com for assistance.' });
     }
 
     const token = `token_${user.id}_${Date.now()}`;
@@ -545,7 +545,7 @@ async function startServer() {
     const existing = store.getUserByEmail(email);
     if (existing) {
       if (existing.status === 'suspended') {
-        return res.status(403).json({ error: 'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.' });
+        return res.status(403).json({ error: 'Your account has been suspended by the FarmBridge administration. Please contact support at farmbridge2026@gmail.com for assistance.' });
       }
       return res.status(409).json({ error: 'An account with this email already exists' });
     }
@@ -615,7 +615,7 @@ async function startServer() {
           `agrox_uid=; Path=/; SameSite=None; Secure; Max-Age=0`,
           `agriconnect_token=; Path=/; SameSite=None; Secure; Max-Age=0`
         ]);
-        return res.status(403).json({ error: 'Your account has been suspended by the agroX administration.' });
+        return res.status(403).json({ error: 'Your account has been suspended by the FarmBridge administration.' });
       }
       if (user && !existingById) {
         store.createUser(user);
@@ -1366,24 +1366,70 @@ async function startServer() {
   });
 
   app.put('/api/users/:id', (req: Request, res: Response) => {
-    let updated = store.updateUser(req.params.id, req.body);
+    const targetUserId = req.params.id;
+    const actingUserId = (extractAuthUserId(req) || req.body?.actingUserId || '').trim();
+    const actingUser = actingUserId ? store.getUserById(actingUserId) : undefined;
+    const isAdminActor = Boolean(actingUser && actingUser.role === 'admin' && actingUser.status !== 'suspended');
+
+    const existing = store.getUserById(targetUserId);
+    const body = (req.body || {}) as Record<string, any>;
+
+    if (!isAdminActor) {
+      const normalizeStr = (v: unknown) => (v === undefined || v === null ? '' : String(v).trim());
+      const triedChangingName =
+        (body.name !== undefined && existing && normalizeStr(body.name) !== normalizeStr(existing.name)) ||
+        (body.fullName !== undefined && existing && normalizeStr(body.fullName) !== normalizeStr(existing.name));
+      const triedChangingPhone =
+        body.phone !== undefined && existing && normalizeStr(body.phone) !== normalizeStr(existing.phone);
+      const triedChangingRole =
+        body.role !== undefined && existing && body.role !== existing.role;
+      const triedChangingStatus =
+        body.status !== undefined && existing && body.status !== existing.status;
+
+      if (triedChangingName || triedChangingPhone) {
+        return res.status(403).json({
+          error: 'Full name and phone number are protected and can only be changed through FarmBridge Support.'
+        });
+      }
+      if (triedChangingRole || triedChangingStatus) {
+        return res.status(403).json({
+          error: 'Only an administrator can modify account role or status.'
+        });
+      }
+    }
+
+    // Never allow password/credential injection or unintended locked-field overwrites
+    const sanitizedUpdates: Partial<User> = {};
+    if (isAdminActor) {
+      if (body.name !== undefined) sanitizedUpdates.name = body.name;
+      if (body.phone !== undefined) sanitizedUpdates.phone = body.phone;
+    }
+    if (body.avatar !== undefined) sanitizedUpdates.avatar = body.avatar;
+    if (body.location !== undefined) sanitizedUpdates.location = body.location;
+    if (body.farmerProfile !== undefined) sanitizedUpdates.farmerProfile = body.farmerProfile;
+    if (body.buyerProfile !== undefined) sanitizedUpdates.buyerProfile = body.buyerProfile;
+    if (body.emailVerified !== undefined) sanitizedUpdates.emailVerified = body.emailVerified;
+    if (body.phoneVerified !== undefined) sanitizedUpdates.phoneVerified = body.phoneVerified;
+    if (body.verificationMethod !== undefined) sanitizedUpdates.verificationMethod = body.verificationMethod;
+
+    let updated = store.updateUser(targetUserId, sanitizedUpdates);
     if (!updated) {
       const fallbackUser: User = {
-        id: req.params.id,
-        name: req.body.name || 'Producer User',
-        email: req.body.email || `${req.params.id}@agrox.org`,
-        role: req.body.role || (req.params.id.startsWith('farmer') ? 'farmer' : 'buyer'),
-        phone: req.body.phone || '',
-        avatar: req.body.avatar || '',
-        location: req.body.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
+        id: targetUserId,
+        name: body.name || 'Producer User',
+        email: body.email || `${targetUserId}@farmbridge.local`,
+        role: body.role || (targetUserId.startsWith('farmer') ? 'farmer' : 'buyer'),
+        phone: body.phone || '',
+        avatar: body.avatar || '',
+        location: body.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
         status: 'active',
         createdAt: new Date().toISOString(),
-        ...req.body
+        ...sanitizedUpdates
       };
       store.createUser(fallbackUser);
       updated = fallbackUser;
     }
-    res.json(updated);
+    return res.json(updated);
   });
 
   app.put('/api/users/:id/status', (req: Request, res: Response) => {
@@ -1391,6 +1437,153 @@ async function startServer() {
     const updated = store.toggleUserStatus(req.params.id, status, email);
     if (!updated) return res.status(404).json({ error: 'User not found' });
     res.json(updated);
+  });
+
+  // Admin: Edit farmer / fodder supplier profile (no password/credential changes)
+  app.put('/api/admin/users/:id/profile', (req: Request, res: Response) => {
+    const targetUserId = req.params.id?.trim();
+    const actingAdminId = (extractAuthUserId(req) || req.body?.actingAdminId || '').trim();
+    const actingAdmin = actingAdminId ? store.getUserById(actingAdminId) : undefined;
+
+    if (!actingAdmin || actingAdmin.role !== 'admin' || actingAdmin.status === 'suspended') {
+      return res.status(403).json({
+        error: 'Unauthorized: active administrator privileges are required to edit farmer accounts.'
+      });
+    }
+
+    const body = (req.body || {}) as Record<string, any>;
+    const forbiddenCredentialKeys = ['password', 'newPassword', 'passwordHash', 'credentials', 'pin'];
+    if (forbiddenCredentialKeys.some(k => body[k] !== undefined)) {
+      return res.status(400).json({
+        error: 'Password and login credentials cannot be modified from the Admin Panel.'
+      });
+    }
+
+    const existing = store.getUserById(targetUserId);
+    const targetRole = existing?.role || body.role;
+    if (existing && existing.role !== 'farmer' && existing.role !== 'fodder_supplier') {
+      return res.status(400).json({
+        error: 'This endpoint is restricted to editing farmer and fodder supplier profiles.'
+      });
+    }
+
+    const fullName = body.name !== undefined ? String(body.name).trim() : existing?.name;
+    if (body.name !== undefined && !fullName) {
+      return res.status(400).json({ error: 'Farmer full name cannot be empty.' });
+    }
+
+    const result = store.adminUpdateFarmerProfile(
+      targetUserId,
+      {
+        name: fullName,
+        phone: body.phone !== undefined ? String(body.phone).trim() : undefined,
+        email: body.email,
+        avatar: body.avatar,
+        role: targetRole,
+        location: body.location,
+        farmerProfile: body.farmerProfile
+      },
+      { id: actingAdmin.id, name: actingAdmin.name },
+      typeof body.note === 'string' ? body.note.trim() : undefined
+    );
+
+    if (!result) {
+      return res.status(404).json({ error: 'Target farmer account not found.' });
+    }
+
+    return res.json(result);
+  });
+
+  // Support Requests for Locked Identity Details (Full Name / Phone Number)
+  app.get('/api/support-requests', (req: Request, res: Response) => {
+    const userId = req.query.userId as string | undefined;
+    const status = req.query.status as string | undefined;
+    return res.json(store.getSupportRequests({ userId, status }));
+  });
+
+  app.post('/api/support-requests', (req: Request, res: Response) => {
+    try {
+      const {
+        id,
+        userId,
+        userRole,
+        currentName,
+        currentPhone,
+        userEmail,
+        requestType,
+        requestedName,
+        requestedPhone,
+        reason
+      } = req.body || {};
+
+      if (!userId || !requestType || !reason || !String(reason).trim()) {
+        return res.status(400).json({
+          error: 'User ID, request type, and reason are required to submit a support request.'
+        });
+      }
+
+      if ((requestType === 'name' || requestType === 'both') && (!requestedName || !String(requestedName).trim())) {
+        return res.status(400).json({ error: 'Please provide the requested new full name.' });
+      }
+      if ((requestType === 'phone' || requestType === 'both') && (!requestedPhone || !String(requestedPhone).trim())) {
+        return res.status(400).json({ error: 'Please provide the requested new phone number.' });
+      }
+
+      const created = store.createSupportRequest({
+        id,
+        userId: String(userId).trim(),
+        userRole: userRole || 'buyer',
+        currentName: String(currentName || '').trim() || 'FarmBridge User',
+        currentPhone: currentPhone ? String(currentPhone).trim() : '',
+        userEmail: String(userEmail || '').trim(),
+        requestType,
+        requestedName: requestedName ? String(requestedName).trim() : undefined,
+        requestedPhone: requestedPhone ? String(requestedPhone).trim() : undefined,
+        reason: String(reason).trim()
+      });
+
+      return res.status(201).json(created);
+    } catch (err: any) {
+      console.error('Error creating support request:', err);
+      return res.status(500).json({ error: err?.message || 'Failed to submit support request.' });
+    }
+  });
+
+  app.put('/api/support-requests/:id', (req: Request, res: Response) => {
+    const actingAdminId = (extractAuthUserId(req) || req.body?.actingAdminId || '').trim();
+    const actingAdmin = actingAdminId ? store.getUserById(actingAdminId) : undefined;
+    if (!actingAdmin || actingAdmin.role !== 'admin' || actingAdmin.status === 'suspended') {
+      return res.status(403).json({
+        error: 'Unauthorized: active administrator privileges are required to update support requests.'
+      });
+    }
+
+    const { status, adminNotes } = req.body || {};
+    if (!status || !['pending', 'in_review', 'resolved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Valid support request status is required.' });
+    }
+
+    const updated = store.updateSupportRequest(req.params.id, {
+      status,
+      adminNotes: typeof adminNotes === 'string' ? adminNotes.trim() : undefined,
+      resolvedBy: actingAdmin.id,
+      adminName: actingAdmin.name
+    });
+
+    if (!updated) return res.status(404).json({ error: 'Support request not found.' });
+    return res.json(updated);
+  });
+
+  app.get('/api/admin/audit-logs', (req: Request, res: Response) => {
+    const actingAdminId = (extractAuthUserId(req) || (req.query.actingAdminId as string | undefined) || '').trim();
+    const actingAdmin = actingAdminId ? store.getUserById(actingAdminId) : undefined;
+    if (!actingAdmin || actingAdmin.role !== 'admin' || actingAdmin.status === 'suspended') {
+      return res.status(403).json({
+        error: 'Unauthorized: administrator privileges are required to view audit logs.'
+      });
+    }
+    const affectedUserId = req.query.affectedUserId as string | undefined;
+    return res.json(store.getAdminAuditLogs(affectedUserId));
   });
 
   const handleDeleteOwnAccount = (req: Request, res: Response) => {

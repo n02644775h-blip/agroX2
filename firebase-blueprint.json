@@ -128,6 +128,43 @@
         "deletedAt": { "type": "string", "description": "Deletion timestamp" }
       },
       "required": ["uid"]
+    },
+    "SupportRequest": {
+      "title": "SupportRequest",
+      "description": "Protected account detail change request submitted by users to FarmBridge Support",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Support request ID" },
+        "userId": { "type": "string", "description": "Requesting user UID" },
+        "userRole": { "type": "string", "enum": ["farmer", "fodder_supplier", "buyer", "admin"] },
+        "currentName": { "type": "string", "description": "Current locked full name" },
+        "currentPhone": { "type": "string", "description": "Current locked phone number" },
+        "userEmail": { "type": "string", "description": "User email" },
+        "requestType": { "type": "string", "enum": ["name", "phone", "both"] },
+        "requestedName": { "type": "string", "description": "Requested new full name" },
+        "requestedPhone": { "type": "string", "description": "Requested new phone number" },
+        "reason": { "type": "string", "description": "Reason for change request" },
+        "status": { "type": "string", "enum": ["pending", "in_review", "resolved", "rejected"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "requestType", "reason", "status"]
+    },
+    "AdminAuditLog": {
+      "title": "AdminAuditLog",
+      "description": "Immutable administrative audit trail for profile updates and support resolutions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "adminId": { "type": "string" },
+        "adminName": { "type": "string" },
+        "action": { "type": "string" },
+        "affectedUserId": { "type": "string" },
+        "affectedUserName": { "type": "string" },
+        "changedFields": { "type": "object" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["adminId", "action", "affectedUserId", "timestamp"]
     }
   },
   "firestore": {
@@ -162,6 +199,14 @@
     "/deletedAccounts/{userId}": {
       "schema": "DeletedAccount",
       "description": "Tombstones for deleted user and spam accounts"
+    },
+    "/supportRequests/{requestId}": {
+      "schema": "SupportRequest",
+      "description": "User requests to update locked full name or phone number"
+    },
+    "/adminAuditLogs/{logId}": {
+      "schema": "AdminAuditLog",
+      "description": "Immutable audit logs for administrative farmer edits"
     }
   }
 }

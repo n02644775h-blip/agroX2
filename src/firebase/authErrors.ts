@@ -23,7 +23,7 @@ export function getFriendlyAuthErrorMessage(error: any): string {
     case 'auth/user-disabled':
       return 'This user account has been disabled. Please contact support.';
     case 'auth/account-suspended':
-      return message || 'Your account has been suspended by the agroX administration. Please contact support at admin@agrox.co.zw for assistance.';
+      return message || 'Your account has been suspended by the FarmBridge administration. Please contact support at farmbridge2026@gmail.com for assistance.';
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a moment and try again later.';
     case 'auth/network-request-failed':
