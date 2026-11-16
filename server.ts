@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { store } from './server/store';
+import { getVerificationEmailConfigStatus, sendCompanyVerificationEmail } from './server/emailMailer';
 import { User, Product, Order, Review, Announcement, Report, ProductCategory } from './src/types';
 
 const execFileAsync = promisify(execFile);
@@ -567,6 +568,38 @@ async function startServer() {
     }
     // Simulation
     return res.json({ message: `Password reset instructions sent to ${email}. Check your inbox.` });
+  });
+
+  app.get('/api/auth/verification-config', (_req: Request, res: Response) => {
+    const status = getVerificationEmailConfigStatus();
+    return res.json({
+      companySmtpConfigured: status.companySmtpConfigured,
+      firebaseAdminConfigured: status.firebaseAdminConfigured,
+      ready: status.ready,
+      senderEmail: status.senderEmail
+    });
+  });
+
+  app.post('/api/auth/send-company-verification', async (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : '';
+    const idToken = (req.body?.idToken || bearerToken || '').trim();
+    if (!idToken) {
+      return res.status(400).json({
+        sent: false,
+        fallbackToFirebaseDefault: true,
+        error: 'Firebase ID token is required.'
+      });
+    }
+
+    const result = await sendCompanyVerificationEmail({
+      idToken,
+      continueUrl: typeof req.body?.continueUrl === 'string' ? req.body.continueUrl : undefined,
+      newEmail: typeof req.body?.newEmail === 'string' ? req.body.newEmail : undefined
+    });
+    return res.json(result);
   });
 
   app.get('/api/auth/status', (req: Request, res: Response) => {

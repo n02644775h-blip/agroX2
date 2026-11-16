@@ -115,6 +115,31 @@ class ApiService {
     return this.request<{ suspended: boolean; deleted?: boolean; status: string }>(`/auth/status?${query.toString()}`);
   }
 
+  async getVerificationEmailConfig(): Promise<{
+    companySmtpConfigured: boolean;
+    firebaseAdminConfigured: boolean;
+    ready: boolean;
+    senderEmail: string;
+  }> {
+    return this.request('/auth/verification-config');
+  }
+
+  async sendCompanyVerificationEmail(params: {
+    idToken: string;
+    continueUrl?: string;
+    newEmail?: string;
+  }): Promise<{
+    sent: boolean;
+    fallbackToFirebaseDefault: boolean;
+    senderEmail?: string;
+    reason?: string;
+  }> {
+    return this.request('/auth/send-company-verification', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  }
+
   // --- Categories ---
   async getCategories(): Promise<ProductCategory[]> {
     return this.request<ProductCategory[]>('/categories');

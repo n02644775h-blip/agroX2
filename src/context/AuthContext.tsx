@@ -717,7 +717,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.id]);
 
-  // Send or resend Firebase Auth verification email
+  // Send or resend Firebase Auth verification email (prefers company SMTP relay when configured)
   const sendVerificationEmail = async (
     targetUser?: FirebaseUser
   ): Promise<{ sent: boolean; errorMessage?: string }> => {
@@ -728,11 +728,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { sent: false, errorMessage: msg };
     }
     setLastVerificationError(null);
+    const continueUrl =
+      typeof window !== 'undefined' && window.location?.origin
+        ? `${window.location.origin}/#verified`
+        : undefined;
+
     try {
-      const continueUrl =
-        typeof window !== 'undefined' && window.location?.origin
-          ? `${window.location.origin}/#verified`
-          : undefined;
+      const idToken = await fbTarget.getIdToken().catch(() => '');
+      if (idToken) {
+        const relayRes = await api
+          .sendCompanyVerificationEmail({ idToken, continueUrl })
+          .catch(() => null);
+        if (relayRes?.sent) {
+          return { sent: true };
+        }
+      }
+
       if (continueUrl) {
         try {
           await sendEmailVerification(fbTarget, {
@@ -822,43 +833,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ? `${window.location.origin}/#verified`
           : undefined;
 
-      const performEmailUpdate = async () => {
-        if (continueUrl) {
-          try {
-            await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail, {
-              url: continueUrl,
-              handleCodeInApp: false
-            });
-          } catch (err: any) {
-            if (
-              err?.code === 'auth/unauthorized-continue-uri' ||
-              err?.code === 'auth/invalid-continue-uri'
-            ) {
-              await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail);
-            } else {
-              throw err;
-            }
-          }
-        } else {
-          await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail);
-        }
-      };
+      const idToken = await fbTarget.getIdToken().catch(() => '');
+      const relayRes = idToken
+        ? await api
+            .sendCompanyVerificationEmail({
+              idToken,
+              continueUrl,
+              newEmail: cleanNewEmail
+            })
+            .catch(() => null)
+        : null;
 
-      try {
-        await performEmailUpdate();
-      } catch (err: any) {
-        if (err?.code === 'auth/requires-recent-login') {
-          if (!currentPassword || !fbTarget.email) {
-            return {
-              sent: false,
-              errorMessage: 'Please enter your current password to confirm changing your email address.'
-            };
+      if (!relayRes?.sent) {
+        const performEmailUpdate = async () => {
+          if (continueUrl) {
+            try {
+              await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail, {
+                url: continueUrl,
+                handleCodeInApp: false
+              });
+            } catch (err: any) {
+              if (
+                err?.code === 'auth/unauthorized-continue-uri' ||
+                err?.code === 'auth/invalid-continue-uri'
+              ) {
+                await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail);
+              } else {
+                throw err;
+              }
+            }
+          } else {
+            await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail);
           }
-          const cred = EmailAuthProvider.credential(fbTarget.email, currentPassword);
-          await reauthenticateWithCredential(fbTarget, cred);
+        };
+
+        try {
           await performEmailUpdate();
-        } else {
-          throw err;
+        } catch (err: any) {
+          if (err?.code === 'auth/requires-recent-login') {
+            if (!currentPassword || !fbTarget.email) {
+              return {
+                sent: false,
+                errorMessage: 'Please enter your current password to confirm changing your email address.'
+              };
+            }
+            const cred = EmailAuthProvider.credential(fbTarget.email, currentPassword);
+            await reauthenticateWithCredential(fbTarget, cred);
+            await performEmailUpdate();
+          } else {
+            throw err;
+          }
         }
       }
 
