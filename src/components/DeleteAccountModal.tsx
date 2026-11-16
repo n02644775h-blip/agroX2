@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
 import { isSellerRole } from '../types';
 import { LiquidGlassModal, LiquidGlassButton } from './glass';
 import {
@@ -8,9 +7,7 @@ import {
   Lock,
   ShieldAlert,
   Loader2,
-  Mail,
-  Smartphone,
-  CheckCircle2
+  Mail
 } from 'lucide-react';
 
 interface DeleteAccountModalProps {
@@ -28,17 +25,9 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   const [understoodWarning, setUnderstoodWarning] = useState(false);
   const [confirmPhrase, setConfirmPhrase] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmEmailInput, setConfirmEmailInput] = useState('');
 
-  // Recent auth OTP verification for users signed in via Firestore/OTP fallback
   const needsPasswordReauth = Boolean(currentUser && currentUser.email);
-  const [otpChannel, setOtpChannel] = useState<'email' | 'phone'>(
-    user?.phone && user.verificationMethod === 'phone' ? 'phone' : 'email'
-  );
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [sandboxHint, setSandboxHint] = useState('');
-  const [otpLoading, setOtpLoading] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -46,59 +35,6 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
   if (!user) return null;
 
   const isSeller = isSellerRole(user.role);
-  const targetAddress =
-    otpChannel === 'phone' ? (user.phone || '').trim() : (user.email || '').trim();
-
-  const handleSendVerification = async () => {
-    if (!targetAddress) {
-      setErrorMsg(
-        otpChannel === 'phone'
-          ? 'No phone number is on file. Please verify using your email address.'
-          : 'No email address is on file for this account.'
-      );
-      return;
-    }
-    setOtpLoading(true);
-    setErrorMsg('');
-    try {
-      const res = await api.sendVerificationCode({
-        channel: otpChannel,
-        target: targetAddress,
-        name: user.name
-      });
-      setOtpSent(true);
-      setSandboxHint(res.sandboxCode ? `Verification code: ${res.sandboxCode}` : '');
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Could not send verification code.');
-    } finally {
-      setOtpLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otpCode.trim()) {
-      setErrorMsg('Please enter the 6-digit verification code.');
-      return;
-    }
-    setOtpLoading(true);
-    setErrorMsg('');
-    try {
-      const res = await api.verifyCode({
-        channel: otpChannel,
-        target: targetAddress,
-        code: otpCode.trim()
-      });
-      if (res.verified) {
-        setOtpVerified(true);
-      } else {
-        setErrorMsg('Invalid verification code.');
-      }
-    } catch (err: any) {
-      setErrorMsg(err?.message || 'Verification failed. Please check your code.');
-    } finally {
-      setOtpLoading(false);
-    }
-  };
 
   const handleConfirmDelete = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,9 +52,12 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
       setErrorMsg('Please enter your current password to verify recent authentication.');
       return;
     }
-    if (!needsPasswordReauth && !otpVerified) {
-      setErrorMsg('Please complete the verification code check to confirm recent authentication.');
-      return;
+    if (!needsPasswordReauth) {
+      const expectedEmail = (user.email || '').trim().toLowerCase();
+      if (!expectedEmail || confirmEmailInput.trim().toLowerCase() !== expectedEmail) {
+        setErrorMsg('Please type your exact registered email address to confirm your identity.');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -218,101 +157,19 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({
               />
             </div>
           ) : (
-            <div className="p-3.5 rounded-2xl bg-white/70 border border-[#062B1F]/12 space-y-2.5">
-              <div className="font-bold text-[#062B1F] flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-[#0B3D2B]/65" />
-                  Identity Verification Required
-                </span>
-                {otpVerified && (
-                  <span className="inline-flex items-center gap-1 text-[#145A38] font-bold text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Verified
-                  </span>
-                )}
-              </div>
-
-              {!otpVerified && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOtpChannel('email');
-                        setOtpSent(false);
-                        setSandboxHint('');
-                      }}
-                      className={`flex-1 py-1.5 px-2.5 rounded-xl border text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer ${
-                        otpChannel === 'email'
-                          ? 'bg-[#062B1F] text-white border-[#062B1F]'
-                          : 'bg-white text-[#0B3D2B] border-[#062B1F]/15'
-                      }`}
-                    >
-                      <Mail className="w-3 h-3" />
-                      <span>Email</span>
-                    </button>
-                    {user.phone && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOtpChannel('phone');
-                          setOtpSent(false);
-                          setSandboxHint('');
-                        }}
-                        className={`flex-1 py-1.5 px-2.5 rounded-xl border text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer ${
-                          otpChannel === 'phone'
-                            ? 'bg-[#062B1F] text-white border-[#062B1F]'
-                            : 'bg-white text-[#0B3D2B] border-[#062B1F]/15'
-                        }`}
-                      >
-                        <Smartphone className="w-3 h-3" />
-                        <span>SMS Phone</span>
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-[#0B3D2B]/70 truncate flex-1">
-                      Target: <strong>{targetAddress || 'N/A'}</strong>
-                    </span>
-                    <button
-                      type="button"
-                      disabled={otpLoading}
-                      onClick={handleSendVerification}
-                      className="px-3 py-1.5 rounded-xl bg-[#062B1F] hover:bg-[#0B3D2B] text-white font-bold text-[11px] shrink-0 cursor-pointer"
-                    >
-                      {otpLoading ? 'Sending...' : otpSent ? 'Resend Code' : 'Send Code'}
-                    </button>
-                  </div>
-
-                  {sandboxHint && (
-                    <div className="px-2.5 py-1.5 rounded-xl bg-[#F4D35E]/25 border border-[#F4D35E]/60 text-[#062B1F] font-mono text-[11px]">
-                      {sandboxHint}
-                    </div>
-                  )}
-
-                  {otpSent && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={otpCode}
-                        onChange={(e) => setOtpCode(e.target.value)}
-                        placeholder="6-digit code"
-                        maxLength={6}
-                        className="flex-1 px-3 py-2 rounded-xl border border-[#062B1F]/15 font-mono text-[#062B1F] bg-white"
-                      />
-                      <button
-                        type="button"
-                        disabled={otpLoading}
-                        onClick={handleVerifyOtp}
-                        className="px-3.5 py-2 rounded-xl bg-[#145A38] hover:bg-[#0B3D2B] text-white font-bold text-[11px] cursor-pointer"
-                      >
-                        Verify
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
+            <div>
+              <label className="font-bold text-[#062B1F] mb-1 flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5 text-[#0B3D2B]/65" />
+                <span>Confirm Registered Email Address ({user.email})</span>
+              </label>
+              <input
+                type="email"
+                value={confirmEmailInput}
+                onChange={(e) => setConfirmEmailInput(e.target.value)}
+                placeholder={user.email}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#062B1F]/15 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-rose-500/25"
+                autoComplete="off"
+              />
             </div>
           )}
 

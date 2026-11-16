@@ -104,31 +104,6 @@ class ApiService {
     });
   }
 
-  async sendVerificationCode(payload: { channel: 'email' | 'phone'; target: string; name?: string }): Promise<{
-    success: boolean;
-    channel: 'email' | 'phone';
-    target: string;
-    expiresInSeconds: number;
-    sandboxCode?: string;
-    message: string;
-  }> {
-    return this.request('/auth/send-verification', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-  }
-
-  async verifyCode(payload: { channel: 'email' | 'phone'; target: string; code: string }): Promise<{
-    verified: boolean;
-    channel: 'email' | 'phone';
-    target: string;
-  }> {
-    return this.request('/auth/verify-code', {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    });
-  }
-
   async getMe(): Promise<{ user: User | null; suspended?: boolean }> {
     return this.request<{ user: User | null; suspended?: boolean }>('/auth/me');
   }
@@ -749,10 +724,11 @@ class ApiService {
     return this.request<any>('/stats/admin');
   }
 
-  // --- Media Upload (Images & Videos with Progress) ---
+  // --- Media Upload (Images & Videos with Progress & Cancellation) ---
   uploadMediaFile(
     file: File,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number) => void,
+    signal?: AbortSignal
   ): Promise<{
     url: string;
     thumbnailUrl?: string;
@@ -773,6 +749,12 @@ class ApiService {
         reject(new Error(`File "${file.name}" is empty (0 bytes). Please choose a valid image or video.`));
         return;
       }
+      if (signal?.aborted) {
+        const abortErr = new Error('Upload cancelled.');
+        abortErr.name = 'AbortError';
+        reject(abortErr);
+        return;
+      }
 
       const baseMime = (file.type || 'application/octet-stream').split(';')[0].trim().toLowerCase();
       const xhr = new XMLHttpRequest();
@@ -784,6 +766,28 @@ class ApiService {
       xhr.setRequestHeader('Content-Type', baseMime || 'application/octet-stream');
       xhr.setRequestHeader('X-File-Type', baseMime || 'application/octet-stream');
       xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+
+      const cleanupAbort = () => {
+        if (signal) {
+          signal.removeEventListener('abort', onAbort);
+        }
+      };
+
+      const onAbort = () => {
+        try {
+          xhr.abort();
+        } catch {
+          // ignore
+        }
+        cleanupAbort();
+        const abortErr = new Error('Upload cancelled.');
+        abortErr.name = 'AbortError';
+        reject(abortErr);
+      };
+
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
 
       xhr.upload.onprogress = (evt) => {
         if (evt.lengthComputable && onProgress) {
@@ -816,6 +820,7 @@ class ApiService {
       };
 
       xhr.onload = () => {
+        cleanupAbort();
         const contentTypeHeader = xhr.getResponseHeader('content-type') || '';
         const rawText = xhr.responseText || '';
         const parsed = parseJsonSafe(rawText, contentTypeHeader);
@@ -824,7 +829,7 @@ class ApiService {
           if (!parsed || typeof parsed.url !== 'string' || !parsed.url.trim()) {
             reject(
               new Error(
-                'Upload endpoint returned an unexpected non-JSON response. Please check that the media server is running and try again.'
+                'Upload endpoint returned an unexpected non-JSON response. Please check your cloud storage session and try again.'
               )
             );
             return;
@@ -843,13 +848,13 @@ class ApiService {
         if (xhr.status === 413) {
           reject(
             new Error(
-              'Media file exceeds the server request size limit. Use JPG/PNG/WebP (≤15MB) or MP4/WebM (≤50MB).'
+              'Media file exceeds the server request size limit. Use JPG/PNG/WebP (≤15MB) or MP4/WebM (≤50MB) via Firebase Storage.'
             )
           );
           return;
         }
         if (xhr.status === 401 || xhr.status === 403) {
-          reject(new Error('Permission denied while uploading media. Please sign in again as a farmer.'));
+          reject(new Error('Permission denied while uploading media. Please verify your email and sign in again.'));
           return;
         }
         if (xhr.status === 408 || xhr.status === 504) {
@@ -865,9 +870,17 @@ class ApiService {
         reject(new Error(plain || `Media upload failed (HTTP ${xhr.status || 'unknown'}).`));
       };
 
-      xhr.onerror = () => reject(new Error('Network error while uploading media file. Please check your connection.'));
-      xhr.ontimeout = () =>
+      xhr.onerror = () => {
+        cleanupAbort();
+        reject(new Error('Network error while uploading media file. Please check your connection.'));
+      };
+      xhr.ontimeout = () => {
+        cleanupAbort();
         reject(new Error('Upload timed out while processing the media file. Try a smaller file or shorter clip.'));
+      };
+      xhr.onabort = () => {
+        cleanupAbort();
+      };
       xhr.send(file);
     });
   }

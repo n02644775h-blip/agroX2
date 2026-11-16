@@ -24,14 +24,22 @@ export function getFriendlyAuthErrorMessage(error: any): string {
       return 'This user account has been disabled. Please contact support.';
     case 'auth/account-suspended':
       return message || 'Your account has been suspended by the FarmBridge administration. Please contact support at farmbridge2026@gmail.com for assistance.';
+    case 'auth/account-deleted':
+      return message || 'This account has been permanently deleted by the FarmBridge administration.';
     case 'auth/too-many-requests':
-      return 'Too many attempts. Please wait a moment and try again later.';
+      return 'Too many verification or sign-in attempts. Please wait about 60 seconds and check your inbox or spam folder before trying again.';
+    case 'auth/unauthorized-continue-uri':
+    case 'auth/invalid-continue-uri':
+      return 'The verification link domain is not yet authorized in Firebase. Using default verification link instead.';
+    case 'auth/invalid-action-code':
+    case 'auth/expired-action-code':
+      return 'This email verification or reset link is invalid or has expired. Please request a fresh verification email.';
     case 'auth/network-request-failed':
       return 'Network error. Please check your internet connection and try again.';
     case 'auth/popup-closed-by-user':
       return 'Authentication popup was closed before completing.';
     case 'auth/requires-recent-login':
-      return 'Please sign out and sign back in to perform this sensitive action.';
+      return 'For security, please enter your password or sign back in before completing this action.';
     default:
       if (message.toLowerCase().includes('suspended')) {
         return message;

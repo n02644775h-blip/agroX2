@@ -8,6 +8,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendEmailVerification,
+  reload,
+  verifyBeforeUpdateEmail,
   signOut,
   sendPasswordResetEmail,
   updateProfile
@@ -119,8 +121,6 @@ export interface UserProfileData {
   phone?: string;
   avatar?: string;
   emailVerified?: boolean;
-  phoneVerified?: boolean;
-  verificationMethod?: 'email' | 'phone';
   location?: {
     country?: string;
     province: string;
@@ -139,6 +139,9 @@ interface AuthContextType {
   user: User | null; // Unified application user representation
   userProfile: UserProfileData | null;
   loading: boolean;
+  isEmailVerified: boolean;
+  requiresEmailVerification: boolean;
+  lastVerificationError: string | null;
   suspensionNotice: string | null;
   clearSuspensionNotice: () => void;
   accountDeletionNotice: string | null;
@@ -153,6 +156,9 @@ interface AuthContextType {
   logout: () => Promise<void>;
   deleteAccount: (options?: { password?: string }) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  sendVerificationEmail: (targetUser?: FirebaseUser) => Promise<{ sent: boolean; errorMessage?: string }>;
+  checkEmailVerification: () => Promise<{ verified: boolean; user?: User }>;
+  updatePendingEmail: (newEmail: string, currentPassword?: string) => Promise<{ sent: boolean; errorMessage?: string }>;
   register: (userData: Partial<User>) => Promise<void>; // Backward-compatible alias
   updateUserProfile: (updates: Partial<User>) => Promise<void>;
   refreshUserData: () => Promise<void>;
@@ -184,6 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [user, setUser] = useState<User | null>(() => initialPersistedUser);
   const [loading, setLoading] = useState<boolean>(!initialPersistedUser);
+  const [lastVerificationError, setLastVerificationError] = useState<string | null>(null);
   const [suspensionNotice, setSuspensionNotice] = useState<string | null>(null);
   const [accountDeletionNotice, setAccountDeletionNotice] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -271,7 +278,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await enforceNotSuspended(uid, knownEmail);
 
       let profileData: UserProfileData;
-      let userStatus: 'active' | 'suspended' = 'active';
+      let userStatus: 'active' | 'suspended' | 'pending_verification' = 'active';
+      let authoritativeEmailVerified = fbUser ? Boolean(fbUser.emailVerified) : true;
 
       if (userSnap && userSnap.exists()) {
         const fsData = userSnap.data() as any;
@@ -287,7 +295,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw createDeletedError();
         }
 
-        userStatus = fsData.status || 'active';
+        if (fbUser) {
+          authoritativeEmailVerified = Boolean(fbUser.emailVerified);
+          if (authoritativeEmailVerified && (fsData.status === 'pending_verification' || fsData.emailVerified !== true)) {
+            await fbUser.getIdToken(true).catch(() => {});
+            await updateDoc(userDocRef, {
+              status: 'active',
+              emailVerified: true,
+              updatedAt: serverTimestamp()
+            }).catch(() => {});
+            userStatus = 'active';
+          } else {
+            userStatus = authoritativeEmailVerified ? (fsData.status || 'active') : 'pending_verification';
+          }
+        } else {
+          // Non-Firebase Auth sessions (legacy admin-1 / seeded local users)
+          authoritativeEmailVerified = fsData.status !== 'pending_verification';
+          userStatus = fsData.status || 'active';
+        }
 
         // Authoritative Firestore data takes precedence over stale localStorage so admin edits persist everywhere
         const resolvedRole = (
@@ -299,13 +324,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         profileData = {
           uid,
           fullName: fsData.fullName || fsData.name || fbUser?.displayName || localCachedUser?.name || 'Producer User',
-          email: fsData.email || fbUser?.email || localCachedUser?.email || `${uid}@farmbridge.local`,
+          email: fbUser?.email || fsData.email || localCachedUser?.email || `${uid}@farmbridge.local`,
           role: resolvedRole,
           phone: fsData.phone ?? localCachedUser?.phone ?? '',
           avatar: fsData.avatar || fbUser?.photoURL || localCachedUser?.avatar || '',
-          emailVerified: Boolean(fsData.emailVerified ?? localCachedUser?.emailVerified),
-          phoneVerified: Boolean(fsData.phoneVerified ?? localCachedUser?.phoneVerified),
-          verificationMethod: fsData.verificationMethod || localCachedUser?.verificationMethod,
+          emailVerified: authoritativeEmailVerified,
           location: {
             country: 'Zimbabwe',
             province: 'Harare',
@@ -343,6 +366,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw createSuspendedError();
         }
 
+        authoritativeEmailVerified = fbUser ? Boolean(fbUser.emailVerified) : baseUser.status !== 'pending_verification';
+        userStatus = authoritativeEmailVerified ? 'active' : 'pending_verification';
+
         const role: UserRole = baseUser.role || (uid.startsWith('supplier') ? 'fodder_supplier' : uid.startsWith('farmer') ? 'farmer' : uid.startsWith('admin') ? 'admin' : 'buyer');
         const defaultAvatar = isSellerRole(role)
           ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
@@ -351,20 +377,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const initialProfile: Record<string, any> = {
           uid: uid,
           fullName: baseUser.name || fbUser?.displayName || (role === 'fodder_supplier' ? 'Tawanda Gumbo' : role === 'farmer' ? 'Tendai Moyo' : 'Marketplace User'),
-          email: baseUser.email || fbUser?.email || `${uid}@agrox.org`,
+          email: fbUser?.email || baseUser.email || `${uid}@agrox.org`,
           role: role,
           phone: baseUser.phone || (isSellerRole(role) ? '+263 77 210 4930' : ''),
           avatar: baseUser.avatar || fbUser?.photoURL || defaultAvatar,
-          emailVerified: Boolean(baseUser.emailVerified),
-          phoneVerified: Boolean(baseUser.phoneVerified),
-          verificationMethod: baseUser.verificationMethod,
+          emailVerified: authoritativeEmailVerified,
           location: baseUser.location || {
             country: 'Zimbabwe',
             province: 'Harare',
             city: 'Harare',
             community: 'Direct Market'
           },
-          status: 'active',
+          status: userStatus,
           createdAt: serverTimestamp()
         };
 
@@ -416,9 +440,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         avatar: profileData.avatar || fbUser?.photoURL || localCachedUser?.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
         location: profileData.location || localCachedUser?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
         status: userStatus,
-        emailVerified: Boolean(profileData.emailVerified ?? localCachedUser?.emailVerified),
-        phoneVerified: Boolean(profileData.phoneVerified ?? localCachedUser?.phoneVerified),
-        verificationMethod: profileData.verificationMethod || localCachedUser?.verificationMethod,
+        emailVerified: authoritativeEmailVerified,
         createdAt: (localCachedUser && localCachedUser.createdAt) || (typeof profileData.createdAt === 'string' ? profileData.createdAt : new Date().toISOString()),
         farmerProfile: profileData.farmerProfile || localCachedUser?.farmerProfile,
         buyerProfile: profileData.buyerProfile || localCachedUser?.buyerProfile
@@ -590,6 +612,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Real-time sync when Admin or another tab updates the active profile in Firestore
         const incomingName = fsData.fullName || fsData.name;
         const incomingPhone = fsData.phone !== undefined ? fsData.phone : undefined;
+        const fbNow = auth.currentUser;
+        const canBeActive = fbNow ? Boolean(fbNow.emailVerified) : fsData.status !== 'pending_verification';
+        const resolvedStatus: User['status'] = canBeActive ? (fsData.status || 'active') : 'pending_verification';
         setUser(prev => {
           if (!prev || prev.id !== user.id) return prev;
           const nextUser: User = {
@@ -597,6 +622,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             name: incomingName || prev.name,
             phone: incomingPhone !== undefined ? incomingPhone : prev.phone,
             avatar: fsData.avatar || prev.avatar,
+            status: resolvedStatus,
+            emailVerified: canBeActive,
             location: fsData.location ? { ...prev.location, ...fsData.location } : prev.location,
             farmerProfile: fsData.farmerProfile
               ? { ...(prev.farmerProfile || {}), ...fsData.farmerProfile }
@@ -614,6 +641,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: nextUser.role,
             phone: nextUser.phone,
             avatar: nextUser.avatar,
+            emailVerified: nextUser.emailVerified,
             location: nextUser.location,
             farmerProfile: nextUser.farmerProfile,
             buyerProfile: nextUser.buyerProfile
@@ -689,7 +717,191 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.id]);
 
-  // 1. User Registration / Signup
+  // Send or resend Firebase Auth verification email
+  const sendVerificationEmail = async (
+    targetUser?: FirebaseUser
+  ): Promise<{ sent: boolean; errorMessage?: string }> => {
+    const fbTarget = targetUser || auth.currentUser;
+    if (!fbTarget) {
+      const msg = 'No active Firebase Authentication session found. Please sign in with your email and password first.';
+      setLastVerificationError(msg);
+      return { sent: false, errorMessage: msg };
+    }
+    setLastVerificationError(null);
+    try {
+      const continueUrl =
+        typeof window !== 'undefined' && window.location?.origin
+          ? `${window.location.origin}/#verified`
+          : undefined;
+      if (continueUrl) {
+        try {
+          await sendEmailVerification(fbTarget, {
+            url: continueUrl,
+            handleCodeInApp: false
+          });
+          return { sent: true };
+        } catch (err: any) {
+          if (
+            err?.code === 'auth/unauthorized-continue-uri' ||
+            err?.code === 'auth/invalid-continue-uri'
+          ) {
+            await sendEmailVerification(fbTarget);
+            return { sent: true };
+          }
+          throw err;
+        }
+      }
+      await sendEmailVerification(fbTarget);
+      return { sent: true };
+    } catch (err: any) {
+      const friendly = getFriendlyAuthErrorMessage(err);
+      console.error('sendVerificationEmail error:', err);
+      setLastVerificationError(friendly);
+      return { sent: false, errorMessage: friendly };
+    }
+  };
+
+  // Reload Firebase Auth user & verify whether email link was confirmed
+  const checkEmailVerification = async (): Promise<{ verified: boolean; user?: User }> => {
+    const fbTarget = auth.currentUser;
+    if (!fbTarget) {
+      if (user && user.emailVerified !== false && user.status !== 'pending_verification') {
+        return { verified: true, user };
+      }
+      return { verified: false };
+    }
+    try {
+      await reload(fbTarget);
+      if (!fbTarget.emailVerified) {
+        return { verified: false };
+      }
+      await fbTarget.getIdToken(true).catch(() => {});
+      await setDoc(
+        doc(db, 'users', fbTarget.uid),
+        sanitizeForFirestore({
+          status: 'active',
+          emailVerified: true,
+          updatedAt: serverTimestamp()
+        }),
+        { merge: true }
+      ).catch(() => {});
+      await api.updateUser(fbTarget.uid, {
+        actingUserId: fbTarget.uid,
+        emailVerified: true,
+        status: 'active'
+      } as any).catch(() => {});
+      setLastVerificationError(null);
+      const synced = await syncUserProfile(fbTarget);
+      return { verified: true, user: synced || undefined };
+    } catch (err: any) {
+      console.error('checkEmailVerification error:', err);
+      throw new Error(getFriendlyAuthErrorMessage(err));
+    }
+  };
+
+  // Change pending email address and send verification to the new inbox
+  const updatePendingEmail = async (
+    newEmail: string,
+    currentPassword?: string
+  ): Promise<{ sent: boolean; errorMessage?: string }> => {
+    const cleanNewEmail = newEmail.trim();
+    if (!cleanNewEmail || !/\S+@\S+\.\S+/.test(cleanNewEmail)) {
+      return { sent: false, errorMessage: 'Please enter a valid email address.' };
+    }
+    const fbTarget = auth.currentUser;
+    if (!fbTarget) {
+      return {
+        sent: false,
+        errorMessage: 'No active account session found. Please log in again and retry.'
+      };
+    }
+    try {
+      await enforceNotSuspended(fbTarget.uid, cleanNewEmail);
+      const continueUrl =
+        typeof window !== 'undefined' && window.location?.origin
+          ? `${window.location.origin}/#verified`
+          : undefined;
+
+      const performEmailUpdate = async () => {
+        if (continueUrl) {
+          try {
+            await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail, {
+              url: continueUrl,
+              handleCodeInApp: false
+            });
+          } catch (err: any) {
+            if (
+              err?.code === 'auth/unauthorized-continue-uri' ||
+              err?.code === 'auth/invalid-continue-uri'
+            ) {
+              await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail);
+            } else {
+              throw err;
+            }
+          }
+        } else {
+          await verifyBeforeUpdateEmail(fbTarget, cleanNewEmail);
+        }
+      };
+
+      try {
+        await performEmailUpdate();
+      } catch (err: any) {
+        if (err?.code === 'auth/requires-recent-login') {
+          if (!currentPassword || !fbTarget.email) {
+            return {
+              sent: false,
+              errorMessage: 'Please enter your current password to confirm changing your email address.'
+            };
+          }
+          const cred = EmailAuthProvider.credential(fbTarget.email, currentPassword);
+          await reauthenticateWithCredential(fbTarget, cred);
+          await performEmailUpdate();
+        } else {
+          throw err;
+        }
+      }
+
+      await setDoc(
+        doc(db, 'users', fbTarget.uid),
+        sanitizeForFirestore({
+          email: cleanNewEmail,
+          emailVerified: false,
+          status: 'pending_verification',
+          updatedAt: serverTimestamp()
+        }),
+        { merge: true }
+      ).catch(() => {});
+
+      setUser(prev =>
+        prev
+          ? {
+              ...prev,
+              email: cleanNewEmail,
+              emailVerified: false,
+              status: 'pending_verification'
+            }
+          : prev
+      );
+      setUserProfile(prev =>
+        prev
+          ? {
+              ...prev,
+              email: cleanNewEmail,
+              emailVerified: false
+            }
+          : prev
+      );
+      setLastVerificationError(null);
+      return { sent: true };
+    } catch (err: any) {
+      const friendly = getFriendlyAuthErrorMessage(err);
+      setLastVerificationError(friendly);
+      return { sent: false, errorMessage: friendly };
+    }
+  };
+
+  // 1. User Registration / Signup (Authoritative Firebase Auth + Mandatory Email Verification)
   const signup = async (
     fullName: string,
     email: string,
@@ -698,60 +910,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ): Promise<User> => {
     setLoading(true);
     setSuspensionNotice(null);
-    const role: UserRole = additionalData?.role || 'buyer';
+    setLastVerificationError(null);
+
+    const requestedRole = additionalData?.role || 'buyer';
+    const role: UserRole = requestedRole === 'admin' ? 'buyer' : requestedRole;
     const isSeller = isSellerRole(role);
     const defaultAvatar = isSeller
       ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
       : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
 
-    try {
-      // Prevent suspended users from creating a duplicate account with the same email
-      await enforceNotSuspended(null, email.trim());
+    const cleanName = fullName.trim();
+    const cleanEmail = email.trim();
 
-      // 1. Attempt creating account with Firebase Authentication
-      let uid: string;
-      let createdFbUser: FirebaseUser | null = null;
-      try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        createdFbUser = userCredential.user;
-        uid = createdFbUser.uid;
-        if (fullName) {
-          await updateProfile(createdFbUser, { displayName: fullName }).catch(() => {});
-        }
-        if (additionalData?.verificationMethod === 'email') {
-          await sendEmailVerification(createdFbUser).catch(() => {});
-        }
-      } catch (authErr: any) {
-        // If Email/Password auth provider is not toggled on in Firebase Console yet,
-        // create account directly in Cloud Firestore so registration succeeds seamlessly!
-        if (authErr.code === 'auth/operation-not-allowed' || authErr.code === 'auth/admin-restricted-operation') {
-          console.warn('Firebase Email/Password provider not enabled in console, using direct Firestore account setup');
-          uid = (role === 'fodder_supplier' ? 'sup_' : 'usr_') + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 7);
-          localStorage.setItem('agrox_active_uid', uid);
-        } else {
-          throw authErr;
-        }
+    try {
+      // Prevent suspended or deleted users from creating a duplicate account with the same email
+      await enforceNotSuspended(null, cleanEmail);
+
+      // 1. Create real account with Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      const createdFbUser = userCredential.user;
+      const uid = createdFbUser.uid;
+
+      if (cleanName) {
+        await updateProfile(createdFbUser, { displayName: cleanName }).catch(() => {});
       }
 
-      // 2. Create Firestore document at users/{uid}
+      // 2. Dispatch Firebase verification email immediately
+      await sendVerificationEmail(createdFbUser);
+
+      // 3. Create Firestore document at users/{uid} with pending_verification status
       const initialDocData: Record<string, any> = {
-        uid: uid,
-        fullName: fullName.trim(),
-        email: email.trim(),
-        role: role,
+        uid,
+        fullName: cleanName,
+        name: cleanName,
+        email: cleanEmail,
+        role,
         avatar: additionalData?.avatar || defaultAvatar,
         phone: additionalData?.phone || '',
-        emailVerified: Boolean(additionalData?.emailVerified),
-        phoneVerified: Boolean(additionalData?.phoneVerified),
-        verificationMethod: additionalData?.verificationMethod,
+        emailVerified: false,
         location: additionalData?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
-        status: 'active',
+        status: 'pending_verification',
         createdAt: serverTimestamp()
       };
 
       if (isSeller) {
         initialDocData.farmerProfile = additionalData?.farmerProfile || {
-          farmName: role === 'fodder_supplier' ? `${fullName}'s Fodder Supply` : `${fullName}'s Farm`,
+          farmName: role === 'fodder_supplier' ? `${cleanName}'s Fodder Supply` : `${cleanName}'s Farm`,
           bio: role === 'fodder_supplier'
             ? 'Dedicated livestock fodder, hay bale, and animal feed supplier.'
             : 'Local agricultural producer dedicated to fresh produce.',
@@ -773,43 +977,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const sanitizedDocData = sanitizeForFirestore(initialDocData);
       await setDoc(doc(db, 'users', uid), sanitizedDocData);
 
-      // Register in backend store as well for offline/direct API queries
+      // Mirror registration in backend store
       await api.register({
-        name: fullName.trim(),
-        email: email.trim(),
-        role: role,
+        id: uid,
+        name: cleanName,
+        email: cleanEmail,
+        role,
         phone: additionalData?.phone || '',
-        emailVerified: Boolean(additionalData?.emailVerified),
-        phoneVerified: Boolean(additionalData?.phoneVerified),
-        verificationMethod: additionalData?.verificationMethod,
+        emailVerified: false,
+        status: 'pending_verification',
         location: additionalData?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
         farmerProfile: initialDocData.farmerProfile,
         buyerProfile: initialDocData.buyerProfile
       }).catch(() => {});
 
-      // 3. Sync in app state
-      const unified = await syncUserProfile(createdFbUser || auth.currentUser, uid);
+      // 4. Sync in app state (remains pending_verification until email is verified)
+      const unified = await syncUserProfile(createdFbUser, uid);
       if (!unified) {
-        const fallbackUser: User = {
+        const pendingUser: User = {
           id: uid,
-          name: fullName.trim(),
-          email: email.trim(),
+          name: cleanName,
+          email: cleanEmail,
           phone: additionalData?.phone || '',
-          role: role,
+          role,
           avatar: additionalData?.avatar || defaultAvatar,
           location: additionalData?.location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
-          status: 'active',
-          emailVerified: Boolean(additionalData?.emailVerified),
-          phoneVerified: Boolean(additionalData?.phoneVerified),
-          verificationMethod: additionalData?.verificationMethod,
+          status: 'pending_verification',
+          emailVerified: false,
           createdAt: new Date().toISOString(),
           farmerProfile: initialDocData.farmerProfile,
           buyerProfile: initialDocData.buyerProfile
         };
-        persistUserSession(fallbackUser);
-        setUser(fallbackUser);
+        persistUserSession(pendingUser);
+        setUser(pendingUser);
         setUserProfile(initialDocData as UserProfileData);
-        return fallbackUser;
+        return pendingUser;
       }
       return unified;
     } catch (err: any) {
@@ -846,78 +1048,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await enforceNotSuspended(null, cleanEmail);
 
       if (password) {
-        // Attempt Firebase Authentication login with email & password
-        try {
-          const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
-          const unified = await syncUserProfile(userCredential.user);
-          if (!unified) throw new Error('Unable to retrieve user record.');
-          return unified;
-        } catch (authErr: any) {
-          if (isSuspendedError(authErr)) {
-            throw authErr;
-          }
-
-          // If Email/Password is not enabled in Firebase Console, fallback to Firestore search or api store
-          if (authErr.code === 'auth/operation-not-allowed' || authErr.code === 'auth/admin-restricted-operation') {
-            const usersRef = collection(db, 'users');
-            const emailCandidates = Array.from(new Set([cleanEmail, cleanEmail.toLowerCase()]));
-            for (const candidate of emailCandidates) {
-              const q = query(usersRef, where('email', '==', candidate));
-              const querySnap = await getDocs(q);
-
-              if (!querySnap.empty) {
-                for (const d of querySnap.docs) {
-                  if (d.data()?.status === 'suspended') {
-                    await forceRevokeSuspendedSession(d.id);
-                    throw createSuspendedError();
-                  }
-                }
-                const docSnap = querySnap.docs[0];
-                const uid = docSnap.id;
-                const unified = await syncUserProfile(null, uid);
-                if (unified) {
-                  localStorage.setItem('agrox_active_uid', uid);
-                  return unified;
-                }
-              }
-            }
-
-            // Also check api mock store
-            const res = await api.login(cleanEmail).catch((err) => {
-              if (err?.message?.toLowerCase().includes('suspended')) {
-                throw createSuspendedError(err.message);
-              }
-              return null;
-            });
-            if (res?.user) {
-              if (res.user.status === 'suspended') {
-                await forceRevokeSuspendedSession(res.user.id);
-                throw createSuspendedError();
-              }
-              await enforceNotSuspended(res.user.id, res.user.email);
-              persistUserSession(res.user, res.token);
-              setUser(res.user);
-              setUserProfile({
-                uid: res.user.id,
-                fullName: res.user.name,
-                email: res.user.email,
-                role: res.user.role,
-                phone: res.user.phone,
-                avatar: res.user.avatar,
-                location: res.user.location,
-                farmerProfile: res.user.farmerProfile,
-                buyerProfile: res.user.buyerProfile
-              });
-              return res.user;
-            }
-
-            throw new Error('Account not found. Please create an account to get started.');
-          } else {
-            throw authErr;
-          }
+        const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        await reload(userCredential.user).catch(() => {});
+        if (userCredential.user.emailVerified) {
+          await userCredential.user.getIdToken(true).catch(() => {});
         }
+        const unified = await syncUserProfile(userCredential.user);
+        if (!unified) throw new Error('Unable to retrieve user record.');
+        return unified;
       } else {
-        // Demo/mock login path
+        // Demo/seed login path when no password is supplied
         const res = await api.login(cleanEmail);
         if (res?.user?.status === 'suspended') {
           await forceRevokeSuspendedSession(res.user.id);
@@ -1390,6 +1530,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const unreadNotifsCount = notifications.filter(n => !n.read).length;
 
+  const isEmailVerified = !user
+    ? false
+    : currentUser
+      ? Boolean(currentUser.emailVerified)
+      : user.status !== 'pending_verification' && user.emailVerified !== false;
+  const requiresEmailVerification = Boolean(user && !isEmailVerified);
+
   return (
     <AuthContext.Provider
       value={{
@@ -1397,6 +1544,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         userProfile,
         loading,
+        isEmailVerified,
+        requiresEmailVerification,
+        lastVerificationError,
         suspensionNotice,
         clearSuspensionNotice,
         accountDeletionNotice,
@@ -1411,9 +1561,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         deleteAccount,
         resetPassword,
+        sendVerificationEmail,
+        checkEmailVerification,
+        updatePendingEmail,
         register,
         updateUserProfile,
-        refreshUserData: () => syncUserProfile(currentUser),
+        refreshUserData: async () => {
+          await syncUserProfile(currentUser);
+        },
         toggleFavorite,
         markNotificationAsRead,
         markAllNotificationsAsRead

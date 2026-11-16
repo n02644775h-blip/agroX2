@@ -41,7 +41,7 @@ import {
 import { db } from '../firebase/config';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { sanitizeForFirestore, useAuth } from '../context/AuthContext';
-import { compressImage } from '../utils/imageCompressor';
+import { uploadMediaAsset } from '../services/firebaseStorage';
 import { getAdLifecycle, getAdStatusBadgeMeta, formatAdDate } from '../utils/adLifecycle';
 import {
   LiquidGlassCard,
@@ -146,6 +146,8 @@ export const AdminDashboard: React.FC = () => {
     adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'
   );
   const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarUploadNotice, setAvatarUploadNotice] = useState('');
   const [avatarError, setAvatarError] = useState('');
 
   // Real-time Firebase Sync Status
@@ -772,26 +774,36 @@ export const AdminDashboard: React.FC = () => {
       adminUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400'
     );
     setAvatarError('');
+    setAvatarUploadNotice('');
     setShowAdminAvatarModal(true);
   };
 
   const handleAdminAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setAvatarError('Image must be under 5MB.');
-      return;
-    }
     setAvatarError('');
+    setAvatarUploadNotice('');
+    setIsUploadingAvatar(true);
     try {
-      const compressed = await compressImage(file, 400, 400, 0.85);
-      setAdminAvatarDraft(compressed);
-    } catch {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') setAdminAvatarDraft(reader.result);
-      };
-      reader.readAsDataURL(file);
+      const result = await uploadMediaAsset({
+        file,
+        folder: 'avatars',
+        userId: adminUser?.id || 'admin-1',
+        allowVideo: false,
+        compressImages: true,
+        maxDimension: 400
+      });
+      if (!result.ok || !result.url) {
+        setAvatarError(result.errorMessage || 'Failed to upload profile photo.');
+        return;
+      }
+      setAdminAvatarDraft(result.url);
+      setAvatarUploadNotice('Photo uploaded successfully!');
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Failed to upload profile photo.');
+    } finally {
+      setIsUploadingAvatar(false);
     }
   };
 
@@ -2262,6 +2274,13 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
 
+          {avatarUploadNotice && (
+            <div className="p-3 rounded-xl bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-[#145A38] shrink-0" />
+              <span>{avatarUploadNotice}</span>
+            </div>
+          )}
+
           <form onSubmit={handleSaveAdminAvatar} className="space-y-4 text-xs">
             <div className="flex items-center gap-4 bg-white/75 p-4 rounded-2xl border border-[#062B1F]/12">
               <img
@@ -2273,12 +2292,17 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex-1 space-y-2">
                 <label className="font-bold text-[#062B1F] block">Upload Photo (400×400px)</label>
                 <label className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-[#DFF4E4]/60 border border-[#062B1F]/15 rounded-xl font-bold text-[#062B1F] cursor-pointer transition-colors">
-                  <Upload className="w-3.5 h-3.5 text-[#145A38]" />
-                  <span>Choose Image File</span>
+                  {isUploadingAvatar ? (
+                    <RefreshCw className="w-3.5 h-3.5 text-[#145A38] animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5 text-[#145A38]" />
+                  )}
+                  <span>{isUploadingAvatar ? 'Uploading photo...' : 'Choose Image File'}</span>
                   <input
                     id="admin-avatar-file-input"
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp,image/*"
+                    disabled={isUploadingAvatar}
                     onChange={handleAdminAvatarFileChange}
                     className="hidden"
                   />

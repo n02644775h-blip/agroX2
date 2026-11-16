@@ -129,9 +129,12 @@ export async function saveProductToFirebase(productData: Partial<Product>): Prom
   try {
     await setDoc(productRef, sanitized, { merge: true });
     return parseFirestoreProduct(prodId, { ...productData, id: prodId, createdAt: new Date().toISOString() });
-  } catch (error) {
-    console.warn('Firestore product write failed, saving locally:', error);
-    return parseFirestoreProduct(prodId, { ...productData, id: prodId, createdAt: new Date().toISOString() });
+  } catch (error: any) {
+    if (error?.code === 'permission-denied' || String(error?.message || '').toLowerCase().includes('permission')) {
+      handleFirestoreError(error, OperationType.WRITE, `products/${prodId}`);
+    }
+    console.warn('Firestore product write warning:', error);
+    throw error;
   }
 }
 

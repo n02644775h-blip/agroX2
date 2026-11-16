@@ -5,7 +5,7 @@ import {
   createFirebaseAdRequest,
   subscribeToFirebaseAdRequests
 } from '../services/firebaseAdRequests';
-import { compressImage } from '../utils/imageCompressor';
+import { uploadMediaAsset } from '../services/firebaseStorage';
 import { getAdLifecycle, getAdStatusBadgeMeta, formatAdDate } from '../utils/adLifecycle';
 import { Product, AdRequest } from '../types';
 import { LiquidGlassModal, LiquidGlassButton } from './glass';
@@ -84,6 +84,9 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
   const [popUrl, setPopUrl] = useState<string>(SAMPLE_POP_RECEIPTS[0].url);
   const [popFileName, setPopFileName] = useState<string>('EcoCash_POP_Payment_Receipt.jpg');
   const [isCompressingPop, setIsCompressingPop] = useState(false);
+  const [popUploadProgress, setPopUploadProgress] = useState<number>(0);
+  const [popUploadNotice, setPopUploadNotice] = useState<string>('');
+  const popAbortRef = useRef<AbortController | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formSuccess, setFormSuccess] = useState(false);
@@ -181,52 +184,57 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
     }
   };
 
+  const handleCancelPopUpload = () => {
+    popAbortRef.current?.abort();
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
-    setIsCompressingPop(true);
-    setErrorMsg('');
-    setPopFileName(file.name);
+    const controller = new AbortController();
+    popAbortRef.current = controller;
 
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    if (isPdf) {
-      if (file.size > 700 * 1024) {
-        setErrorMsg(
-          'PDF receipt must be under 700KB. Please upload a smaller PDF or a screenshot image.'
-        );
-        setIsCompressingPop(false);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setPopUrl(reader.result);
-        }
-        setIsCompressingPop(false);
-      };
-      reader.onerror = () => {
-        setErrorMsg('Failed to read PDF file. Please upload an image screenshot.');
-        setIsCompressingPop(false);
-      };
-      reader.readAsDataURL(file);
-      return;
-    }
+    setIsCompressingPop(true);
+    setPopUploadProgress(5);
+    setPopUploadNotice('');
+    setErrorMsg('');
 
     try {
-      const compressed = await compressImage(file, 1000, 1000, 0.75);
-      setPopUrl(compressed);
-    } catch (compressErr) {
-      console.warn('Error compressing image, reading raw data:', compressErr);
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setPopUrl(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      const result = await uploadMediaAsset({
+        file,
+        folder: 'pop',
+        userId: farmerId || 'farmer-1',
+        allowVideo: false,
+        allowPdf: true,
+        compressImages: true,
+        maxDimension: 1000,
+        onProgress: (pct) => setPopUploadProgress(pct),
+        signal: controller.signal
+      });
+
+      if (result.canceled) {
+        setErrorMsg('Proof of payment upload cancelled.');
+        return;
+      }
+
+      if (!result.ok || !result.url) {
+        setErrorMsg(result.errorMessage || 'Failed to upload proof of payment.');
+        return;
+      }
+
+      setPopUrl(result.url);
+      setPopFileName(result.fileName || file.name);
+      setPopUploadNotice('Proof of payment uploaded successfully!');
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to upload proof of payment.');
     } finally {
+      if (popAbortRef.current === controller) {
+        popAbortRef.current = null;
+      }
       setIsCompressingPop(false);
+      setPopUploadProgress(0);
     }
   };
 
@@ -761,7 +769,9 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
               <div className="flex flex-col sm:flex-row items-center gap-4">
                 {popUrl && (
                   <div className="relative group shrink-0">
-                    {popUrl.startsWith('data:application/pdf') ? (
+                    {popUrl.startsWith('data:application/pdf') ||
+                    popFileName.toLowerCase().endsWith('.pdf') ||
+                    popUrl.toLowerCase().includes('.pdf') ? (
                       <div className="w-20 h-20 rounded-xl border-2 border-[#145A38] shadow-xs bg-[#DFF4E4] flex flex-col items-center justify-center text-[#062B1F] p-2 text-center">
                         <FileText className="w-7 h-7 text-[#145A38] mb-1" />
                         <span className="text-[9px] font-bold leading-tight truncate w-full">
@@ -794,18 +804,34 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isCompressingPop}
-                      className="px-4 py-2.5 bg-white hover:bg-[#DFF4E4]/50 text-[#062B1F] border-2 border-dashed border-[#145A38]/45 rounded-xl font-bold flex items-center gap-2 transition-colors w-full justify-center cursor-pointer disabled:opacity-50"
+                      className="px-4 py-2.5 bg-white hover:bg-[#DFF4E4]/50 text-[#062B1F] border-2 border-dashed border-[#145A38]/45 rounded-xl font-bold flex items-center gap-2 transition-colors flex-1 justify-center cursor-pointer disabled:opacity-50"
                     >
                       <Upload className="w-4 h-4 text-[#145A38]" />
                       <span>
                         {isCompressingPop
-                          ? 'Compressing file...'
+                          ? `Uploading (${popUploadProgress}%)...`
                           : popFileName
                             ? `Selected: ${popFileName}`
                             : 'Choose POP File / Screenshot'}
                       </span>
                     </button>
+                    {isCompressingPop && (
+                      <button
+                        type="button"
+                        onClick={handleCancelPopUpload}
+                        className="px-3 py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[11px] hover:bg-rose-100 cursor-pointer shrink-0"
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
+
+                  {popUploadNotice && !isCompressingPop && (
+                    <div className="text-[11px] text-[#145A38] font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>{popUploadNotice}</span>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2 text-[11px] text-[#0B3D2B]/70 flex-wrap">
                     <span className="font-bold">Sample POP:</span>

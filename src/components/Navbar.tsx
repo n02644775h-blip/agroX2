@@ -28,7 +28,7 @@ import {
 interface NavbarProps {
   currentView: string;
   onNavigate: (view: string, data?: any) => void;
-  onOpenAuth: (initialMode?: 'login' | 'register') => void;
+  onOpenAuth: (initialMode?: 'login' | 'register' | 'verify_email') => void;
   onOpenAddProduct?: () => void;
   onOpenNotifications?: () => void;
   onOpenCart?: () => void;
@@ -53,7 +53,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onScrollToSection
 }) => {
   const prefersReducedMotion = useReducedMotion();
-  const { user, logout, unreadNotifsCount, unreadMessagesCount } = useAuth();
+  const { user, requiresEmailVerification, logout, unreadNotifsCount, unreadMessagesCount } = useAuth();
   const { totalItems, openCart } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -322,6 +322,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Search className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
+            {user && requiresEmailVerification && (
+              <button
+                type="button"
+                id="navbar-verify-email-btn"
+                onClick={() => onOpenAuth('verify_email')}
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-[#F4D35E] hover:brightness-105 text-[#062B1F] text-[11px] font-extrabold transition-all whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>Verify Email</span>
+              </button>
+            )}
+
             {isSellerRole(user?.role) && onOpenAddProduct && (
               <button
                 type="button"
@@ -451,6 +463,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                           {user.location.city}, {user.location.province}
                         </span>
                       </div>
+                      {requiresEmailVerification && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUserDropdownOpen(false);
+                            onOpenAuth('verify_email');
+                          }}
+                          className="mt-2 w-full py-1.5 px-2.5 rounded-xl bg-[#F4D35E] text-[#062B1F] text-[11px] font-extrabold flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Verify Email to Activate</span>
+                        </button>
+                      )}
                     </div>
 
                     <div className="py-1">

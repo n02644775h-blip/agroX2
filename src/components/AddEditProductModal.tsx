@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { mobileService } from '../services/mobileService';
-import { compressImage } from '../utils/imageCompressor';
+import { dataUrlToBlob } from '../utils/imageCompressor';
+import { uploadMediaAsset, deleteFirebaseStorageFile } from '../services/firebaseStorage';
 import { saveProductToFirebase } from '../services/firebaseProducts';
 import { Product, ProductCategory, ProductUnit } from '../types';
 import { LiquidGlassModal, LiquidGlassButton } from './glass';
@@ -16,7 +17,9 @@ import {
   Upload,
   Sparkles,
   ChevronDown,
-  Loader2
+  Loader2,
+  X,
+  RotateCcw
 } from 'lucide-react';
 
 interface AddEditProductModalProps {
@@ -58,7 +61,12 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
   const { user } = useAuth();
   const [categories, setCategories] = useState<ProductCategory[]>(DEFAULT_CATEGORIES);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isCompressingImg, setIsCompressingImg] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStatusNote, setUploadStatusNote] = useState<string>('');
+  const [photoUploadedBanner, setPhotoUploadedBanner] = useState<string>('');
+  const [failedPhotoFile, setFailedPhotoFile] = useState<File | null>(null);
+  const [uploadedStoragePath, setUploadedStoragePath] = useState<string | undefined>(undefined);
   const [errorMsg, setErrorMsg] = useState('');
   const [successNotice, setSuccessNotice] = useState(false);
 
@@ -92,9 +100,24 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
     product?.images?.[0] ||
       (isFodderSupplier ? SAMPLE_AGRI_IMAGES[1].url : SAMPLE_AGRI_IMAGES[0].url)
   );
+  const [previewObjectUrl, setPreviewObjectUrl] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (uploadAbortRef.current) {
+        uploadAbortRef.current.abort();
+      }
+      if (previewObjectUrl) {
+        try {
+          URL.revokeObjectURL(previewObjectUrl);
+        } catch {}
+      }
+    };
+  }, [previewObjectUrl]);
 
   useEffect(() => {
     let isMounted = true;
@@ -113,54 +136,116 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
     };
   }, []);
 
+  const handleCancelPhotoUpload = () => {
+    if (uploadAbortRef.current) {
+      uploadAbortRef.current.abort();
+      uploadAbortRef.current = null;
+    }
+    setIsUploadingPhoto(false);
+    setUploadProgress(0);
+    setUploadStatusNote('');
+    if (previewObjectUrl) {
+      try {
+        URL.revokeObjectURL(previewObjectUrl);
+      } catch {}
+      setPreviewObjectUrl(null);
+    }
+  };
+
   const handleProcessFile = async (file: File) => {
+    if (isUploadingPhoto) return;
+    if (uploadAbortRef.current) {
+      uploadAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+
+    const tempPreviewUrl = URL.createObjectURL(file);
+    setPreviewObjectUrl(tempPreviewUrl);
+    setIsUploadingPhoto(true);
+    setUploadProgress(5);
+    setUploadStatusNote('Preparing photo...');
+    setPhotoUploadedBanner('');
+    setFailedPhotoFile(null);
+    setErrorMsg('');
+
     try {
-      setIsCompressingImg(true);
-      setErrorMsg('');
-      const compressed = await compressImage(file, 1000, 1000, 0.82);
-      setImageUrl(compressed);
+      const previousStoragePath = uploadedStoragePath;
+      const result = await uploadMediaAsset({
+        file,
+        fileName: file.name,
+        folder: 'products',
+        userId: user?.id || 'farmer-1',
+        allowVideo: false,
+        compressImages: true,
+        maxDimension: 1200,
+        signal: controller.signal,
+        onProgress: (pct) => setUploadProgress(pct),
+        onStatusNote: (note) => setUploadStatusNote(note)
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      if (!result.ok || !result.url) {
+        setFailedPhotoFile(file);
+        setErrorMsg(result.errorMessage || 'Failed to upload product photo. Please try again.');
+        return;
+      }
+
+      if (previousStoragePath && previousStoragePath !== result.storagePath) {
+        void deleteFirebaseStorageFile(previousStoragePath);
+      }
+      setUploadedStoragePath(result.storagePath);
+      setImageUrl(result.url);
+      setPhotoUploadedBanner('Photo uploaded successfully!');
       mobileService.triggerHaptic('light');
     } catch (err: any) {
-      console.error('Image compression failed:', err);
-      setErrorMsg('Failed to process image file. Please try another photo.');
+      if (err?.name !== 'AbortError') {
+        console.error('Product photo upload failed:', err);
+        setFailedPhotoFile(file);
+        setErrorMsg(err?.message || 'Failed to process image file. Please try another photo.');
+      }
     } finally {
-      setIsCompressingImg(false);
+      uploadAbortRef.current = null;
+      setIsUploadingPhoto(false);
+      setUploadProgress(0);
+      setUploadStatusNote('');
+      setPreviewObjectUrl(null);
+      try {
+        URL.revokeObjectURL(tempPreviewUrl);
+      } catch {}
     }
   };
 
   const handleCaptureCamera = async () => {
     try {
-      setIsCompressingImg(true);
       setErrorMsg('');
       const photo = await mobileService.capturePhoto('camera');
       if (photo) {
-        const compressed = await compressImage(photo, 1000, 1000, 0.82);
-        setImageUrl(compressed);
-        mobileService.triggerHaptic('light');
+        const blob = dataUrlToBlob(photo);
+        const file = new File([blob], `camera_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+        await handleProcessFile(file);
       }
     } catch (err: any) {
       console.warn('Camera capture error:', err);
       fileInputRef.current?.click();
-    } finally {
-      setIsCompressingImg(false);
     }
   };
 
   const handleCapturePhotos = async () => {
     try {
-      setIsCompressingImg(true);
       setErrorMsg('');
       const photo = await mobileService.capturePhoto('photos');
       if (photo) {
-        const compressed = await compressImage(photo, 1000, 1000, 0.82);
-        setImageUrl(compressed);
-        mobileService.triggerHaptic('light');
+        const blob = dataUrlToBlob(photo);
+        const file = new File([blob], `gallery_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+        await handleProcessFile(file);
       }
     } catch (err: any) {
       console.warn('Gallery pick error:', err);
       fileInputRef.current?.click();
-    } finally {
-      setIsCompressingImg(false);
     }
   };
 
@@ -433,14 +518,14 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="relative group shrink-0">
               <img
-                src={imageUrl}
+                src={previewObjectUrl || imageUrl}
                 alt="Produce preview"
                 className="w-24 h-24 rounded-2xl object-cover border-2 border-[#145A38] bg-white shadow-md"
               />
-              {isCompressingImg && (
-                <div className="absolute inset-0 bg-[#062B1F]/70 rounded-2xl flex flex-col items-center justify-center text-white text-[10px] font-bold">
+              {isUploadingPhoto && (
+                <div className="absolute inset-0 bg-[#062B1F]/75 rounded-2xl flex flex-col items-center justify-center text-white text-[10px] font-bold">
                   <Loader2 className="w-5 h-5 animate-spin mb-1 text-[#A8E635]" />
-                  <span>Compressing...</span>
+                  <span className="tabular-nums">{uploadProgress}%</span>
                 </div>
               )}
             </div>
@@ -450,7 +535,7 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCaptureCamera}
-                  disabled={isCompressingImg}
+                  disabled={isUploadingPhoto}
                   className="flex items-center gap-1.5 px-3.5 py-2 bg-[#145A38] hover:bg-[#0B3D2B] disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer"
                 >
                   <CameraIcon className="w-3.5 h-3.5" />
@@ -460,7 +545,7 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
                 <button
                   type="button"
                   onClick={handleCapturePhotos}
-                  disabled={isCompressingImg}
+                  disabled={isUploadingPhoto}
                   className="flex items-center gap-1.5 px-3.5 py-2 bg-[#062B1F] hover:bg-[#0B3D2B] disabled:opacity-50 text-white rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer"
                 >
                   <ImageIcon className="w-3.5 h-3.5 text-[#A8E635]" />
@@ -473,15 +558,70 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif"
                     className="hidden"
+                    disabled={isUploadingPhoto}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleProcessFile(file);
+                      e.target.value = '';
+                      if (file) void handleProcessFile(file);
                     }}
                   />
                 </label>
               </div>
+
+              {isUploadingPhoto && (
+                <div className="p-2.5 rounded-xl bg-white/90 border border-[#145A38]/20 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-[#062B1F]">
+                    <span className="truncate">{uploadStatusNote || 'Uploading photo...'}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="tabular-nums font-bold text-[#145A38]">{uploadProgress}%</span>
+                      <button
+                        type="button"
+                        onClick={handleCancelPhotoUpload}
+                        className="px-2 py-0.5 rounded-md bg-rose-50 border border-rose-200 text-rose-700 font-bold text-[10px] cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-[#DFF4E4] overflow-hidden">
+                    <div
+                      className="h-full bg-[#145A38] transition-all duration-150"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {photoUploadedBanner && !isUploadingPhoto && (
+                <div className="p-2 rounded-xl bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] text-[11px] font-bold flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-[#145A38] shrink-0" />
+                    <span>{photoUploadedBanner}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoUploadedBanner('')}
+                    className="text-[#145A38] hover:text-[#062B1F] cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+
+              {failedPhotoFile && !isUploadingPhoto && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleProcessFile(failedPhotoFile)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#145A38] text-white font-bold text-[11px] hover:bg-[#0B3D2B] cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Retry Photo Upload</span>
+                  </button>
+                </div>
+              )}
 
               <div
                 onDragOver={(e) => {
@@ -594,7 +734,7 @@ export const AddEditProductModal: React.FC<AddEditProductModalProps> = ({
             type="submit"
             variant="lime"
             size="lg"
-            disabled={isSubmitting || isCompressingImg}
+            disabled={isSubmitting || isUploadingPhoto}
             className="w-full"
           >
             {isSubmitting ? (

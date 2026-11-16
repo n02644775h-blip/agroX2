@@ -11,7 +11,7 @@ import {
   subscribeToFirebaseReviews,
   getRatingLabel
 } from '../services/firebaseReviews';
-import { compressImage } from '../utils/imageCompressor';
+import { uploadMediaAsset } from '../services/firebaseStorage';
 import {
   normalizeOrderStatus,
   getOrderStages,
@@ -90,6 +90,8 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
   const [popRefInput, setPopRefInput] = useState<string>('');
   const [popError, setPopError] = useState<string>('');
   const [uploadingPop, setUploadingPop] = useState<boolean>(false);
+  const [popUploadProgress, setPopUploadProgress] = useState<number>(0);
+  const popAbortRef = useRef<AbortController | null>(null);
   const popFileInputRef = useRef<HTMLInputElement>(null);
 
   // Farmer pickup ready / rejection reason inputs
@@ -315,35 +317,48 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
     }
   };
 
+  const handleCancelBuyerPopUpload = () => {
+    popAbortRef.current?.abort();
+  };
+
   const handleBuyerUploadPop = async (order: Order, file: File) => {
+    const controller = new AbortController();
+    popAbortRef.current = controller;
     setUploadingPop(true);
+    setPopUploadProgress(5);
     setPopError('');
     try {
-      let dataUrl = '';
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      if (isPdf) {
-        if (file.size > 700 * 1024) {
-          setPopError('PDF proof of payment must be under 700KB.');
-          setUploadingPop(false);
-          return;
-        }
-        dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ''));
-          reader.onerror = () => reject(new Error('Failed to read PDF'));
-          reader.readAsDataURL(file);
-        });
-      } else {
-        dataUrl = await compressImage(file, 1000, 1000, 0.75);
+      const uploadRes = await uploadMediaAsset({
+        file,
+        folder: 'pop',
+        userId: user?.id || order.buyerId,
+        allowVideo: false,
+        allowPdf: true,
+        compressImages: true,
+        maxDimension: 1000,
+        onProgress: (pct) => setPopUploadProgress(pct),
+        signal: controller.signal
+      });
+
+      if (uploadRes.canceled) {
+        setPopError('Proof of payment upload cancelled.');
+        return;
       }
 
+      if (!uploadRes.ok || !uploadRes.url) {
+        setPopError(uploadRes.errorMessage || 'Failed to upload proof of payment.');
+        return;
+      }
+
+      const uploadedUrl = uploadRes.url;
+      const uploadedName = uploadRes.fileName || file.name;
       const now = new Date().toISOString();
       const refCode = popRefInput.trim() || order.paymentReference || `POP-${Date.now().toString().slice(-6)}`;
 
       await api
         .submitOrderPop(order.id, {
-          proofOfPaymentUrl: dataUrl,
-          proofOfPaymentFileName: file.name,
+          proofOfPaymentUrl: uploadedUrl,
+          proofOfPaymentFileName: uploadedName,
           paymentReference: refCode
         })
         .catch(() => null);
@@ -352,8 +367,8 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
         order.id,
         {
           paymentStatus: 'pending_verification',
-          proofOfPaymentUrl: dataUrl,
-          proofOfPaymentFileName: file.name,
+          proofOfPaymentUrl: uploadedUrl,
+          proofOfPaymentFileName: uploadedName,
           paymentReference: refCode,
           paymentSubmittedAt: now,
           paymentRejectionReason: ''
@@ -364,7 +379,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
       await createFirebaseNotification({
         userId: order.farmerId,
         title: `Proof of Payment Uploaded — ${order.orderNumber}`,
-        message: `${order.buyerName} uploaded a POP (${file.name}) for review.`,
+        message: `${order.buyerName} uploaded a POP (${uploadedName}) for review.`,
         type: 'order',
         link: 'orders',
         metadata: { orderId: order.id, paymentStatus: 'pending_verification' }
@@ -376,8 +391,8 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
             ? {
                 ...o,
                 paymentStatus: 'pending_verification',
-                proofOfPaymentUrl: dataUrl,
-                proofOfPaymentFileName: file.name,
+                proofOfPaymentUrl: uploadedUrl,
+                proofOfPaymentFileName: uploadedName,
                 paymentReference: refCode,
                 paymentSubmittedAt: now,
                 paymentRejectionReason: undefined
@@ -389,7 +404,11 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
     } catch (err: any) {
       setPopError(err?.message || 'Failed to upload proof of payment.');
     } finally {
+      if (popAbortRef.current === controller) {
+        popAbortRef.current = null;
+      }
       setUploadingPop(false);
+      setPopUploadProgress(0);
     }
   };
 
@@ -810,6 +829,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                             className="hidden"
                             onChange={e => {
                               const file = e.target.files?.[0];
+                              e.target.value = '';
                               if (file) handleBuyerUploadPop(selectedOrder, file);
                             }}
                           />
@@ -823,12 +843,22 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                             <Upload className="w-3.5 h-3.5" />
                             <span>
                               {uploadingPop
-                                ? 'Uploading POP...'
+                                ? `Uploading POP (${popUploadProgress}%)...`
                                 : selectedOrder.proofOfPaymentUrl
                                 ? 'Re-upload Proof of Payment'
                                 : 'Upload Proof of Payment (Image/PDF)'}
                             </span>
                           </LiquidGlassButton>
+                          {uploadingPop && (
+                            <LiquidGlassButton
+                              type="button"
+                              variant="danger"
+                              size="xs"
+                              onClick={handleCancelBuyerPopUpload}
+                            >
+                              Cancel
+                            </LiquidGlassButton>
+                          )}
                         </div>
                       )}
 

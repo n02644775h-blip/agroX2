@@ -65,6 +65,12 @@ async function startServer() {
       type: () => true
     }),
     async (req: Request, res: Response) => {
+      if (process.env.VERCEL === '1') {
+        return res.status(400).json({
+          error:
+            'Direct Firebase Storage upload is required on Vercel deployments so media files bypass serverless size limits.'
+        });
+      }
       const tempFiles: string[] = [];
       try {
         const buffer = req.body as Buffer;
@@ -175,13 +181,24 @@ async function startServer() {
             }
           }
 
-          // Standard JPG / PNG / WebP: validate image file integrity
+          // Standard JPG / PNG / WebP: validate image file integrity (fallback to magic-byte check if ImageMagick is absent)
           try {
             await execFileAsync('identify', [tmpInputPath], { timeout: 10000 });
-          } catch {
-            return res.status(400).json({
-              error: 'The selected image file appears corrupted or invalid.'
-            });
+          } catch (idErr: any) {
+            if (idErr?.code === 'ENOENT') {
+              const isJpgBytes = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+              const isPngBytes = buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+              const isWebpBytes = buffer.length >= 12 && buffer.slice(0, 4).toString('ascii') === 'RIFF' && buffer.slice(8, 12).toString('ascii') === 'WEBP';
+              if (!isJpgBytes && !isPngBytes && !isWebpBytes) {
+                return res.status(400).json({
+                  error: 'The selected image file appears corrupted or invalid.'
+                });
+              }
+            } else {
+              return res.status(400).json({
+                error: 'The selected image file appears corrupted or invalid.'
+              });
+            }
           }
 
           const safeExt = ['.jpg', '.jpeg', '.png', '.webp'].includes(extFromName)
@@ -218,6 +235,7 @@ async function startServer() {
         tempFiles.push(tmpVideoPath);
 
         let probeData: any = null;
+        let ffprobeMissing = false;
         try {
           const { stdout } = await execFileAsync(
             'ffprobe',
@@ -225,31 +243,35 @@ async function startServer() {
             { timeout: 15000 }
           );
           probeData = JSON.parse(stdout || '{}');
-        } catch {
-          return res.status(400).json({
-            error: 'Unable to inspect video file. The file may be corrupted or not a valid MP4, WebM, or MOV video.'
-          });
+        } catch (probeErr: any) {
+          if (probeErr?.code === 'ENOENT' && !isMov && (inputVideoExt === '.mp4' || inputVideoExt === '.webm')) {
+            ffprobeMissing = true;
+          } else {
+            return res.status(400).json({
+              error: 'Unable to inspect video file. The file may be corrupted or not a valid MP4, WebM, or MOV video.'
+            });
+          }
         }
 
         const streams = Array.isArray(probeData?.streams) ? probeData.streams : [];
         const videoStream = streams.find((s: any) => s.codec_type === 'video');
-        if (!videoStream) {
+        if (!ffprobeMissing && !videoStream) {
           return res.status(400).json({
             error: 'No video stream found inside the uploaded file.'
           });
         }
 
         const audioStream = streams.find((s: any) => s.codec_type === 'audio');
-        const videoCodec = String(videoStream.codec_name || '').toLowerCase();
+        const videoCodec = String(videoStream?.codec_name || '').toLowerCase();
         const durationSec = probeData?.format?.duration
           ? Math.round(Number(probeData.format.duration) * 10) / 10
           : undefined;
 
-        const isWebm = inputVideoExt === '.webm' && (videoCodec === 'vp8' || videoCodec === 'vp9' || videoCodec === 'av1');
+        const isWebm = inputVideoExt === '.webm' && (ffprobeMissing || videoCodec === 'vp8' || videoCodec === 'vp9' || videoCodec === 'av1');
         const needsTranscode =
           isMov ||
           inputVideoExt === '.m4v' ||
-          (!isWebm && videoCodec !== 'h264');
+          (!ffprobeMissing && !isWebm && videoCodec !== 'h264');
 
         let finalVideoFileName = `${tokenId}-${safeBase}${isWebm ? '.webm' : '.mp4'}`;
         const finalVideoPath = path.join(uploadsDir, finalVideoFileName);
@@ -369,20 +391,6 @@ async function startServer() {
   app.use(express.json({ limit: '40mb' }));
   app.use(express.urlencoded({ extended: true, limit: '40mb' }));
 
-  // --- Verification OTP Store (10-min TTL) ---
-  const verificationCodes = new Map<string, {
-    code: string;
-    channel: 'email' | 'phone';
-    target: string;
-    expiresAt: number;
-    verified: boolean;
-  }>();
-
-  const normalizeVerificationTarget = (channel: 'email' | 'phone', target: string): string => {
-    const trimmed = target.trim();
-    return channel === 'email' ? trimmed.toLowerCase() : trimmed.replace(/[\s()-]/g, '');
-  };
-
   // --- API Routes ---
 
   // Health check
@@ -430,95 +438,9 @@ async function startServer() {
     });
   });
 
-  app.post('/api/auth/send-verification', (req: Request, res: Response) => {
-    try {
-      const { channel, target, name } = req.body || {};
-      if (channel !== 'email' && channel !== 'phone') {
-        return res.status(400).json({ error: 'Verification channel must be email or phone.' });
-      }
-      if (!target || typeof target !== 'string' || !target.trim()) {
-        return res.status(400).json({ error: channel === 'email' ? 'Please enter your email address first.' : 'Please enter your phone number first.' });
-      }
-
-      const normalized = normalizeVerificationTarget(channel, target);
-      if (channel === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-        return res.status(400).json({ error: 'Please enter a valid email address.' });
-      }
-      if (channel === 'phone' && normalized.replace(/^\+/, '').length < 7) {
-        return res.status(400).json({ error: 'Please enter a valid phone number (e.g. +263 77 123 4567).' });
-      }
-
-      const code = String(crypto.randomInt(100000, 999999));
-      const key = `${channel}:${normalized}`;
-      const expiresAt = Date.now() + 10 * 60 * 1000;
-
-      verificationCodes.set(key, {
-        code,
-        channel,
-        target: normalized,
-        expiresAt,
-        verified: false
-      });
-
-      console.log(`[agroX Verification] ${channel.toUpperCase()} OTP for ${normalized}${name ? ` (${name})` : ''}: ${code}`);
-
-      return res.json({
-        success: true,
-        channel,
-        target: target.trim(),
-        expiresInSeconds: 600,
-        sandboxCode: code,
-        message: channel === 'email'
-          ? `6-digit verification code dispatched to ${target.trim()}.`
-          : `6-digit SMS verification code dispatched to ${target.trim()}.`
-      });
-    } catch (err: any) {
-      console.error('Error sending verification code:', err);
-      return res.status(500).json({ error: 'Failed to send verification code.' });
-    }
-  });
-
-  app.post('/api/auth/verify-code', (req: Request, res: Response) => {
-    try {
-      const { channel, target, code } = req.body || {};
-      if (channel !== 'email' && channel !== 'phone') {
-        return res.status(400).json({ error: 'Invalid verification channel.' });
-      }
-      if (!target || !code) {
-        return res.status(400).json({ error: 'Target and 6-digit verification code are required.' });
-      }
-
-      const normalized = normalizeVerificationTarget(channel, String(target));
-      const key = `${channel}:${normalized}`;
-      const entry = verificationCodes.get(key);
-
-      if (!entry) {
-        return res.status(400).json({ error: 'No verification code found. Please request a new code.' });
-      }
-      if (Date.now() > entry.expiresAt) {
-        verificationCodes.delete(key);
-        return res.status(400).json({ error: 'Verification code expired. Please request a new code.' });
-      }
-      if (entry.code !== String(code).trim()) {
-        return res.status(400).json({ error: 'Invalid verification code. Please check the 6-digit code and try again.' });
-      }
-
-      entry.verified = true;
-      verificationCodes.set(key, entry);
-
-      return res.json({
-        verified: true,
-        channel,
-        target: target.trim()
-      });
-    } catch (err: any) {
-      console.error('Error verifying code:', err);
-      return res.status(500).json({ error: 'Failed to verify code.' });
-    }
-  });
-
   app.post('/api/auth/register', (req: Request, res: Response) => {
     const {
+      id: requestedId,
       name,
       email,
       phone,
@@ -528,8 +450,7 @@ async function startServer() {
       buyerProfile,
       avatar,
       emailVerified,
-      phoneVerified,
-      verificationMethod
+      status
     } = req.body;
 
     if (!name || !email || !role) {
@@ -552,7 +473,9 @@ async function startServer() {
 
     const isSeller = role === 'farmer' || role === 'fodder_supplier';
     const idPrefix = role === 'fodder_supplier' ? 'supplier' : role;
-    const id = `${idPrefix}-${Date.now()}`;
+    const id = typeof requestedId === 'string' && requestedId.trim()
+      ? requestedId.trim()
+      : `${idPrefix}-${Date.now()}`;
     const defaultAvatar = isSeller
       ? 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400'
       : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400';
@@ -565,10 +488,8 @@ async function startServer() {
       role,
       avatar: avatar || defaultAvatar,
       location: location || { country: 'Zimbabwe', province: 'Harare', city: 'Harare' },
-      status: 'active',
+      status: status === 'pending_verification' ? 'pending_verification' : 'active',
       emailVerified: Boolean(emailVerified),
-      phoneVerified: Boolean(phoneVerified),
-      verificationMethod,
       createdAt: new Date().toISOString(),
       farmerProfile: isSeller ? (farmerProfile || {
         farmName: role === 'fodder_supplier' ? `${name}'s Fodder Supply` : `${name}'s Farm`,
@@ -1383,8 +1304,18 @@ async function startServer() {
         body.phone !== undefined && existing && normalizeStr(body.phone) !== normalizeStr(existing.phone);
       const triedChangingRole =
         body.role !== undefined && existing && body.role !== existing.role;
+      const isEmailVerificationActivation =
+        Boolean(existing) &&
+        existing.status === 'pending_verification' &&
+        body.status === 'active' &&
+        body.emailVerified === true &&
+        actingUserId === targetUserId;
+
       const triedChangingStatus =
-        body.status !== undefined && existing && body.status !== existing.status;
+        body.status !== undefined &&
+        existing &&
+        body.status !== existing.status &&
+        !isEmailVerificationActivation;
 
       if (triedChangingName || triedChangingPhone) {
         return res.status(403).json({
@@ -1409,8 +1340,9 @@ async function startServer() {
     if (body.farmerProfile !== undefined) sanitizedUpdates.farmerProfile = body.farmerProfile;
     if (body.buyerProfile !== undefined) sanitizedUpdates.buyerProfile = body.buyerProfile;
     if (body.emailVerified !== undefined) sanitizedUpdates.emailVerified = body.emailVerified;
-    if (body.phoneVerified !== undefined) sanitizedUpdates.phoneVerified = body.phoneVerified;
-    if (body.verificationMethod !== undefined) sanitizedUpdates.verificationMethod = body.verificationMethod;
+    if (body.status === 'active' && body.emailVerified === true && existing?.status === 'pending_verification') {
+      sanitizedUpdates.status = 'active';
+    }
 
     let updated = store.updateUser(targetUserId, sanitizedUpdates);
     if (!updated) {

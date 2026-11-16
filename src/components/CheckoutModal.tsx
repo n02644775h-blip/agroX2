@@ -4,7 +4,7 @@ import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { useCart, DELIVERY_FLAT_FEE } from '../context/CartContext';
 import { api } from '../services/api';
-import { compressImage } from '../utils/imageCompressor';
+import { uploadMediaAsset } from '../services/firebaseStorage';
 import { LiquidGlassModal, LiquidGlassButton } from './glass';
 import {
   Order,
@@ -37,14 +37,16 @@ interface CheckoutModalProps {
   onClose: () => void;
   onOrderSuccess: (orders: Order[]) => void;
   onRequireAuth?: () => void;
+  onRequireVerifyEmail?: () => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onClose,
   onOrderSuccess,
-  onRequireAuth
+  onRequireAuth,
+  onRequireVerifyEmail
 }) => {
-  const { user } = useAuth();
+  const { user, requiresEmailVerification } = useAuth();
   const {
     items,
     subtotal,
@@ -84,6 +86,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [popUrl, setPopUrl] = useState('');
   const [popFileName, setPopFileName] = useState('');
   const [popUploading, setPopUploading] = useState(false);
+  const [popUploadProgress, setPopUploadProgress] = useState(0);
+  const [popUploadNotice, setPopUploadNotice] = useState('');
+  const popAbortRef = useRef<AbortController | null>(null);
 
   // Buyer Contact & Submit
   const [buyerPhone, setBuyerPhone] = useState(user?.phone || '');
@@ -245,38 +250,57 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     );
   };
 
+  const handleCancelPopUpload = () => {
+    popAbortRef.current?.abort();
+  };
+
   const handlePopUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+
+    const controller = new AbortController();
+    popAbortRef.current = controller;
+
     setErrorMessage('');
+    setPopUploadNotice('');
     setPopUploading(true);
+    setPopUploadProgress(5);
 
     try {
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      if (isPdf) {
-        if (file.size > 700 * 1024) {
-          setErrorMessage('PDF Proof of Payment must be under 700KB. Please upload a smaller PDF or a screenshot image.');
-          return;
-        }
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ''));
-          reader.onerror = () => reject(new Error('Failed to read PDF file'));
-          reader.readAsDataURL(file);
-        });
-        setPopUrl(dataUrl);
-        setPopFileName(file.name);
-      } else if (file.type.startsWith('image/')) {
-        const compressed = await compressImage(file, 900, 900, 0.72);
-        setPopUrl(compressed);
-        setPopFileName(file.name);
-      } else {
-        setErrorMessage('Please upload an image (JPG, PNG, WebP) or PDF Proof of Payment.');
+      const result = await uploadMediaAsset({
+        file,
+        folder: 'pop',
+        userId: user?.id || 'buyer',
+        allowVideo: false,
+        allowPdf: true,
+        compressImages: true,
+        maxDimension: 900,
+        onProgress: (pct) => setPopUploadProgress(pct),
+        signal: controller.signal
+      });
+
+      if (result.canceled) {
+        setErrorMessage('Proof of payment upload cancelled.');
+        return;
       }
+
+      if (!result.ok || !result.url) {
+        setErrorMessage(result.errorMessage || 'Could not upload Proof of Payment file.');
+        return;
+      }
+
+      setPopUrl(result.url);
+      setPopFileName(result.fileName || file.name);
+      setPopUploadNotice('Proof of payment uploaded successfully!');
     } catch (err: any) {
       setErrorMessage(err?.message || 'Could not process Proof of Payment file.');
     } finally {
+      if (popAbortRef.current === controller) {
+        popAbortRef.current = null;
+      }
       setPopUploading(false);
+      setPopUploadProgress(0);
     }
   };
 
@@ -289,6 +313,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onRequireAuth();
       } else {
         setErrorMessage('Please sign in or create an account to place your order.');
+      }
+      return;
+    }
+
+    if (requiresEmailVerification) {
+      setErrorMessage('Please verify your email address before placing an order.');
+      if (onRequireVerifyEmail) {
+        onRequireVerifyEmail();
       }
       return;
     }
@@ -417,6 +449,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {onRequireAuth && (
               <LiquidGlassButton variant="emerald" size="xs" onClick={onRequireAuth}>
                 Sign In / Register
+              </LiquidGlassButton>
+            )}
+          </div>
+        )}
+
+        {user && requiresEmailVerification && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5 text-xs text-[#062B1F]">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Email verification required before checkout</p>
+                <p className="text-[#2B4338] mt-0.5">
+                  Verify <strong>{user.email}</strong> via the link in your inbox to place orders and upload payment receipts.
+                </p>
+              </div>
+            </div>
+            {onRequireVerifyEmail && (
+              <LiquidGlassButton variant="emerald" size="xs" onClick={onRequireVerifyEmail}>
+                Verify Email
               </LiquidGlassButton>
             )}
           </div>
@@ -916,23 +967,49 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <label className="font-semibold text-[#062B1F] block mb-1">
                     Upload Proof of Payment (Image or PDF)
                   </label>
-                  <label className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-[#145A38] bg-[#DFF4E4]/50 hover:bg-[#DFF4E4] text-[#062B1F] font-bold cursor-pointer transition-colors">
-                    {popUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                    <span>{popFileName ? 'Replace POP File' : 'Choose POP Screenshot / PDF'}</span>
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      onChange={handlePopUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-[#145A38] bg-[#DFF4E4]/50 hover:bg-[#DFF4E4] text-[#062B1F] font-bold cursor-pointer transition-colors">
+                      {popUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      <span>
+                        {popUploading
+                          ? `Uploading (${popUploadProgress}%)...`
+                          : popFileName
+                            ? 'Replace POP File'
+                            : 'Choose POP Screenshot / PDF'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        disabled={popUploading}
+                        onChange={handlePopUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {popUploading && (
+                      <button
+                        type="button"
+                        onClick={handleCancelPopUpload}
+                        className="px-3 py-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs cursor-pointer shrink-0"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                  {popUploadNotice && !popUploading && (
+                    <p className="text-[11px] text-[#145A38] font-bold mt-1 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>{popUploadNotice}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
               {popUrl && (
                 <div className="p-3 rounded-xl bg-white border border-[#0B3D2B]/15 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    {popUrl.startsWith('data:application/pdf') ? (
+                    {popUrl.startsWith('data:application/pdf') ||
+                    popFileName.toLowerCase().endsWith('.pdf') ||
+                    popUrl.toLowerCase().includes('.pdf') ? (
                       <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
                         <FileText className="w-5 h-5" />
                       </div>
@@ -955,6 +1032,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     onClick={() => {
                       setPopUrl('');
                       setPopFileName('');
+                      setPopUploadNotice('');
                     }}
                     className="text-xs text-[#2B4338] hover:text-rose-600 font-semibold px-2 py-1 cursor-pointer"
                   >

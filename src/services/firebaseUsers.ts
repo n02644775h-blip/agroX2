@@ -80,8 +80,6 @@ export function parseFirestoreUser(docId: string, data: any): User {
     },
     status: (data?.status === 'suspended' || data?.status === 'pending_verification') ? data.status : 'active',
     emailVerified: Boolean(data?.emailVerified),
-    phoneVerified: Boolean(data?.phoneVerified),
-    verificationMethod: data?.verificationMethod,
     createdAt: createdAtStr,
     farmerProfile: data?.farmerProfile,
     buyerProfile: data?.buyerProfile

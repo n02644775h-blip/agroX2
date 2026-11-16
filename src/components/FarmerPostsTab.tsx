@@ -7,9 +7,8 @@ import {
   deleteFirebasePost
 } from '../services/firebasePosts';
 import {
-  buildShowcaseStoragePath,
-  uploadBlobToFirebaseStorageWithResult,
-  syncServerMediaToFirebaseStorage,
+  uploadMediaAsset,
+  validateMediaFile,
   deleteFirebaseStorageFile
 } from '../services/firebaseStorage';
 import { MediaPost, MediaPostItem, Product, ProductUnit, User } from '../types';
@@ -29,7 +28,8 @@ import {
   CheckCircle2,
   X,
   Plus,
-  Hash
+  Hash,
+  RotateCcw
 } from 'lucide-react';
 
 interface FarmerPostsTabProps {
@@ -79,6 +79,16 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingFileName, setUploadingFileName] = useState('');
   const [uploadStatusNote, setUploadStatusNote] = useState('');
+  const [uploadingPreview, setUploadingPreview] = useState<{
+    url: string;
+    type: 'image' | 'video';
+    fileName: string;
+  } | null>(null);
+  const [uploadSuccessBanner, setUploadSuccessBanner] = useState('');
+  const [failedUploadEntry, setFailedUploadEntry] = useState<{
+    file: File;
+    error: string;
+  } | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const [caption, setCaption] = useState('');
@@ -100,6 +110,17 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
 
   const submitLockRef = useRef(false);
   const pendingStoragePathsRef = useRef<string[]>([]);
+  const uploadAbortRef = useRef<AbortController | null>(null);
+
+  const revokePreviewUrl = (previewUrl?: string | null) => {
+    if (previewUrl && previewUrl.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(previewUrl);
+      } catch {
+        // ignore
+      }
+    }
+  };
 
   const cleanupPendingStorageUploads = async (paths?: string[]) => {
     const targets = paths ? [...paths] : [...pendingStoragePathsRef.current];
@@ -114,6 +135,9 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
 
   useEffect(() => {
     return () => {
+      if (uploadAbortRef.current) {
+        uploadAbortRef.current.abort();
+      }
       if (pendingStoragePathsRef.current.length > 0) {
         const paths = [...pendingStoragePathsRef.current];
         pendingStoragePathsRef.current = [];
@@ -214,6 +238,10 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
   }, [user.id]);
 
   const resetForm = (discardPendingUploads = true) => {
+    if (uploadAbortRef.current) {
+      uploadAbortRef.current.abort();
+      uploadAbortRef.current = null;
+    }
     if (discardPendingUploads) {
       void cleanupPendingStorageUploads();
     } else {
@@ -224,6 +252,12 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
     setUploadProgress(null);
     setUploadingFileName('');
     setUploadStatusNote('');
+    setUploadingPreview((prev) => {
+      revokePreviewUrl(prev?.url);
+      return null;
+    });
+    setUploadSuccessBanner('');
+    setFailedUploadEntry(null);
     setCaption('');
     setDescription('');
     setProductName('');
@@ -274,13 +308,34 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
     }
   };
 
+  const handleCancelActiveUpload = () => {
+    if (uploadAbortRef.current) {
+      uploadAbortRef.current.abort();
+      uploadAbortRef.current = null;
+    }
+    setUploadProgress(null);
+    setUploadingFileName('');
+    setUploadStatusNote('');
+    setUploadingPreview((prev) => {
+      revokePreviewUrl(prev?.url);
+      return null;
+    });
+  };
+
   const processUploadedFiles = async (files: File[]) => {
     if (files.length === 0) return;
     if (uploadProgress !== null || submitting) return;
     setErrorMsg('');
+    setUploadSuccessBanner('');
+    setFailedUploadEntry(null);
 
     if (!user?.id) {
       setErrorMsg('Please sign in as a farmer before uploading showcase media.');
+      return;
+    }
+
+    if (auth.currentUser && !auth.currentUser.emailVerified) {
+      setErrorMsg('Please verify your email address before uploading showcase media.');
       return;
     }
 
@@ -289,177 +344,100 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
       return;
     }
 
-    const validatedFiles: {
-      file: File;
-      baseMime: string;
-      isImage: boolean;
-      isVideo: boolean;
-      needsServerConvert: boolean;
-    }[] = [];
+    const validatedFiles: { file: File; kind: 'image' | 'video' }[] = [];
 
     for (const file of files) {
-      if (file.size === 0) {
-        setErrorMsg(`File "${file.name}" is empty (0 bytes). Please choose a valid image or video.`);
-        return;
-      }
-
-      const mime = (file.type || '').split(';')[0].trim().toLowerCase();
-      const lowerName = file.name.toLowerCase();
-      const isImage =
-        ALLOWED_IMAGE_TYPES.includes(mime) || /\.(jpg|jpeg|png|webp|heic|heif)$/.test(lowerName);
-      const isVideo =
-        !isImage &&
-        (ALLOWED_VIDEO_TYPES.includes(mime) || /\.(mp4|webm|mov|m4v)$/.test(lowerName));
-
-      if (!isImage && !isVideo) {
-        setErrorMsg(
-          `Unsupported file "${file.name}". Supported formats: JPG, JPEG, PNG, WebP, HEIC/HEIF images and MP4, WebM, MOV videos.`
-        );
-        return;
-      }
-
-      if (isImage && file.size > MAX_IMAGE_BYTES) {
-        setErrorMsg(`Image "${file.name}" exceeds the 15MB limit.`);
-        return;
-      }
-
-      if (isVideo && file.size > MAX_VIDEO_BYTES) {
-        setErrorMsg(`Video "${file.name}" exceeds the 50MB limit.`);
-        return;
-      }
-
-      const needsServerConvert =
-        /\.(heic|heif|mov|m4v)$/.test(lowerName) ||
-        [
-          'image/heic',
-          'image/heif',
-          'image/heic-sequence',
-          'image/heif-sequence',
-          'video/quicktime',
-          'video/x-m4v'
-        ].includes(mime);
-
-      const resolvedMime =
-        mime ||
-        (/\.(png)$/.test(lowerName)
-          ? 'image/png'
-          : /\.(webp)$/.test(lowerName)
-            ? 'image/webp'
-            : /\.(webm)$/.test(lowerName)
-              ? 'video/webm'
-              : isVideo
-                ? 'video/mp4'
-                : 'image/jpeg');
-
-      validatedFiles.push({
-        file,
-        baseMime: resolvedMime,
-        isImage,
-        isVideo,
-        needsServerConvert
+      const check = validateMediaFile(file, {
+        fileName: file.name,
+        allowVideo: true
       });
+      if (!check.valid || (check.kind !== 'image' && check.kind !== 'video')) {
+        setErrorMsg(check.error || `Invalid file "${file.name}".`);
+        return;
+      }
+      validatedFiles.push({ file, kind: check.kind });
     }
 
     for (const entry of validatedFiles) {
-      const { file, baseMime, isVideo, needsServerConvert } = entry;
+      const { file, kind } = entry;
+      const previewUrl = URL.createObjectURL(file);
+      const controller = new AbortController();
+      uploadAbortRef.current = controller;
+
       try {
         setUploadingFileName(file.name);
-        setUploadStatusNote(
-          needsServerConvert ? 'Uploading & converting for web playback...' : 'Uploading media...'
+        setUploadStatusNote(kind === 'video' ? 'Preparing video upload...' : 'Preparing photo upload...');
+        setUploadProgress(4);
+        setUploadingPreview({
+          url: previewUrl,
+          type: kind,
+          fileName: file.name
+        });
+
+        const result = await uploadMediaAsset({
+          file,
+          fileName: file.name,
+          folder: 'showcase',
+          userId: user.id,
+          allowVideo: true,
+          compressImages: true,
+          maxDimension: 1440,
+          signal: controller.signal,
+          onProgress: (percent) => setUploadProgress(percent),
+          onStatusNote: (note) => setUploadStatusNote(note)
+        });
+
+        if (result.canceled) {
+          setUploadStatusNote('');
+          break;
+        }
+
+        if (!result.ok || !result.url) {
+          const message = result.errorMessage || `Failed to upload "${file.name}".`;
+          setFailedUploadEntry({ file, error: message });
+          setErrorMsg(message);
+          break;
+        }
+
+        if (result.storagePath) {
+          pendingStoragePathsRef.current.push(result.storagePath);
+        }
+
+        const uploadedItem: MediaPostItem = {
+          url: result.url,
+          thumbnailUrl: result.thumbnailUrl,
+          type: result.type === 'video' ? 'video' : 'image',
+          mimeType: result.mimeType,
+          fileName: result.fileName || file.name,
+          convertedFrom: result.convertedFrom,
+          durationSec: result.durationSec,
+          storagePath: result.storagePath,
+          size: result.size || file.size
+        };
+
+        setMediaItems((prev) => [...prev, uploadedItem]);
+        setUploadSuccessBanner(
+          uploadedItem.type === 'video'
+            ? 'Video uploaded successfully!'
+            : 'Photo uploaded successfully!'
         );
-        setUploadProgress(5);
-
-        let uploadedItem: MediaPostItem | null = null;
-        let storageFailureNote: string | undefined;
-
-        if (!needsServerConvert && auth.currentUser) {
-          const storagePath = buildShowcaseStoragePath(user.id, file.name);
-          const storageResult = await uploadBlobToFirebaseStorageWithResult(
-            file,
-            storagePath,
-            baseMime,
-            (percent) => setUploadProgress(percent)
-          );
-
-          if (storageResult.ok && storageResult.downloadUrl && storageResult.storagePath) {
-            pendingStoragePathsRef.current.push(storageResult.storagePath);
-            uploadedItem = {
-              url: storageResult.downloadUrl,
-              type: isVideo ? 'video' : 'image',
-              mimeType: baseMime,
-              fileName: file.name,
-              storagePath: storageResult.storagePath,
-              size: file.size
-            };
-          } else if (storageResult.errorCode === 'storage/canceled') {
-            throw new Error(storageResult.errorMessage || 'Upload was cancelled.');
-          } else {
-            storageFailureNote = storageResult.errorMessage;
-          }
-        }
-
-        if (!uploadedItem) {
-          let uploaded;
-          try {
-            uploaded = await api.uploadMediaFile(file, (percent) => {
-              setUploadProgress(percent);
-              if (percent >= 99 && needsServerConvert) {
-                setUploadStatusNote('Optimizing HEIC / MOV format for web browsers...');
-              }
-            });
-          } catch (serverErr: any) {
-            const combinedMessage = serverErr?.message || storageFailureNote;
-            throw new Error(
-              combinedMessage ||
-                `Failed to upload "${file.name}". Please check your file format and connection.`
-            );
-          }
-
-          let finalUrl = uploaded.url;
-          let storagePath: string | undefined;
-
-          const syncedStorage = await syncServerMediaToFirebaseStorage(
-            uploaded.url,
-            buildShowcaseStoragePath(user.id, uploaded.fileName),
-            uploaded.mimeType
-          ).catch(() => null);
-
-          if (syncedStorage?.downloadUrl && syncedStorage?.storagePath) {
-            finalUrl = syncedStorage.downloadUrl;
-            storagePath = syncedStorage.storagePath;
-            pendingStoragePathsRef.current.push(storagePath);
-          }
-
-          uploadedItem = {
-            url: finalUrl,
-            thumbnailUrl: uploaded.thumbnailUrl,
-            type: uploaded.type,
-            mimeType: uploaded.mimeType,
-            fileName: uploaded.fileName,
-            convertedFrom: uploaded.convertedFrom,
-            durationSec: uploaded.durationSec,
-            storagePath,
-            size: uploaded.size
-          };
-        }
-
-        if (!uploadedItem?.url) {
-          throw new Error(`Upload completed for "${file.name}" but no media URL was returned.`);
-        }
-
-        setMediaItems((prev) => [...prev, uploadedItem!]);
       } catch (err: any) {
-        setErrorMsg(
-          extractFriendlyError(
+        if (err?.name !== 'AbortError') {
+          const message = extractFriendlyError(
             err,
-            `Failed to process "${file.name}". The file may be corrupted or in an unsupported codec.`
-          )
-        );
+            `Failed to process "${file.name}". Please check your file format and connection.`
+          );
+          setFailedUploadEntry({ file, error: message });
+          setErrorMsg(message);
+        }
         break;
       } finally {
+        uploadAbortRef.current = null;
         setUploadProgress(null);
         setUploadingFileName('');
         setUploadStatusNote('');
+        setUploadingPreview(null);
+        revokePreviewUrl(previewUrl);
       }
     }
   };
@@ -741,18 +719,96 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
               </label>
 
               {uploadProgress !== null && (
-                <div className="p-3 rounded-xl bg-white/80 border border-[#0B3D2B]/12 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-semibold text-[#062B1F]">
-                    <span className="truncate">
-                      {uploadStatusNote || 'Uploading'} {uploadingFileName}...
-                    </span>
-                    <span className="tabular-nums text-[#145A38] font-bold">{uploadProgress}%</span>
+                <div className="p-3.5 rounded-xl bg-white/85 border border-[#145A38]/25 space-y-2.5">
+                  <div className="flex items-center gap-3">
+                    {uploadingPreview && (
+                      <div className="w-14 h-14 rounded-lg overflow-hidden bg-[#062B1F] shrink-0 border border-[#145A38]/25">
+                        {uploadingPreview.type === 'video' ? (
+                          <video
+                            src={uploadingPreview.url}
+                            muted
+                            playsInline
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <img
+                            src={uploadingPreview.url}
+                            alt={uploadingPreview.fileName}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-xs font-semibold text-[#062B1F]">
+                        <span className="truncate">
+                          {uploadStatusNote || 'Uploading'} ({uploadingFileName})
+                        </span>
+                        <span className="tabular-nums text-[#145A38] font-bold shrink-0">
+                          {uploadProgress}%
+                        </span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-[#DFF4E4] overflow-hidden">
+                        <div
+                          className="h-full bg-[#145A38] transition-all duration-150"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCancelActiveUpload}
+                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] shrink-0 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
                   </div>
-                  <div className="w-full h-2 rounded-full bg-[#DFF4E4] overflow-hidden">
-                    <div
-                      className="h-full bg-[#145A38] transition-all duration-150"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
+                </div>
+              )}
+
+              {uploadSuccessBanner && uploadProgress === null && (
+                <div className="p-2.5 rounded-xl bg-[#DFF4E4] border border-[#145A38]/25 text-[#062B1F] text-xs font-bold flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-[#145A38] shrink-0" />
+                    <span>{uploadSuccessBanner}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setUploadSuccessBanner('')}
+                    className="text-[#145A38] hover:text-[#062B1F] cursor-pointer"
+                    aria-label="Dismiss upload message"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {failedUploadEntry && uploadProgress === null && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold">
+                    Could not upload &ldquo;{failedUploadEntry.file.name}&rdquo;
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const fileToRetry = failedUploadEntry.file;
+                        setFailedUploadEntry(null);
+                        setErrorMsg('');
+                        void processUploadedFiles([fileToRetry]);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#145A38] text-white font-bold text-[11px] hover:bg-[#0B3D2B] cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Retry Upload</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFailedUploadEntry(null)}
+                      className="px-2 py-1 rounded-lg border border-rose-200 bg-white text-rose-700 font-semibold text-[11px] cursor-pointer"
+                    >
+                      Dismiss
+                    </button>
                   </div>
                 </div>
               )}

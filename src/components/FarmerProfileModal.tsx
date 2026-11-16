@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { User } from '../types';
 import { LiquidGlassModal, LiquidGlassButton } from './glass';
 import { ContactSupportModal } from './ContactSupportModal';
+import { uploadMediaAsset, deleteFirebaseStorageFile } from '../services/firebaseStorage';
 import {
   User as UserIcon,
   Camera,
@@ -17,7 +18,9 @@ import {
   Sprout,
   Wheat,
   Lock,
-  Headphones
+  Headphones,
+  Loader2,
+  RotateCcw
 } from 'lucide-react';
 
 interface FarmerProfileModalProps {
@@ -115,6 +118,12 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
   const [successMsg, setSuccessMsg] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarUploadProgress, setAvatarUploadProgress] = useState(0);
+  const [avatarUploadedNotice, setAvatarUploadedNotice] = useState('');
+  const [failedAvatarFile, setFailedAvatarFile] = useState<File | null>(null);
+  const [uploadedAvatarStoragePath, setUploadedAvatarStoragePath] = useState<string | undefined>(undefined);
+  const avatarAbortRef = useRef<AbortController | null>(null);
 
   const togglePractice = (tag: string) => {
     if (selectedPractices.includes(tag)) {
@@ -124,22 +133,75 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
     }
   };
 
+  const processAvatarFile = async (file: File) => {
+    if (isUploadingAvatar) return;
+    if (avatarAbortRef.current) {
+      avatarAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    avatarAbortRef.current = controller;
+
+    const tempPreviewUrl = URL.createObjectURL(file);
+    const previousAvatar = avatar;
+    setAvatar(tempPreviewUrl);
+    setIsUploadingAvatar(true);
+    setAvatarUploadProgress(5);
+    setAvatarUploadedNotice('');
+    setFailedAvatarFile(null);
+    setErrorMsg('');
+
+    try {
+      const result = await uploadMediaAsset({
+        file,
+        fileName: file.name,
+        folder: 'avatars',
+        userId: user?.id || 'farmer-1',
+        allowVideo: false,
+        compressImages: true,
+        maxDimension: 500,
+        signal: controller.signal,
+        onProgress: (pct) => setAvatarUploadProgress(pct)
+      });
+
+      if (result.canceled) {
+        setAvatar(previousAvatar);
+        return;
+      }
+
+      if (!result.ok || !result.url) {
+        setAvatar(previousAvatar);
+        setFailedAvatarFile(file);
+        setErrorMsg(result.errorMessage || 'Failed to upload profile photo.');
+        return;
+      }
+
+      if (uploadedAvatarStoragePath && uploadedAvatarStoragePath !== result.storagePath) {
+        void deleteFirebaseStorageFile(uploadedAvatarStoragePath);
+      }
+      setUploadedAvatarStoragePath(result.storagePath);
+      setAvatar(result.url);
+      setAvatarUploadedNotice('Photo uploaded successfully!');
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        setAvatar(previousAvatar);
+        setFailedAvatarFile(file);
+        setErrorMsg(err?.message || 'Failed to upload profile photo.');
+      }
+    } finally {
+      avatarAbortRef.current = null;
+      setIsUploadingAvatar(false);
+      setAvatarUploadProgress(0);
+      try {
+        URL.revokeObjectURL(tempPreviewUrl);
+      } catch {}
+    }
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('Image file size must be under 5MB.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setAvatar(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    void processAvatarFile(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -277,13 +339,54 @@ export const FarmerProfileModal: React.FC<FarmerProfileModalProps> = ({
                 />
                 <button
                   type="button"
+                  disabled={isUploadingAvatar}
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-2 bg-white hover:bg-[#DFF4E4]/60 text-[#062B1F] border border-[#0B3D2B]/20 rounded-xl font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                  className="px-3 py-2 bg-white hover:bg-[#DFF4E4]/60 text-[#062B1F] border border-[#0B3D2B]/20 rounded-xl font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  <Upload className="w-3.5 h-3.5 text-[#145A38]" />
-                  <span>Upload</span>
+                  {isUploadingAvatar ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-[#145A38]" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5 text-[#145A38]" />
+                  )}
+                  <span>{isUploadingAvatar ? `${avatarUploadProgress}%` : 'Upload'}</span>
                 </button>
               </div>
+
+              {isUploadingAvatar && (
+                <div className="flex items-center gap-2 text-[11px]">
+                  <div className="flex-1 h-1.5 rounded-full bg-white overflow-hidden">
+                    <div
+                      className="h-full bg-[#145A38] transition-all duration-150"
+                      style={{ width: `${avatarUploadProgress}%` }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => avatarAbortRef.current?.abort()}
+                    className="px-2 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-bold text-[10px] cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {avatarUploadedNotice && !isUploadingAvatar && (
+                <div className="text-[11px] font-bold text-[#145A38] flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>{avatarUploadedNotice}</span>
+                </div>
+              )}
+
+              {failedAvatarFile && !isUploadingAvatar && (
+                <button
+                  type="button"
+                  onClick={() => void processAvatarFile(failedAvatarFile)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#145A38] text-white font-bold text-[11px] cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Retry Photo Upload</span>
+                </button>
+              )}
 
               <div className="flex items-center justify-between text-[11px] text-[#0B3D2B]/70">
                 <span className="inline-flex items-center gap-1 text-[#145A38] font-medium">

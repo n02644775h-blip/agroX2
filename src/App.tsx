@@ -20,7 +20,7 @@ import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
 import { ReviewModal } from './components/ReviewModal';
 import { ReportModal } from './components/ReportModal';
-import { AuthModal } from './components/AuthModal';
+import { AuthModal, AuthModalMode } from './components/AuthModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { AdminAccessModal } from './components/AdminAccessModal';
 import { FarmerProfileModal } from './components/FarmerProfileModal';
@@ -37,6 +37,7 @@ import {
   Lock,
   AlertTriangle,
   CheckCircle2,
+  MailCheck,
   X
 } from 'lucide-react';
 
@@ -53,6 +54,9 @@ export function App() {
   const {
     user,
     loading: authLoading,
+    requiresEmailVerification,
+    checkEmailVerification,
+    logout,
     suspensionNotice,
     clearSuspensionNotice,
     accountDeletionNotice,
@@ -97,7 +101,7 @@ export function App() {
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
   const [reportProduct, setReportProduct] = useState<Product | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<AuthModalMode>('login');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isAdminAccessOpen, setIsAdminAccessOpen] = useState(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
@@ -139,13 +143,25 @@ export function App() {
     } catch {}
   };
 
-  // Enforce Sign-Out -> Login redirect + block protected views + prevent Back-button restoration
+  // Enforce Sign-Out -> Login redirect + block protected views + gate unverified email accounts
   useEffect(() => {
     if (authLoading) return;
 
     if (user) {
       wasSignedInRef.current = true;
-      if (window.location.hash === '#login') {
+      if (requiresEmailVerification) {
+        if (PROTECTED_VIEWS.has(currentView)) {
+          setCurrentView('marketplace');
+          try {
+            localStorage.setItem('agrox_current_view', 'marketplace');
+            window.history.replaceState({ view: 'marketplace' }, '', '#marketplace');
+          } catch {}
+          setAuthMode('verify_email');
+          setIsAuthOpen(true);
+        }
+        return;
+      }
+      if (window.location.hash === '#login' || window.location.hash === '#verified') {
         try {
           window.history.replaceState({ view: currentView }, '', `#${currentView}`);
         } catch {}
@@ -173,7 +189,33 @@ export function App() {
       setAuthMode('login');
       setIsAuthOpen(true);
     }
-  }, [user, authLoading, currentView]);
+  }, [user, authLoading, requiresEmailVerification, currentView]);
+
+  // Auto-check email verification when user returns from email link (#verified or window focus)
+  useEffect(() => {
+    if (!user || !requiresEmailVerification) return;
+
+    const tryVerify = () => {
+      checkEmailVerification()
+        .then((res) => {
+          if (res.verified && isAuthOpen && authMode === 'verify_email') {
+            setIsAuthOpen(false);
+          }
+        })
+        .catch(() => {});
+    };
+
+    if (window.location.hash === '#verified') {
+      tryVerify();
+    }
+
+    window.addEventListener('focus', tryVerify);
+    window.addEventListener('hashchange', tryVerify);
+    return () => {
+      window.removeEventListener('focus', tryVerify);
+      window.removeEventListener('hashchange', tryVerify);
+    };
+  }, [user, requiresEmailVerification, isAuthOpen, authMode]);
 
   // Browser Back / Forward guard for protected views when unauthenticated
   useEffect(() => {
@@ -323,10 +365,21 @@ export function App() {
       setIsAuthOpen(true);
       return;
     }
+    if (requiresEmailVerification) {
+      setPendingChatPost(post);
+      setAuthMode('verify_email');
+      setIsAuthOpen(true);
+      return;
+    }
     openChatWithPost(post);
   };
 
   const handleRespondToBuyerRequest = (req: BuyerRequest) => {
+    if (requiresEmailVerification) {
+      setAuthMode('verify_email');
+      setIsAuthOpen(true);
+      return;
+    }
     const buyerFallback: User = {
       id: req.buyerId,
       name: req.buyerName || 'Marketplace Buyer',
@@ -357,9 +410,9 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'auto' });
   };
 
-  // Automatically open pending 1-on-1 chat once user completes login
+  // Automatically open pending 1-on-1 chat once user completes login & verification
   useEffect(() => {
-    if (!user) return;
+    if (!user || requiresEmailVerification) return;
     if (pendingChatProduct) {
       const targetProd = pendingChatProduct;
       setPendingChatProduct(null);
@@ -387,7 +440,7 @@ export function App() {
       } catch {}
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
-  }, [user, pendingChatProduct, pendingChatPost, pendingChatUser]);
+  }, [user, requiresEmailVerification, pendingChatProduct, pendingChatPost, pendingChatUser]);
 
   useEffect(() => {
     if (currentView === 'marketplace' && pendingScrollSection) {
@@ -426,6 +479,11 @@ export function App() {
       setIsAuthOpen(true);
       return;
     }
+    if (user && requiresEmailVerification && PROTECTED_VIEWS.has(view)) {
+      setAuthMode('verify_email');
+      setIsAuthOpen(true);
+      return;
+    }
     if (view === 'messages' && data?.channel) {
       setMessagesChannel(data.channel);
     }
@@ -446,9 +504,6 @@ export function App() {
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
 
-    if (view === 'farm_profile' && data?.farmerId) {
-      setSelectedFarmerId(data.farmerId);
-    }
     if (view === 'farm_profile' && data?.farmerId) {
       setSelectedFarmerId(data.farmerId);
     }
@@ -475,6 +530,13 @@ export function App() {
       setIsAuthOpen(true);
       return;
     }
+    if (requiresEmailVerification) {
+      setPendingChatProduct(prod);
+      setSelectedProduct(null);
+      setAuthMode('verify_email');
+      setIsAuthOpen(true);
+      return;
+    }
     openChatWithProduct(prod);
   };
 
@@ -482,6 +544,12 @@ export function App() {
     if (!user) {
       setPendingChatUser(farmer);
       setAuthMode('login');
+      setIsAuthOpen(true);
+      return;
+    }
+    if (requiresEmailVerification) {
+      setPendingChatUser(farmer);
+      setAuthMode('verify_email');
       setIsAuthOpen(true);
       return;
     }
@@ -500,6 +568,11 @@ export function App() {
   const handleContactFromOrder = (recipientId: string, _orderId?: string) => {
     if (!user) {
       setAuthMode('login');
+      setIsAuthOpen(true);
+      return;
+    }
+    if (requiresEmailVerification) {
+      setAuthMode('verify_email');
       setIsAuthOpen(true);
       return;
     }
@@ -562,16 +635,35 @@ export function App() {
           currentView={currentView}
           onNavigate={handleNavigate}
           onOpenAuth={(mode) => {
-            setAuthMode(mode);
+            setAuthMode(mode || 'login');
             setIsAuthOpen(true);
           }}
-          onOpenNotifications={() => setIsNotificationsOpen(true)}
+          onOpenNotifications={() => {
+            if (requiresEmailVerification) {
+              setAuthMode('verify_email');
+              setIsAuthOpen(true);
+              return;
+            }
+            setIsNotificationsOpen(true);
+          }}
           onOpenCart={openCart}
           onOpenAddProduct={() => {
+            if (requiresEmailVerification) {
+              setAuthMode('verify_email');
+              setIsAuthOpen(true);
+              return;
+            }
             setEditingProduct(null);
             setIsAddProductOpen(true);
           }}
-          onOpenSettings={() => setIsUserSettingsOpen(true)}
+          onOpenSettings={() => {
+            if (requiresEmailVerification) {
+              setAuthMode('verify_email');
+              setIsAuthOpen(true);
+              return;
+            }
+            setIsUserSettingsOpen(true);
+          }}
           searchQuery={marketplaceSearchQuery}
           onSearchChange={setMarketplaceSearchQuery}
           onSearchSubmit={(q) => {
@@ -583,6 +675,48 @@ export function App() {
 
         {/* Main Application Canvas */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5 sm:pt-7 pb-14">
+          {user && requiresEmailVerification && (
+            <div
+              role="status"
+              className="mb-6 p-4 rounded-2xl lg-glass-mint border border-amber-400/50 text-[#062B1F] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+            >
+              <div className="flex items-start gap-3 text-xs sm:text-sm font-semibold">
+                <MailCheck className="w-5 h-5 text-[#145A38] shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-extrabold text-[#062B1F]">
+                    Verify your email to activate your FarmBridge account
+                  </p>
+                  <p className="text-xs text-[#2B4338] mt-0.5">
+                    We sent a verification link to <strong>{user.email}</strong>. Please check your inbox and verify before listing products, uploading media, messaging, or placing orders.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <LiquidGlassButton
+                  type="button"
+                  variant="emerald"
+                  size="xs"
+                  onClick={() => {
+                    setAuthMode('verify_email');
+                    setIsAuthOpen(true);
+                  }}
+                >
+                  Verify Email
+                </LiquidGlassButton>
+                <LiquidGlassButton
+                  type="button"
+                  variant="light"
+                  size="xs"
+                  onClick={() => {
+                    logout();
+                  }}
+                >
+                  Sign Out
+                </LiquidGlassButton>
+              </div>
+            </div>
+          )}
+
           {accountDeletionNotice && (
             <div
               role="status"
@@ -965,6 +1099,10 @@ export function App() {
               setAuthMode('login');
               setIsAuthOpen(true);
             }}
+            onRequireVerifyEmail={() => {
+              setAuthMode('verify_email');
+              setIsAuthOpen(true);
+            }}
             onOrderSuccess={(orders) => {
               closeCheckout();
               setConfirmedOrders(orders);
@@ -1045,9 +1183,21 @@ export function App() {
         <AndroidBottomNav
           currentView={currentView}
           onNavigate={handleNavigate}
-          onOpenNotifications={() => setIsNotificationsOpen(true)}
+          onOpenNotifications={() => {
+            if (requiresEmailVerification) {
+              setAuthMode('verify_email');
+              setIsAuthOpen(true);
+              return;
+            }
+            setIsNotificationsOpen(true);
+          }}
           onOpenCart={openCart}
           onOpenAddProduct={() => {
+            if (requiresEmailVerification) {
+              setAuthMode('verify_email');
+              setIsAuthOpen(true);
+              return;
+            }
             setEditingProduct(null);
             setIsAddProductOpen(true);
           }}

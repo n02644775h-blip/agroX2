@@ -1,86 +1,133 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAuth() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Blocks Firebase Auth sessions whose email has not been verified yet,
+    // while preserving non-Firebase administrative / legacy server sessions.
+    function isVerifiedOrLegacy() {
+      return !isSignedIn() || request.auth.token.email_verified == true;
+    }
+
     // User profiles collection
     match /users/{userId} {
       allow read: if true;
-      allow create, delete: if true;
-      // Non-admin Firebase-authenticated users cannot mutate locked identity fields (fullName, name, phone, role)
+      allow create: if !isSignedIn() ||
+        isAdmin() ||
+        (isOwner(userId) && request.resource.data.role in ['buyer', 'farmer', 'fodder_supplier']);
       allow update: if (
-        request.auth == null ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fullName', 'name', 'phone', 'role'])
+        !isSignedIn() ||
+        isAdmin() ||
+        (
+          isOwner(userId) &&
+          resource.data.status == 'pending_verification' &&
+          request.resource.data.status == 'pending_verification' &&
+          request.resource.data.emailVerified == false &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['email', 'emailVerified', 'status', 'updatedAt'])
+        ) ||
+        (
+          isOwner(userId) &&
+          isVerifiedAuth() &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['fullName', 'name', 'phone', 'role'])
+        )
       );
+      allow delete: if !isSignedIn() || isAdmin() || isOwner(userId);
     }
 
     // Product listings collection
     match /products/{productId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow create, update, delete: if isVerifiedOrLegacy();
     }
 
     // Orders collection
     match /orders/{orderId} {
-      allow read, create, update: if true;
+      allow read: if true;
+      allow create, update: if isVerifiedOrLegacy();
       allow delete: if false;
     }
 
     // Direct Messages & Conversations
     match /conversations/{conversationId} {
-      allow read, write: if true;
-      
+      allow read: if true;
+      allow write: if isVerifiedOrLegacy();
+
       match /messages/{messageId} {
-        allow read, create, write: if true;
+        allow read: if true;
+        allow create, write: if isVerifiedOrLegacy();
       }
     }
 
     // Order & product ratings (immutable once submitted so farmers cannot modify or delete ratings)
     match /reviews/{reviewId} {
-      allow read, create: if true;
+      allow read: if true;
+      allow create: if isVerifiedOrLegacy();
       allow update, delete: if false;
     }
 
     // Community Broadcast & Bulletin Announcements Channel
     match /announcements/{announcementId} {
-      allow read, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isVerifiedOrLegacy();
     }
 
     // Notifications
     match /notifications/{notificationId} {
-      allow read, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isVerifiedOrLegacy();
     }
 
     // Farmer Advertisements & Hot Deals
     match /adRequests/{adId} {
-      allow read, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isVerifiedOrLegacy();
     }
 
     // FarmBridge Community Farmer Media Posts
     match /mediaPosts/{postId} {
-      allow read, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isVerifiedOrLegacy();
     }
 
     // Buyer Product Requests
     match /buyerRequests/{requestId} {
-      allow read, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isVerifiedOrLegacy();
     }
 
     // Deleted account tombstones (prevents deleted spam accounts from re-entering)
     match /deletedAccounts/{userId} {
-      allow read, create, update, delete: if true;
+      allow read: if true;
+      allow create, update, delete: if isVerifiedOrLegacy();
     }
 
     // Protected account update support requests
     match /supportRequests/{requestId} {
-      allow read, create, update: if true;
+      allow read: if true;
+      allow create, update: if isVerifiedOrLegacy();
       allow delete: if false;
     }
 
     // Immutable admin audit trail for farmer edits and support resolutions
     match /adminAuditLogs/{logId} {
-      allow read, create: if true;
+      allow read: if true;
+      allow create: if isVerifiedOrLegacy();
       allow update, delete: if false;
     }
   }

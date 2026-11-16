@@ -1,0 +1,91 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedInVerified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isValidImageUpload() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/jpeg.*') ||
+          request.resource.contentType.matches('image/jpg.*') ||
+          request.resource.contentType.matches('image/png.*') ||
+          request.resource.contentType.matches('image/webp.*') ||
+          request.resource.contentType.matches('image/heic.*') ||
+          request.resource.contentType.matches('image/heif.*')
+        );
+    }
+
+    function isValidShowcaseMediaUpload() {
+      return request.resource != null
+        && request.resource.size > 0
+        && (
+          (
+            request.resource.size <= 15 * 1024 * 1024 &&
+            (
+              request.resource.contentType.matches('image/jpeg.*') ||
+              request.resource.contentType.matches('image/jpg.*') ||
+              request.resource.contentType.matches('image/png.*') ||
+              request.resource.contentType.matches('image/webp.*') ||
+              request.resource.contentType.matches('image/heic.*') ||
+              request.resource.contentType.matches('image/heif.*')
+            )
+          ) ||
+          (
+            request.resource.size <= 50 * 1024 * 1024 &&
+            (
+              request.resource.contentType.matches('video/mp4.*') ||
+              request.resource.contentType.matches('video/webm.*') ||
+              request.resource.contentType.matches('video/quicktime.*') ||
+              request.resource.contentType.matches('video/x-m4v.*')
+            )
+          )
+        );
+    }
+
+    function isValidPopUpload() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('image/(jpeg|jpg|png|webp).*') ||
+          request.resource.contentType == 'application/pdf'
+        );
+    }
+
+    // Farmer / community showcase photos and videos
+    match /showcase/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if isSignedInVerified() && request.auth.uid == userId && isValidShowcaseMediaUpload();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Marketplace product photos
+    match /products/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if isSignedInVerified() && request.auth.uid == userId && isValidImageUpload();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // User / farmer / admin profile avatars
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if isSignedInVerified() && request.auth.uid == userId && isValidImageUpload();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Proof of Payment receipts (orders & adverts)
+    match /pop/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow create, update: if isSignedInVerified() && request.auth.uid == userId && isValidPopUpload();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

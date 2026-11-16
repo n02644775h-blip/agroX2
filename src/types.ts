@@ -86,8 +86,6 @@ export interface User {
   };
   status: 'active' | 'suspended' | 'pending_verification' | 'deleted';
   emailVerified?: boolean;
-  phoneVerified?: boolean;
-  verificationMethod?: 'email' | 'phone';
   createdAt: string;
   farmerProfile?: FarmerProfile;
   buyerProfile?: BuyerProfile;
