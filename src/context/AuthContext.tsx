@@ -1261,6 +1261,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       const userDocRef = doc(db, 'users', user.id);
+      const existingSnap = await getDoc(userDocRef).catch(() => null);
 
       // Build sanitized update payload keeping locked fields immutable for non-admin users
       const updatedUser: User = {
@@ -1291,19 +1292,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             : user.buyerProfile
       };
 
-      // 1. Prepare Firestore document payload (never rewrite name/phone for non-admin accounts)
+      // 1. Prepare Firestore document payload (never mutate locked name/phone/role on existing non-admin docs)
+      const docExists = Boolean(existingSnap && existingSnap.exists());
+      const existingData = docExists ? (existingSnap?.data() || {}) : {};
       const firestoreDocPayload: Record<string, any> = {
         uid: user.id,
         email: updatedUser.email,
-        role: updatedUser.role,
         avatar: updatedUser.avatar,
         location: sanitizeForFirestore(updatedUser.location),
         updatedAt: serverTimestamp()
       };
-      if (isAdminUser) {
+
+      if (!docExists) {
+        firestoreDocPayload.role = updatedUser.role;
         firestoreDocPayload.fullName = updatedUser.name;
         firestoreDocPayload.name = updatedUser.name;
         firestoreDocPayload.phone = updatedUser.phone || '';
+        firestoreDocPayload.createdAt = serverTimestamp();
+      } else if (isAdminUser) {
+        firestoreDocPayload.role = updatedUser.role;
+        firestoreDocPayload.fullName = updatedUser.name;
+        firestoreDocPayload.name = updatedUser.name;
+        firestoreDocPayload.phone = updatedUser.phone || '';
+      } else if (existingData.role === undefined) {
+        firestoreDocPayload.role = updatedUser.role;
       }
 
       if (isSellerRole(updatedUser.role) && updatedUser.farmerProfile) {

@@ -585,9 +585,9 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
   ].filter(Boolean).length;
 
   return (
-    <div className="space-y-14 pb-10">
+    <div className="space-y-8 sm:space-y-14 pb-8 sm:pb-10">
       {/* 1. ATMOSPHERIC PANORAMIC LIQUID GLASS HERO SECTION */}
-      <section className="relative rounded-[32px] overflow-hidden border border-white/25 shadow-[0_28px_72px_-18px_rgba(6,43,31,0.55)] min-h-[460px] sm:min-h-[520px] flex flex-col justify-between bg-[#062B1F]">
+      <section className="relative rounded-2xl sm:rounded-[32px] overflow-hidden border border-white/25 shadow-[0_28px_72px_-18px_rgba(6,43,31,0.55)] min-h-0 sm:min-h-[480px] flex flex-col justify-between bg-[#062B1F]">
         {!heroImgFailed ? (
           <img
             src={heroPanoramaImg}
@@ -600,7 +600,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
         {/* Gradient Atmospheric Depth & Curved Refractive Light Arcs */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 bg-linear-to-r from-[#062B1F]/92 via-[#0B3D2B]/72 to-[#062B1F]/35"
+          className="absolute inset-0 bg-linear-to-r from-[#062B1F]/92 via-[#0B3D2B]/74 to-[#062B1F]/40"
         />
         <div
           aria-hidden="true"
@@ -618,23 +618,23 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
         </div>
 
         {/* Hero Copy, CTAs & Inline Glass Search */}
-        <div className="relative z-10 p-6 sm:p-10 lg:p-12 lg:max-w-3xl space-y-6 my-auto">
+        <div className="relative z-10 p-4 sm:p-10 lg:p-12 lg:max-w-3xl space-y-4 sm:space-y-6 my-auto">
           <motion.div
             initial={prefersReducedMotion ? undefined : { opacity: 0, y: 12 }}
             animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
             transition={{ duration: 0.45 }}
-            className="space-y-4"
+            className="space-y-2.5 sm:space-y-4"
           >
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full lg-glass-pill text-[11px] font-bold uppercase tracking-widest text-[#A8E635]">
+            <div className="inline-flex items-center gap-2 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full lg-glass-pill text-[10px] sm:text-[11px] font-bold uppercase tracking-wider sm:tracking-widest text-[#A8E635] max-w-full">
               <img
                 src="/assets/farmbridge-logo-white.png"
                 alt="FarmBridge logo"
-                className="w-4 h-4 object-contain shrink-0"
+                className="w-3.5 h-3.5 sm:w-4 sm:h-4 object-contain shrink-0"
               />
               <span>FarmBridge Agricultural Marketplace</span>
             </div>
 
-            <h1 className="text-[clamp(2.25rem,4.5vw,3.85rem)] font-extrabold tracking-tight text-white leading-[1.06] text-balance">
+            <h1 className="text-[clamp(2rem,4.5vw,3.85rem)] font-extrabold tracking-tight text-white leading-[1.08] text-balance">
               Fresh Choices.{' '}
               <span className="text-[#A8E635] block sm:inline">Stronger Connections.</span>
             </h1>
@@ -645,11 +645,12 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
           </motion.div>
 
           {/* Hero Primary & Glass Secondary CTAs */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
             <LiquidGlassButton
               id="hero-explore-marketplace-btn"
               variant="lime"
-              size="lg"
+              size="md"
+              className="!px-4 !py-2.5 !text-sm sm:!px-6 sm:!py-3.5"
               onClick={() => scrollToElement('fresh-from-farmers')}
             >
               <span>Shop Marketplace</span>
@@ -660,7 +661,8 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
               <LiquidGlassButton
                 id="hero-join-farmer-btn"
                 variant="glass"
-                size="lg"
+                size="md"
+                className="!px-4 !py-2.5 !text-sm sm:!px-6 sm:!py-3.5"
                 onClick={() => onOpenAuth && onOpenAuth('register')}
               >
                 <Users className="w-4 h-4 text-[#A8E635]" />
@@ -670,7 +672,8 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
               <LiquidGlassButton
                 id="hero-meet-farmers-btn"
                 variant="glass"
-                size="lg"
+                size="md"
+                className="!px-4 !py-2.5 !text-sm sm:!px-6 sm:!py-3.5"
                 onClick={() => scrollToElement('featured-farmers-section')}
               >
                 <Users className="w-4 h-4 text-[#A8E635]" />
@@ -681,8 +684,8 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
 
           {/* Inline Translucent Glass Search Bar */}
           <form onSubmit={handleSearchSubmit} className="max-w-xl">
-            <div className="flex items-center lg-glass-frosted rounded-2xl p-1.5 transition-all focus-within:border-[#A8E635]">
-              <Search className="w-4 h-4 text-[#DFF4E4]/75 ml-3 shrink-0" />
+            <div className="flex items-center lg-glass-frosted rounded-2xl p-1 sm:p-1.5 transition-all focus-within:border-[#A8E635]">
+              <Search className="w-4 h-4 text-[#DFF4E4]/75 ml-2.5 sm:ml-3 shrink-0" />
               <input
                 id="marketplace-search-input"
                 type="text"
@@ -692,8 +695,8 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                   setFilters(prev => ({ ...prev, searchQuery: val }));
                   if (onSearchQueryChange) onSearchQueryChange(val);
                 }}
-                placeholder="Search maize, tomatoes, pasture eggs, lucerne..."
-                className="w-full px-3 py-2 bg-transparent text-white text-xs sm:text-sm focus:outline-none placeholder:text-[#DFF4E4]/65"
+                placeholder="Search produce, farms, fodder..."
+                className="min-w-0 w-full px-2.5 sm:px-3 py-1.5 sm:py-2 bg-transparent text-white text-sm focus:outline-none placeholder:text-[#DFF4E4]/65"
               />
               {filters.searchQuery && (
                 <button
@@ -705,14 +708,14 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                     loadData(next);
                   }}
                   aria-label="Clear search"
-                  className="p-1.5 text-[#DFF4E4]/75 hover:text-white cursor-pointer"
+                  className="p-1.5 text-[#DFF4E4]/75 hover:text-white cursor-pointer shrink-0"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
               <button
                 type="submit"
-                className="px-4 py-2 lg-cta-lime text-[#062B1F] font-extrabold text-xs rounded-xl transition-all shrink-0 cursor-pointer"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 lg-cta-lime text-[#062B1F] font-extrabold text-xs sm:text-sm rounded-xl transition-all shrink-0 cursor-pointer"
               >
                 Search
               </button>
@@ -721,41 +724,41 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
         </div>
 
         {/* Floating Live Marketplace Metrics Glass Strip (Computed strictly from real app state) */}
-        <div className="relative z-10 px-4 sm:px-10 lg:px-12 pb-6">
-          <div className="lg:max-w-2xl rounded-2xl lg-glass-frosted px-2.5 sm:px-5 py-3 sm:py-3.5 grid grid-cols-3 gap-2 sm:gap-4 divide-x divide-white/20 text-white">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <div className="relative z-10 px-4 sm:px-10 lg:px-12 pb-4 sm:pb-6">
+          <div className="lg:max-w-2xl rounded-2xl lg-glass-frosted p-3 sm:px-5 sm:py-3.5 grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 sm:divide-x divide-white/20 text-white">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#A8E635]">
                 <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm sm:text-xl font-extrabold tabular-nums leading-tight">
+                <div className="text-base sm:text-xl font-extrabold tabular-nums leading-tight">
                   {farmersLoading ? '—' : farmers.length}
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-[#DFF4E4]/80 truncate">Active Producers</div>
+                <div className="text-[11px] leading-snug text-[#DFF4E4]/85">Active Producers</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+            <div className="flex items-center gap-2.5 sm:gap-3 sm:pl-4 min-w-0">
               <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#A8E635]">
                 <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm sm:text-xl font-extrabold tabular-nums leading-tight">
+                <div className="text-base sm:text-xl font-extrabold tabular-nums leading-tight">
                   {loading ? '—' : products.length}
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-[#DFF4E4]/80 truncate">Products Listed</div>
+                <div className="text-[11px] leading-snug text-[#DFF4E4]/85">Products Listed</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 min-w-0">
+            <div className="col-span-2 sm:col-span-1 flex items-center gap-2.5 sm:gap-3 sm:pl-4 pt-2 sm:pt-0 border-t border-white/15 sm:border-t-0 min-w-0">
               <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-white/12 border border-white/25 flex items-center justify-center shrink-0 text-[#F4D35E]">
                 <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm sm:text-xl font-extrabold tabular-nums leading-tight">
+                <div className="text-base sm:text-xl font-extrabold tabular-nums leading-tight">
                   {provincesCovered || '1'}
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-[#DFF4E4]/80 truncate">Regions Connected</div>
+                <div className="text-[11px] leading-snug text-[#DFF4E4]/85">Regions Covered</div>
               </div>
             </div>
           </div>
@@ -774,7 +777,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
                 <Flame className="w-3.5 h-3.5 text-[#145A38]" />
                 Promoted Harvest Deals
               </p>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-[#062B1F] tracking-tight">
+              <h2 className="text-xl sm:text-3xl font-extrabold text-[#062B1F] tracking-tight">
                 Featured on FarmBridge
               </h2>
               <p className="text-xs sm:text-sm text-[#0B261C]/65 mt-0.5">
@@ -907,7 +910,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
       {/* 3. DARK FOREST TRANSLUCENT GLASS MARKETPLACE EXPLORER (Sidebar Categories + Glass Grid) */}
       <section
         id="fresh-from-farmers"
-        className="relative rounded-[32px] overflow-hidden border border-white/20 shadow-[0_28px_72px_-20px_rgba(6,43,31,0.62)] bg-[#062B1F] text-white p-5 sm:p-8 scroll-mt-20"
+        className="relative rounded-2xl sm:rounded-[32px] overflow-hidden border border-white/20 shadow-[0_28px_72px_-20px_rgba(6,43,31,0.62)] bg-[#062B1F] text-white p-4 sm:p-8 scroll-mt-20"
       >
         {/* Atmospheric Forest Foliage Backdrop */}
         <img
@@ -921,14 +924,14 @@ export const Marketplace: React.FC<MarketplaceProps> = ({
           className="absolute inset-0 bg-linear-to-br from-[#062B1F]/95 via-[#0B3D2B]/90 to-[#145A38]/82 pointer-events-none"
         />
 
-        <div className="relative z-10 space-y-6">
+        <div className="relative z-10 space-y-5 sm:space-y-6">
           {/* Header + Toolbar */}
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-widest text-[#A8E635]">
                 Marketplace
               </p>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+              <h2 className="text-xl sm:text-3xl font-extrabold text-white tracking-tight">
                 Fresh from Farmers
               </h2>
               <p className="text-xs sm:text-sm text-[#DFF4E4]/80 mt-0.5 tabular-nums">

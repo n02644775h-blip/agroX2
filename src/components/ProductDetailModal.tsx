@@ -154,8 +154,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       </div>
 
       {/* Scrollable Body */}
-      <div className="p-5 sm:p-7 space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
+      <div className="p-4 sm:p-7 space-y-6 sm:space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-7">
           {/* Gallery Column */}
           <div className="space-y-3">
             <div className="aspect-4/3 rounded-3xl overflow-hidden bg-[#0B3D2B]/10 border border-white/80 shadow-lg">
@@ -236,11 +236,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
 
               {/* Price Glass Strip */}
-              <div className="mt-4 p-4 rounded-2xl bg-[#062B1F] text-white flex flex-wrap items-center justify-between gap-3 shadow-md">
+              <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-[#062B1F] text-white flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 shadow-md">
                 <div>
-                  <div className="text-3xl font-extrabold tabular-nums">
+                  <div className="text-2xl sm:text-3xl font-extrabold tabular-nums">
                     ${product.price.toFixed(2)}
-                    <span className="text-sm font-medium text-[#DFF4E4]/75 ml-1">/ {product.unit}</span>
+                    <span className="text-xs sm:text-sm font-medium text-[#DFF4E4]/75 ml-1">/ {product.unit}</span>
                   </div>
                   <div className="text-[11px] text-[#DFF4E4]/80 font-medium mt-0.5">
                     Direct from{' '}
@@ -289,7 +289,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             {/* Purchase / Quantity Controls */}
             <div className="pt-4 border-t border-[#0B3D2B]/12 space-y-4">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
                 <div>
                   <label className="text-xs font-bold text-[#2B4338] block mb-1">
                     Quantity ({product.unit}):

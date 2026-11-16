@@ -398,8 +398,8 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
   return (
     <div className="space-y-6 pb-16">
       {actionToast && (
-        <div className="fixed bottom-6 right-6 z-50 lg-glass-dark text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-[#A8E635]/40 flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-[#A8E635]" />
+        <div className="fixed bottom-24 right-4 left-4 sm:left-auto sm:right-6 md:bottom-6 z-50 lg-glass-dark text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-[#A8E635]/40 flex items-center gap-2">
+          <CheckCircle className="w-4 h-4 text-[#A8E635] shrink-0" />
           <span>{actionToast}</span>
         </div>
       )}
@@ -541,7 +541,7 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
               selectedOrder.deliveryLocation?.lng !== undefined;
 
             return (
-              <LiquidGlassCard variant="light" className="lg:col-span-2 p-6 sm:p-8 space-y-6">
+              <LiquidGlassCard variant="light" className="lg:col-span-2 p-4 sm:p-8 space-y-5 sm:space-y-6">
                 {/* Order Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#062B1F]/10 pb-4">
                   <div>
@@ -590,8 +590,8 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                 </div>
 
                 {/* Visual Order Progress Tracker */}
-                <div className="bg-white/65 backdrop-blur-md rounded-2xl p-5 border border-white/80 space-y-4">
-                  <div className="flex items-center justify-between">
+                <div className="bg-white/65 backdrop-blur-md rounded-2xl p-3.5 sm:p-5 border border-white/80 space-y-3 sm:space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="font-extrabold text-[#062B1F] text-xs uppercase tracking-wider">
                       Order Progress Tracking
                     </h3>
@@ -600,24 +600,24 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
                     </span>
                   </div>
 
-                  <div className="relative flex items-center justify-between max-w-xl mx-auto py-2">
-                    <div className="absolute top-1/2 left-4 right-4 h-1 bg-[#062B1F]/10 -translate-y-1/2 z-0 rounded-full" />
+                  <div className="relative flex items-start justify-between max-w-xl mx-auto py-2">
+                    <div className="absolute top-[22px] sm:top-[26px] left-4 right-4 h-1 bg-[#062B1F]/10 z-0 rounded-full" />
                     {stages.map((step, idx) => {
                       const isStepDone = currentIdx >= idx && canonical !== 'cancelled';
                       const isCurrent = currentIdx === idx;
                       return (
-                        <div key={step.key} className="relative z-10 flex flex-col items-center text-center px-1">
+                        <div key={step.key} className="relative z-10 flex-1 flex flex-col items-center text-center px-0.5 sm:px-1 min-w-0">
                           <div
-                            className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                            className={`w-7 h-7 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-[11px] sm:text-xs font-bold transition-all ${
                               isStepDone
-                                ? 'bg-linear-to-br from-[#A8E635] to-[#145A38] text-[#062B1F] ring-4 ring-[#DFF4E4] shadow-md'
+                                ? 'bg-linear-to-br from-[#A8E635] to-[#145A38] text-[#062B1F] ring-2 sm:ring-4 ring-[#DFF4E4] shadow-md'
                                 : 'bg-white/85 border border-[#062B1F]/15 text-[#0B3D2B]/50'
                             }`}
                           >
-                            {isStepDone ? <CheckCircle className="w-4 h-4 text-[#062B1F]" /> : idx + 1}
+                            {isStepDone ? <CheckCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#062B1F]" /> : idx + 1}
                           </div>
                           <span
-                            className={`text-[11px] mt-1.5 font-semibold ${
+                            className={`text-[9px] sm:text-[11px] leading-tight mt-1.5 font-semibold break-words ${
                               isCurrent ? 'text-[#062B1F] font-extrabold' : 'text-[#0B3D2B]/65'
                             }`}
                           >

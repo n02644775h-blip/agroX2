@@ -134,17 +134,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-[#062B1F]/86 backdrop-blur-2xl border-b border-white/15 shadow-[0_12px_32px_-14px_rgba(6,43,31,0.65)] text-white">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3 lg:gap-5">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-2 lg:gap-5">
           {/* Left: FarmBridge Brand Mark */}
-          <div className="flex items-center gap-4 lg:gap-6 shrink-0">
+          <div className="flex items-center gap-3 sm:gap-4 lg:gap-6 shrink-0 min-w-0">
             <button
               type="button"
               id="navbar-brand-logo"
               onClick={() => handleNav('marketplace')}
-              className="flex items-center gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] rounded-xl cursor-pointer"
+              className="flex items-center gap-2 sm:gap-2.5 text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] rounded-xl cursor-pointer"
             >
-              <div className="w-9 h-9 flex items-center justify-center transition-transform group-hover:scale-105 shrink-0">
+              <div className="w-7 h-7 sm:w-9 sm:h-9 flex items-center justify-center transition-transform group-hover:scale-105 shrink-0">
                 <img
                   src="/assets/farmbridge-logo-white.png"
                   alt="FarmBridge logo"
@@ -152,7 +152,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 />
               </div>
               <div className="leading-none">
-                <span className="text-lg font-extrabold tracking-tight text-white block">
+                <span className="text-base sm:text-lg font-extrabold tracking-tight text-white block">
                   FarmBridge<span className="text-[#A8E635]">.</span>
                 </span>
                 <span className="text-[10px] font-medium text-[#DFF4E4]/75 tracking-wide hidden sm:block">
@@ -310,16 +310,16 @@ export const Navbar: React.FC<NavbarProps> = ({
           </form>
 
           {/* Right Action Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               id="navbar-search-toggle"
               onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-              className="xl:hidden p-2 rounded-full text-[#DFF4E4]/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer"
+              className="xl:hidden p-1.5 sm:p-2 rounded-full text-[#DFF4E4]/85 hover:text-white hover:bg-white/12 transition-colors cursor-pointer"
               title="Search produce"
               aria-label="Search produce"
             >
-              <Search className="w-5 h-5" />
+              <Search className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             {isSellerRole(user?.role) && onOpenAddProduct && (
@@ -339,7 +339,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="button"
                 id="navbar-messages-btn"
                 onClick={() => handleNav('messages', { channel: 'direct' })}
-                className={`relative p-2 rounded-full transition-colors cursor-pointer ${
+                className={`hidden sm:inline-flex relative p-2 rounded-full transition-colors cursor-pointer ${
                   currentView === 'messages'
                     ? 'bg-[#A8E635]/20 text-[#A8E635]'
                     : 'text-[#DFF4E4]/85 hover:text-white hover:bg-white/12'
@@ -367,7 +367,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     handleNav('notifications');
                   }
                 }}
-                className={`relative p-2 rounded-full transition-colors cursor-pointer ${
+                className={`hidden sm:inline-flex relative p-2 rounded-full transition-colors cursor-pointer ${
                   currentView === 'notifications'
                     ? 'bg-[#A8E635]/20 text-[#A8E635]'
                     : 'text-[#DFF4E4]/85 hover:text-white hover:bg-white/12'
@@ -394,11 +394,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   openCart();
                 }
               }}
-              className="relative p-2 rounded-full bg-white/10 hover:bg-white/18 border border-white/15 text-white transition-colors cursor-pointer"
+              className="relative p-1.5 sm:p-2 rounded-full bg-white/10 hover:bg-white/18 border border-white/15 text-white transition-colors cursor-pointer"
               title="Shopping Cart"
               aria-label={`Shopping Cart (${totalItems} items)`}
             >
-              <ShoppingBag className="w-5 h-5" />
+              <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5" />
               {totalItems > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#A8E635] text-[#062B1F] text-[10px] font-extrabold flex items-center justify-center tabular-nums shadow-xs">
                   {totalItems}
@@ -407,16 +407,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             {user ? (
-              <div ref={dropdownRef} className="relative pl-1.5 sm:pl-2.5 border-l border-white/15">
+              <div ref={dropdownRef} className="relative pl-1 sm:pl-2.5 border-l border-white/15">
                 <button
                   type="button"
                   id="navbar-user-menu-btn"
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2 p-1 pr-2 rounded-full bg-white/8 hover:bg-white/15 border border-white/15 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] cursor-pointer"
+                  className="flex items-center gap-2 p-0.5 sm:p-1 sm:pr-2 rounded-full bg-white/8 hover:bg-white/15 border border-white/15 transition-colors text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#A8E635] cursor-pointer"
                   aria-label="User account menu"
                   aria-expanded={userDropdownOpen}
                 >
-                  <div className="w-8 h-8 rounded-full bg-[#145A38] border border-[#A8E635]/60 overflow-hidden flex items-center justify-center shrink-0">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#145A38] border border-[#A8E635]/60 overflow-hidden flex items-center justify-center shrink-0">
                     {user.avatar ? (
                       <img
                         src={user.avatar}
@@ -455,14 +455,25 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                     <div className="py-1">
                       {isSellerRole(user.role) && (
-                        <button
-                          type="button"
-                          onClick={() => handleNav('farmer_dashboard')}
-                          className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
-                        >
-                          <LayoutDashboard className="w-4 h-4 text-[#A8E635]" />
-                          {user.role === 'fodder_supplier' ? 'Fodder Supplier Portal' : 'Farmer Portal'}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleNav('farmer_dashboard')}
+                            className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
+                          >
+                            <LayoutDashboard className="w-4 h-4 text-[#A8E635]" />
+                            {user.role === 'fodder_supplier' ? 'Fodder Supplier Portal' : 'Farmer Portal'}
+                          </button>
+                          <button
+                            type="button"
+                            id="navbar-my-farm-profile-btn"
+                            onClick={() => handleNav('farm_profile', { farmerId: user.id })}
+                            className="w-full text-left px-4 py-2 text-xs text-[#DFF4E4] hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-semibold cursor-pointer"
+                          >
+                            <Store className="w-4 h-4 text-[#A8E635]" />
+                            My Farm Profile &amp; Updates
+                          </button>
+                        </>
                       )}
 
                       {user.role === 'buyer' && (
@@ -551,12 +562,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 pl-1.5 sm:pl-2.5 border-l border-white/15">
+              <div className="flex items-center gap-1.5 sm:gap-2 pl-1 sm:pl-2.5 border-l border-white/15">
                 <button
                   type="button"
                   id="navbar-login-btn"
                   onClick={() => onOpenAuth('login')}
-                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/25 rounded-full transition-colors whitespace-nowrap cursor-pointer"
+                  className="px-2.5 sm:px-3.5 py-1.5 text-[11px] sm:text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/25 rounded-full transition-colors whitespace-nowrap cursor-pointer"
                 >
                   Log In
                 </button>
@@ -575,7 +586,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               id="navbar-mobile-toggle"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-full text-[#DFF4E4] hover:bg-white/12 md:hidden cursor-pointer"
+              className="p-1.5 sm:p-2 rounded-full text-[#DFF4E4] hover:bg-white/12 md:hidden cursor-pointer shrink-0"
               aria-label="Toggle navigation menu"
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -677,6 +688,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {user && (
               <>
+                {isSellerRole(user.role) && (
+                  <button
+                    type="button"
+                    onClick={() => handleNav('farm_profile', { farmerId: user.id })}
+                    className="flex items-center gap-2 p-3 min-h-[44px] rounded-2xl text-xs text-white bg-white/10 border border-white/15 font-semibold text-left cursor-pointer col-span-2"
+                  >
+                    <Store className="w-4 h-4 text-[#A8E635] shrink-0" />
+                    <span>My Farm Profile &amp; Updates</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => handleNav('orders')}

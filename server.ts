@@ -1847,8 +1847,11 @@ async function startServer() {
         location
       } = req.body || {};
 
-      if (!farmerId || !caption || !Array.isArray(media) || media.length === 0) {
-        return res.status(400).json({ error: 'Farmer ID, caption, and at least one photo or video are required.' });
+      const safeMedia = Array.isArray(media) ? media.filter((m: any) => m && typeof m.url === 'string' && m.url.trim()) : [];
+      const cleanCaption = caption ? String(caption).trim() : '';
+
+      if (!farmerId || (!cleanCaption && safeMedia.length === 0)) {
+        return res.status(400).json({ error: 'Farmer ID and a caption or media attachment are required.' });
       }
 
       const farmer = store.getUserById(farmerId);
@@ -1867,8 +1870,8 @@ async function startServer() {
           'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&q=80&w=400',
         farmName: farmName || farmer?.farmerProfile?.farmName || `${farmerName || 'Local'}'s Farm`,
         sellerRole: sellerRole || farmer?.role || 'farmer',
-        media,
-        caption: String(caption).trim(),
+        media: safeMedia,
+        caption: cleanCaption || 'Farm Harvest Update',
         description: description ? String(description).trim() : undefined,
         productName: productName ? String(productName).trim() : undefined,
         price: parsedPrice !== undefined && Number.isFinite(parsedPrice) ? parsedPrice : undefined,

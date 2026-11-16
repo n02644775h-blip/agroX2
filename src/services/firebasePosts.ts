@@ -90,10 +90,12 @@ export function subscribeToFirebasePosts(
 
 export async function saveFirebasePost(post: MediaPost): Promise<void> {
   if (!post?.id || !post?.farmerId) {
-    throw new Error('Cannot save showcase post without a valid post ID and farmer ID.');
+    throw new Error('Cannot save post without a valid post ID and farmer ID.');
   }
-  if (!Array.isArray(post.media) || post.media.length === 0) {
-    throw new Error('Cannot save showcase post without at least one uploaded media item.');
+  const hasMedia = Array.isArray(post.media) && post.media.length > 0;
+  const hasCaption = Boolean(post.caption && String(post.caption).trim());
+  if (!hasMedia && !hasCaption) {
+    throw new Error('Please write an update caption or attach a photo/video.');
   }
   try {
     const docRef = doc(db, 'mediaPosts', post.id);
@@ -101,6 +103,7 @@ export async function saveFirebasePost(post: MediaPost): Promise<void> {
       docRef,
       sanitizeForFirestore({
         ...post,
+        media: Array.isArray(post.media) ? post.media : [],
         updatedAt: serverTimestamp()
       }),
       { merge: true }

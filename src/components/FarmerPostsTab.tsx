@@ -143,29 +143,45 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
     return raw;
   };
 
-  const mergePosts = (incoming: MediaPost[]) => {
-    setPosts((prev) => {
-      const map = new Map<string, MediaPost>();
-      for (const p of prev) {
-        if (p.farmerId === user.id) map.set(p.id, p);
+  const apiPostsRef = useRef<MediaPost[]>([]);
+  const fsPostsRef = useRef<MediaPost[] | null>(null);
+  const deletedPostIdsRef = useRef<Set<string>>(new Set());
+
+  const reconcilePosts = () => {
+    const map = new Map<string, MediaPost>();
+    for (const p of apiPostsRef.current) {
+      if (p.farmerId === user.id && !deletedPostIdsRef.current.has(p.id)) {
+        map.set(p.id, p);
       }
-      for (const p of incoming) {
-        if (p.farmerId === user.id) map.set(p.id, p);
+    }
+    if (fsPostsRef.current !== null) {
+      for (const p of fsPostsRef.current) {
+        if (p.farmerId === user.id && !deletedPostIdsRef.current.has(p.id)) {
+          map.set(p.id, p);
+        }
       }
-      return Array.from(map.values()).sort(
+    }
+    setPosts(
+      Array.from(map.values()).sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-    });
+      )
+    );
   };
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    apiPostsRef.current = [];
+    fsPostsRef.current = null;
+    deletedPostIdsRef.current.clear();
 
     api
       .getMediaPosts(user.id)
       .then((list) => {
-        if (active && Array.isArray(list)) mergePosts(list);
+        if (active && Array.isArray(list)) {
+          apiPostsRef.current = list;
+          reconcilePosts();
+        }
       })
       .catch((err) => console.warn('Could not load farmer posts from API:', err))
       .finally(() => {
@@ -175,10 +191,18 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
     const unsub = subscribeToFirebasePosts(
       user.id,
       (fsPosts) => {
-        if (active && fsPosts.length > 0) {
-          mergePosts(fsPosts);
-        }
-        if (active) setLoading(false);
+        if (!active) return;
+        const previousFsIds = new Set<string>((fsPostsRef.current || []).map((p) => p.id));
+        const currentFsIds = new Set<string>(fsPosts.map((p) => p.id));
+        previousFsIds.forEach((id: string) => {
+          if (!currentFsIds.has(id)) {
+            deletedPostIdsRef.current.add(id);
+          }
+        });
+        fsPosts.forEach((p) => deletedPostIdsRef.current.delete(p.id));
+        fsPostsRef.current = fsPosts;
+        reconcilePosts();
+        setLoading(false);
       },
       (err) => console.warn('Firebase posts sub warning:', err)
     );
@@ -477,12 +501,8 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
       return;
     }
 
-    if (mediaItems.length === 0) {
-      setErrorMsg('Please upload at least one image or video for your showcase post.');
-      return;
-    }
-    if (!caption.trim()) {
-      setErrorMsg('Please add a caption describing what you are showcasing.');
+    if (!caption.trim() && mediaItems.length === 0) {
+      setErrorMsg('Please write an update caption or upload a photo/video.');
       return;
     }
 
@@ -554,7 +574,12 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
       }
 
       pendingStoragePathsRef.current = [];
-      mergePosts([savedPost]);
+      deletedPostIdsRef.current.delete(savedPost.id);
+      apiPostsRef.current = [savedPost, ...apiPostsRef.current.filter((p) => p.id !== savedPost.id)];
+      if (fsPostsRef.current) {
+        fsPostsRef.current = [savedPost, ...fsPostsRef.current.filter((p) => p.id !== savedPost.id)];
+      }
+      reconcilePosts();
       setIsFormOpen(false);
       resetForm(false);
     } catch (err: any) {
@@ -577,7 +602,12 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
       }
       await api.deleteMediaPost(postId, user.id).catch(() => {});
       await deleteFirebasePost(postId);
-      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      deletedPostIdsRef.current.add(postId);
+      apiPostsRef.current = apiPostsRef.current.filter((p) => p.id !== postId);
+      if (fsPostsRef.current) {
+        fsPostsRef.current = fsPostsRef.current.filter((p) => p.id !== postId);
+      }
+      reconcilePosts();
       setConfirmDeleteId(null);
       setStatusMsg('Post deleted from FarmBridge Community.');
     } catch (err: any) {
@@ -665,7 +695,7 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-bold text-[#062B1F]">
-                  Photos or Videos * (JPG, PNG, WebP, HEIC/HEIF ≤15MB • MP4, WebM, MOV ≤50MB)
+                  Photos or Videos (Optional — JPG, PNG, WebP, HEIC ≤15MB • MP4, WebM, MOV ≤50MB)
                 </label>
                 <span className="text-[11px] text-[#0B3D2B]/70 tabular-nums">
                   {mediaItems.length}/6 uploaded
@@ -785,12 +815,12 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
             {/* Post Details */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div className="sm:col-span-2">
-                <label className="font-bold text-[#062B1F] block mb-1">Caption *</label>
+                <label className="font-bold text-[#062B1F] block mb-1">Update Headline / Caption *</label>
                 <input
                   type="text"
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
-                  placeholder="e.g. Morning harvest of greenhouse Roma tomatoes ready for dispatch!"
+                  placeholder="Share a farm update, new harvest alert, stock arrival, or seasonal note..."
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white/85 border border-[#0B3D2B]/20 text-[#062B1F] focus:outline-none focus:ring-2 focus:ring-[#145A38]/25"
                   required
                 />
@@ -963,36 +993,51 @@ export const FarmerPostsTab: React.FC<FarmerPostsTabProps> = ({ user, products }
                 interactive
                 className="overflow-hidden flex flex-col"
               >
-                <div className="relative aspect-[4/3] bg-[#062B1F]">
-                  {leadMedia?.type === 'video' ? (
-                    <video
-                      src={leadMedia.url}
-                      poster={leadMedia.thumbnailUrl}
-                      controls
-                      muted
-                      playsInline
-                      preload="metadata"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : leadMedia ? (
-                    <img
-                      src={leadMedia.url}
-                      alt={post.caption}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : null}
-                  {post.media.length > 1 && (
-                    <span className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white text-[11px] font-bold">
-                      1 / {post.media.length}
+                {leadMedia ? (
+                  <div className="relative aspect-[4/3] bg-[#062B1F]">
+                    {leadMedia.type === 'video' ? (
+                      <video
+                        src={leadMedia.url}
+                        poster={leadMedia.thumbnailUrl}
+                        controls
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <img
+                        src={leadMedia.url}
+                        alt={post.caption}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+                    {post.media.length > 1 && (
+                      <span className="absolute top-2.5 right-2.5 px-2.5 py-1 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white text-[11px] font-bold">
+                        1 / {post.media.length}
+                      </span>
+                    )}
+                    {post.price !== undefined && (
+                      <span className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-xl bg-white/95 text-[#062B1F] text-xs font-extrabold shadow-xs tabular-nums">
+                        ${post.price.toFixed(2)}
+                        {post.unit ? `/${post.unit}` : ''}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="px-4 pt-4 pb-3 bg-linear-to-br from-[#062B1F] to-[#145A38] text-white flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#A8E635]">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Farm Update
                     </span>
-                  )}
-                  {post.price !== undefined && (
-                    <span className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-xl bg-white/95 text-[#062B1F] text-xs font-extrabold shadow-xs tabular-nums">
-                      ${post.price.toFixed(2)}
-                      {post.unit ? `/${post.unit}` : ''}
-                    </span>
-                  )}
-                </div>
+                    {post.price !== undefined && (
+                      <span className="px-2.5 py-0.5 rounded-full bg-white text-[#062B1F] text-xs font-extrabold tabular-nums">
+                        ${post.price.toFixed(2)}
+                        {post.unit ? `/${post.unit}` : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                   <div className="space-y-1.5">

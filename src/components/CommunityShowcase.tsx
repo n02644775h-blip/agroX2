@@ -49,15 +49,25 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
 
-  const mergePosts = (incoming: MediaPost[]) => {
-    setPosts(prev => {
-      const map = new Map<string, MediaPost>();
-      for (const p of prev) map.set(p.id, p);
-      for (const p of incoming) map.set(p.id, p);
-      return Array.from(map.values()).sort(
+  const apiPostsRef = useRef<MediaPost[]>([]);
+  const fsPostsRef = useRef<MediaPost[] | null>(null);
+  const deletedIdsRef = useRef<Set<string>>(new Set());
+
+  const reconcilePosts = () => {
+    const map = new Map<string, MediaPost>();
+    for (const p of apiPostsRef.current) {
+      if (!deletedIdsRef.current.has(p.id)) map.set(p.id, p);
+    }
+    if (fsPostsRef.current !== null) {
+      for (const p of fsPostsRef.current) {
+        if (!deletedIdsRef.current.has(p.id)) map.set(p.id, p);
+      }
+    }
+    setPosts(
+      Array.from(map.values()).sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-    });
+      )
+    );
   };
 
   useEffect(() => {
@@ -65,7 +75,10 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
     api
       .getMediaPosts()
       .then(list => {
-        if (active && Array.isArray(list)) mergePosts(list);
+        if (active && Array.isArray(list)) {
+          apiPostsRef.current = list;
+          reconcilePosts();
+        }
       })
       .catch(err => console.warn('Could not load community posts:', err))
       .finally(() => {
@@ -75,8 +88,16 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
     const unsub = subscribeToFirebasePosts(
       undefined,
       fsPosts => {
-        if (active && fsPosts.length > 0) mergePosts(fsPosts);
-        if (active) setLoading(false);
+        if (!active) return;
+        const prevIds = new Set<string>((fsPostsRef.current || []).map(p => p.id));
+        const nextIds = new Set<string>(fsPosts.map(p => p.id));
+        prevIds.forEach((id: string) => {
+          if (!nextIds.has(id)) deletedIdsRef.current.add(id);
+        });
+        fsPosts.forEach(p => deletedIdsRef.current.delete(p.id));
+        fsPostsRef.current = fsPosts;
+        reconcilePosts();
+        setLoading(false);
       },
       err => console.warn('Community posts subscription warning:', err)
     );
@@ -293,89 +314,108 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
                   )}
                 </div>
 
-                {/* Media Viewport */}
-                <div className="relative aspect-[4/3] bg-[#DFF4E4]/40 overflow-hidden group">
-                  {lead?.type === 'video' ? (
-                    <>
-                      <video
-                        ref={el => {
-                          videoRefs.current[post.id] = el;
-                        }}
-                        src={lead.url}
-                        poster={lead.thumbnailUrl}
-                        muted={!isUnmuted}
-                        playsInline
-                        preload="metadata"
-                        onEnded={() => setActiveVideoPostId(null)}
-                        onClick={() => handleToggleVideoPlay(post.id)}
-                        className="w-full h-full object-cover cursor-pointer"
-                      />
-                      <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleMute(post.id)}
-                          className="w-8 h-8 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white flex items-center justify-center hover:bg-[#062B1F] cursor-pointer"
-                          aria-label={isUnmuted ? 'Mute video' : 'Unmute video'}
-                        >
-                          {isUnmuted ? (
-                            <Volume2 className="w-4 h-4" />
-                          ) : (
-                            <VolumeX className="w-4 h-4" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
+                {/* Media Viewport (or Typographic Liquid Glass Update Strip if text-only) */}
+                {(lead || post.media.length > 0) ? (
+                  <div className="relative aspect-[4/3] bg-[#DFF4E4]/40 overflow-hidden group">
+                    {lead?.type === 'video' ? (
+                      <>
+                        <video
+                          ref={el => {
+                            videoRefs.current[post.id] = el;
+                          }}
+                          src={lead.url}
+                          poster={lead.thumbnailUrl}
+                          muted={!isUnmuted}
+                          playsInline
+                          preload="metadata"
+                          onEnded={() => setActiveVideoPostId(null)}
                           onClick={() => handleToggleVideoPlay(post.id)}
-                          className="w-8 h-8 rounded-full bg-[#A8E635] text-[#062B1F] flex items-center justify-center shadow-md cursor-pointer"
-                          aria-label={isVideoPlaying ? 'Pause video' : 'Play video'}
-                        >
-                          {isVideoPlaying ? (
-                            <Pause className="w-4 h-4" />
-                          ) : (
-                            <Play className="w-4 h-4 ml-0.5" />
-                          )}
-                        </button>
+                          className="w-full h-full object-cover cursor-pointer"
+                        />
+                        <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleMute(post.id)}
+                            className="w-8 h-8 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white flex items-center justify-center hover:bg-[#062B1F] cursor-pointer"
+                            aria-label={isUnmuted ? 'Mute video' : 'Unmute video'}
+                          >
+                            {isUnmuted ? (
+                              <Volume2 className="w-4 h-4" />
+                            ) : (
+                              <VolumeX className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleVideoPlay(post.id)}
+                            className="w-8 h-8 rounded-full bg-[#A8E635] text-[#062B1F] flex items-center justify-center shadow-md cursor-pointer"
+                            aria-label={isVideoPlaying ? 'Pause video' : 'Play video'}
+                          >
+                            {isVideoPlaying ? (
+                              <Pause className="w-4 h-4" />
+                            ) : (
+                              <Play className="w-4 h-4 ml-0.5" />
+                            )}
+                          </button>
+                        </div>
+                      </>
+                    ) : lead?.url && !mediaFailed ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalMediaIdx(0);
+                          setModalPost(post);
+                        }}
+                        className="w-full h-full block text-left cursor-pointer"
+                      >
+                        <img
+                          src={lead.url}
+                          alt={post.caption}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setFailedImages(prev => ({ ...prev, [`post-${post.id}`]: true }))
+                          }
+                          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
+                        />
+                      </button>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[#145A38]">
+                        <Sprout className="w-8 h-8 opacity-70" />
                       </div>
-                    </>
-                  ) : lead?.url && !mediaFailed ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalMediaIdx(0);
-                        setModalPost(post);
-                      }}
-                      className="w-full h-full block text-left cursor-pointer"
-                    >
-                      <img
-                        src={lead.url}
-                        alt={post.caption}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        onError={() =>
-                          setFailedImages(prev => ({ ...prev, [`post-${post.id}`]: true }))
-                        }
-                        className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
-                      />
-                    </button>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[#145A38]">
-                      <Sprout className="w-8 h-8 opacity-70" />
-                    </div>
-                  )}
+                    )}
 
-                  {post.media.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setModalMediaIdx(0);
-                        setModalPost(post);
-                      }}
-                      className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white text-[11px] font-bold cursor-pointer"
-                    >
-                      +{post.media.length - 1} more
-                    </button>
-                  )}
-                </div>
+                    {post.media.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalMediaIdx(0);
+                          setModalPost(post);
+                        }}
+                        className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full bg-[#062B1F]/80 backdrop-blur-md text-white text-[11px] font-bold cursor-pointer"
+                      >
+                        +{post.media.length - 1} more
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalMediaIdx(0);
+                      setModalPost(post);
+                    }}
+                    className="mx-3.5 mt-3 p-4 rounded-2xl bg-linear-to-br from-[#062B1F] to-[#145A38] text-left text-white space-y-1.5 border border-[#A8E635]/30 cursor-pointer hover:brightness-105 transition"
+                  >
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#A8E635]">
+                      <Sprout className="w-3.5 h-3.5" />
+                      <span>Producer Field Update</span>
+                    </div>
+                    <p className="text-xs text-[#DFF4E4]/90 line-clamp-3 leading-relaxed">
+                      {post.description || post.caption}
+                    </p>
+                  </button>
+                )}
 
                 {/* Caption & Interactions */}
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
@@ -483,61 +523,65 @@ export const CommunityShowcase: React.FC<CommunityShowcaseProps> = ({
           onClick={() => setModalPost(null)}
         >
           <div
-            className="bg-[#F8FAF7]/95 backdrop-blur-2xl rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl grid grid-cols-1 md:grid-cols-2 max-h-[90vh] border border-white/80"
+            className={`bg-[#F8FAF7]/95 backdrop-blur-2xl rounded-3xl w-full overflow-hidden shadow-2xl grid grid-cols-1 max-h-[90dvh] border border-white/80 ${
+              modalPost.media.length > 0 ? 'max-w-4xl md:grid-cols-2' : 'max-w-xl'
+            }`}
             onClick={e => e.stopPropagation()}
           >
-            <div className="relative bg-[#062B1F] flex items-center justify-center min-h-[260px] md:min-h-[420px]">
-              {(() => {
-                const item = modalPost.media?.[modalMediaIdx] || modalPost.media?.[0];
-                if (!item) return null;
-                return item.type === 'video' ? (
-                  <video
-                    src={item.url}
-                    poster={item.thumbnailUrl}
-                    controls
-                    muted={!unmutedPostIds[modalPost.id]}
-                    playsInline
-                    preload="metadata"
-                    className="w-full h-full max-h-[65vh] object-contain"
-                  />
-                ) : (
-                  <img
-                    src={item.url}
-                    alt={modalPost.caption}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full max-h-[65vh] object-contain"
-                  />
-                );
-              })()}
+            {modalPost.media.length > 0 && (
+              <div className="relative bg-[#062B1F] flex items-center justify-center min-h-[220px] md:min-h-[420px]">
+                {(() => {
+                  const item = modalPost.media?.[modalMediaIdx] || modalPost.media?.[0];
+                  if (!item) return null;
+                  return item.type === 'video' ? (
+                    <video
+                      src={item.url}
+                      poster={item.thumbnailUrl}
+                      controls
+                      muted={!unmutedPostIds[modalPost.id]}
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full max-h-[65vh] object-contain"
+                    />
+                  ) : (
+                    <img
+                      src={item.url}
+                      alt={modalPost.caption}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full max-h-[65vh] object-contain"
+                    />
+                  );
+                })()}
 
-              {modalPost.media.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setModalMediaIdx(idx =>
-                        idx === 0 ? modalPost.media.length - 1 : idx - 1
-                      )
-                    }
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black cursor-pointer"
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setModalMediaIdx(idx => (idx + 1) % modalPost.media.length)
-                    }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black cursor-pointer"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full bg-black/60 text-white text-[11px] font-semibold">
-                    {modalMediaIdx + 1} / {modalPost.media.length}
-                  </div>
-                </>
-              )}
-            </div>
+                {modalPost.media.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalMediaIdx(idx =>
+                          idx === 0 ? modalPost.media.length - 1 : idx - 1
+                        )
+                      }
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black cursor-pointer"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setModalMediaIdx(idx => (idx + 1) % modalPost.media.length)
+                      }
+                      className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black cursor-pointer"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-full bg-black/60 text-white text-[11px] font-semibold">
+                      {modalMediaIdx + 1} / {modalPost.media.length}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="p-5 sm:p-6 flex flex-col justify-between overflow-y-auto space-y-4">
               <div className="space-y-4">

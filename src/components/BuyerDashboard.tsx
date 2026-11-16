@@ -301,7 +301,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
 
                   {statusMeta.canonical !== 'cancelled' && (
                     <div className="bg-[#DFF4E4]/55 p-3 rounded-2xl border border-[#145A38]/12 space-y-2">
-                      <div className="grid grid-cols-4 gap-1.5">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {stages.map((st, idx) => {
                           const completed = currentIdx >= idx;
                           const isCurrent = currentIdx === idx;
@@ -315,7 +315,7 @@ export const BuyerDashboard: React.FC<BuyerDashboardProps> = ({
                                 />
                               </div>
                               <div
-                                className={`text-[10px] font-bold truncate ${
+                                className={`text-[11px] font-bold leading-snug ${
                                   isCurrent
                                     ? 'text-[#062B1F]'
                                     : completed

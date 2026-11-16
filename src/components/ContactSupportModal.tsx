@@ -198,7 +198,7 @@ export const ContactSupportModal: React.FC<ContactSupportModalProps> = ({
                     key={opt.id}
                     type="button"
                     onClick={() => setRequestType(opt.id as 'name' | 'phone' | 'both')}
-                    className={`py-2.5 px-2 rounded-xl font-bold border text-center transition-all cursor-pointer min-h-[40px] ${
+                    className={`py-2 px-1.5 sm:px-2 rounded-xl text-[11px] sm:text-xs font-bold leading-tight border text-center transition-all cursor-pointer min-h-[40px] ${
                       requestType === opt.id
                         ? 'bg-[#062B1F] text-[#A8E635] border-[#062B1F] shadow-xs'
                         : 'bg-white/80 text-[#0B3D2B] border-[#062B1F]/15 hover:bg-[#DFF4E4]/50'

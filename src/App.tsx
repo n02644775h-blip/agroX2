@@ -446,6 +446,12 @@ export function App() {
       window.scrollTo({ top: 0, behavior: 'auto' });
     }
 
+    if (view === 'farm_profile' && data?.farmerId) {
+      setSelectedFarmerId(data.farmerId);
+    }
+    if (view === 'farm_profile' && data?.farmerId) {
+      setSelectedFarmerId(data.farmerId);
+    }
     if (view === 'orders' && data?.selectedOrder) {
       setSelectedOrderForTracking(data.selectedOrder);
     }
@@ -542,7 +548,7 @@ export function App() {
       isAndroidView={isAndroidView}
       setIsAndroidView={setIsAndroidView}
     >
-      <div className="min-h-screen bg-[#F8FAF7] text-[#0B261C] flex flex-col selection:bg-[#A8E635] selection:text-[#062B1F] pb-20 md:pb-0 relative">
+      <div className="min-h-screen bg-[#F8FAF7] text-[#0B261C] flex flex-col selection:bg-[#A8E635] selection:text-[#062B1F] pb-20 md:pb-0 relative overflow-x-clip">
         <LiquidGlassDefs />
 
         {/* Browser Cookie & Storage Access Authorization Banner */}
@@ -711,6 +717,7 @@ export function App() {
               onBack={() => setCurrentView('marketplace')}
               onSelectProduct={setSelectedProduct}
               onContactFarmer={handleContactFarmerFromUser}
+              onRequestQuote={handleRequestQuoteFromPost}
             />
           )}
         </main>

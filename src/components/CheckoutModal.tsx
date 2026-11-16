@@ -436,7 +436,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </h3>
           <div className="divide-y divide-[#0B3D2B]/10 border border-[#0B3D2B]/12 rounded-2xl overflow-hidden max-h-48 overflow-y-auto bg-white/80 backdrop-blur-md">
             {items.map((item) => (
-              <div key={item.product.id} className="p-3 flex items-center justify-between gap-3">
+              <div key={item.product.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <img
                     src={item.product.images?.[0]}
@@ -452,7 +452,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 shrink-0">
+                <div className="flex items-center justify-end sm:justify-start gap-2.5 shrink-0">
                   <div className="flex items-center border border-[#0B3D2B]/18 rounded-xl bg-[#F8FAF7] text-xs">
                     <button
                       type="button"
@@ -713,7 +713,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           ) : (
             <div className="p-4 rounded-2xl border border-[#145A38]/25 bg-[#DFF4E4]/55 space-y-3 text-xs">
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <h4 className="font-bold text-[#062B1F] flex items-center gap-1.5">
                     <MapPin className="w-4 h-4 text-[#145A38]" />
@@ -857,7 +857,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       key={m.id}
                       type="button"
                       onClick={() => setElectronicMethod(m.id as any)}
-                      className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                      className={`p-2 sm:p-2.5 rounded-xl border text-[11px] sm:text-xs font-bold flex flex-col items-center gap-1 text-center leading-tight transition-all cursor-pointer ${
                         active
                           ? 'border-[#062B1F] bg-[#062B1F] text-[#A8E635] shadow-md'
                           : 'border-[#0B3D2B]/14 bg-white text-[#2B4338] hover:bg-[#DFF4E4]/50'

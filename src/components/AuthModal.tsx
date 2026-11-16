@@ -310,20 +310,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
           animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 360, damping: 28 }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-4xl rounded-[32px] overflow-hidden shadow-[0_32px_90px_-16px_rgba(3,20,14,0.85)] border border-white/35 bg-[#062B1F] grid grid-cols-1 md:grid-cols-12 max-h-[94vh]"
+          className="relative w-full max-w-4xl rounded-2xl sm:rounded-[32px] overflow-y-auto md:overflow-hidden shadow-[0_32px_90px_-16px_rgba(3,20,14,0.85)] border border-white/35 bg-[#062B1F] flex flex-col md:grid md:grid-cols-12 max-h-[92dvh]"
         >
           {/* Close Button */}
           <button
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="absolute top-4 right-4 z-30 p-2 rounded-full bg-black/35 hover:bg-black/55 border border-white/25 text-white transition-colors cursor-pointer"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 p-2 rounded-full bg-black/35 hover:bg-black/55 border border-white/25 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
 
           {/* Left Visual Basket Showcase Pane */}
-          <div className="md:col-span-5 relative min-h-[210px] md:min-h-full overflow-hidden flex flex-col justify-between p-6 sm:p-8 text-white">
+          <div className="md:col-span-5 relative min-h-[140px] md:min-h-full overflow-hidden flex flex-col justify-between p-4 sm:p-8 text-white shrink-0">
             <img
               src={basketProduceImg}
               alt="Fresh harvest produce basket"
@@ -341,22 +341,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
               className="pointer-events-none absolute -bottom-24 -left-16 w-80 h-80 rounded-full border border-[#A8E635]/30 bg-[#145A38]/20"
             />
 
-            <div className="relative z-10 space-y-4">
-              <div className="inline-flex items-center gap-2.5">
-                <div className="w-9 h-9 flex items-center justify-center shrink-0">
+            <div className="relative z-10 space-y-2 sm:space-y-4">
+              <div className="inline-flex items-center gap-2">
+                <div className="w-7 h-7 sm:w-9 sm:h-9 flex items-center justify-center shrink-0">
                   <img
                     src="/assets/farmbridge-logo-white.png"
                     alt="FarmBridge logo"
                     className="w-full h-full object-contain drop-shadow-sm"
                   />
                 </div>
-                <span className="font-extrabold text-lg tracking-tight text-white">
+                <span className="font-extrabold text-base sm:text-lg tracking-tight text-white">
                   FarmBridge<span className="text-[#A8E635]">.</span>
                 </span>
               </div>
 
-              <div className="space-y-2.5 pt-2 md:pt-4">
-                <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold leading-[1.08] tracking-tight text-balance">
+              <div className="space-y-1.5 sm:space-y-2.5 pt-1 md:pt-4">
+                <h2 className="text-xl sm:text-3xl lg:text-4xl font-extrabold leading-[1.08] tracking-tight text-balance">
                   From the Farm to <span className="text-[#A8E635]">Your Table.</span>
                 </h2>
                 <p className="text-xs sm:text-sm text-[#DFF4E4]/90 leading-relaxed max-w-xs">
@@ -367,10 +367,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
           </div>
 
           {/* Right Frosted Glass Signup Form Pane */}
-          <div className="md:col-span-7 relative p-5 sm:p-7 overflow-y-auto max-h-[70vh] md:max-h-[94vh] bg-linear-to-br from-[#0E3F2C]/92 via-[#082E20]/96 to-[#062B1F] text-white">
+          <div className="md:col-span-7 relative p-4 sm:p-7 overflow-y-visible md:overflow-y-auto md:max-h-[94dvh] bg-linear-to-br from-[#0E3F2C]/92 via-[#082E20]/96 to-[#062B1F] text-white">
             <div className="max-w-md mx-auto space-y-4">
               <div className="text-center md:text-left pr-6">
-                <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+                <h3 className="text-lg sm:text-2xl font-extrabold text-white tracking-tight">
                   Create Your Account
                 </h3>
                 <p className="text-xs text-[#DFF4E4]/75 mt-0.5">
@@ -394,9 +394,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
 
               <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
                 {/* Role Selector Pills */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                   <label
-                    className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
+                    className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
                       role === 'buyer'
                         ? 'bg-linear-to-br from-[#A8E635] to-[#63BE2D] border-white/60 text-[#062B1F] font-extrabold shadow-md'
                         : 'bg-white/10 border-white/25 text-white/85 hover:bg-white/16'
@@ -410,11 +410,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                       className="sr-only"
                     />
                     <ShoppingBag className="w-4 h-4 shrink-0" />
-                    <span className="text-[11px]">Buyer</span>
+                    <span className="text-[10px] sm:text-[11px] leading-tight">Buyer</span>
                   </label>
 
                   <label
-                    className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
+                    className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
                       role === 'farmer'
                         ? 'bg-linear-to-br from-[#A8E635] to-[#63BE2D] border-white/60 text-[#062B1F] font-extrabold shadow-md'
                         : 'bg-white/10 border-white/25 text-white/85 hover:bg-white/16'
@@ -428,11 +428,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                       className="sr-only"
                     />
                     <Sprout className="w-4 h-4 shrink-0" />
-                    <span className="text-[11px]">Farmer</span>
+                    <span className="text-[10px] sm:text-[11px] leading-tight">Farmer</span>
                   </label>
 
                   <label
-                    className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
+                    className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl border cursor-pointer transition-all flex flex-col items-center justify-center gap-1 text-center ${
                       role === 'fodder_supplier'
                         ? 'bg-linear-to-br from-[#F4D35E] to-[#A8E635] border-white/60 text-[#062B1F] font-extrabold shadow-md'
                         : 'bg-white/10 border-white/25 text-white/85 hover:bg-white/16'
@@ -446,7 +446,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                       className="sr-only"
                     />
                     <Wheat className="w-4 h-4 shrink-0" />
-                    <span className="text-[11px]">Fodder Supplier</span>
+                    <span className="text-[10px] sm:text-[11px] leading-tight">Fodder Supplier</span>
                   </label>
                 </div>
 
@@ -539,7 +539,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
 
                   {!isTargetVerified && (
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={handleSendVerificationCode}
@@ -553,7 +553,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
                           )}
                           <span>{codeSent ? 'Resend Code' : 'Send 6-Digit Code'}</span>
                         </button>
-                        <span className="text-[11px] text-[#DFF4E4]/70 truncate">
+                        <span className="text-[11px] text-[#DFF4E4]/70 break-all">
                           {currentTarget ? `Target: ${currentTarget}` : `Enter ${verificationMethod} above`}
                         </span>
                       </div>
@@ -720,7 +720,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
           animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
           transition={{ type: 'spring', stiffness: 360, damping: 28 }}
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-md rounded-[34px] overflow-hidden shadow-[0_36px_96px_-18px_rgba(3,20,14,0.85)] border border-white/35 min-h-[560px] flex items-center justify-center p-5 sm:p-7"
+          className="relative w-full max-w-md rounded-2xl sm:rounded-[34px] overflow-hidden shadow-[0_36px_96px_-18px_rgba(3,20,14,0.85)] border border-white/35 min-h-0 sm:min-h-[540px] flex items-center justify-center p-3 sm:p-7"
         >
           {/* Full Meadow Landscape Backdrop inside Auth Stage */}
           <img
@@ -734,13 +734,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="absolute top-4 right-4 z-30 p-2 rounded-full bg-black/35 hover:bg-black/55 border border-white/30 text-white transition-colors cursor-pointer"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 p-2 rounded-full bg-black/35 hover:bg-black/55 border border-white/30 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
 
           {/* Centered Frosted Liquid Glass Login Card */}
-          <div className="relative z-10 w-full rounded-[28px] lg-glass-frosted p-6 sm:p-7 text-white space-y-5">
+          <div className="relative z-10 w-full rounded-2xl sm:rounded-[28px] lg-glass-frosted p-4 sm:p-7 text-white space-y-4 sm:space-y-5">
             <div className="space-y-1">
               {mode === 'forgot_password' && (
                 <button

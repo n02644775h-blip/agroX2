@@ -740,8 +740,8 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
     <div className="relative pb-16">
       {/* Live Order Toast */}
       {orderToast && (
-        <div className="fixed bottom-6 right-6 z-50 lg-glass-dark text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-[#A8E635]/40 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-[#A8E635]" />
+        <div className="fixed bottom-24 right-4 left-4 sm:left-auto sm:right-6 md:bottom-6 z-50 lg-glass-dark text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-[#A8E635]/40 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[#A8E635] shrink-0" />
           <span>{orderToast}</span>
         </div>
       )}
@@ -1688,7 +1688,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
 
                         {/* Stage Progress Indicator */}
                         {!isCancelled && (
-                          <div className="grid grid-cols-4 gap-2 bg-[#DFF4E4]/55 p-3 rounded-2xl border border-[#145A38]/12">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#DFF4E4]/55 p-3 rounded-2xl border border-[#145A38]/12">
                             {stages.map((st, idx) => {
                               const completed = currentStageIdx >= idx;
                               const isCurrent = currentStageIdx === idx;

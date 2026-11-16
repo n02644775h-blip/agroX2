@@ -848,8 +848,8 @@ export const AdminDashboard: React.FC = () => {
     <div className="flex flex-col lg:flex-row gap-6 pb-16">
       {/* Toast Notification */}
       {syncToast && (
-        <div className="fixed bottom-6 right-6 z-50 lg-glass-dark text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-[#A8E635]/40 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-[#A8E635]" />
+        <div className="fixed bottom-24 right-4 left-4 sm:left-auto sm:right-6 md:bottom-6 z-50 lg-glass-dark text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-[#A8E635]/40 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-[#A8E635] shrink-0" />
           <span>{syncToast}</span>
         </div>
       )}

@@ -569,22 +569,22 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
       {/* Primary Channel Selector Header Bar */}
       <LiquidGlassCard variant="mint" className="p-2.5 sm:p-3">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
             <button
               id="tab-public-announcements-chat"
               type="button"
               onClick={() => setActiveTab('announcements')}
-              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer text-center whitespace-normal sm:whitespace-nowrap ${
                 activeTab === 'announcements'
                   ? 'bg-[#062B1F] text-[#A8E635] shadow-md'
                   : 'text-[#0B3D2B] hover:bg-white/70'
               }`}
             >
-              <Megaphone className="w-4 h-4 text-[#A8E635]" />
-              <span>Public Admin Announcements</span>
+              <Megaphone className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#A8E635] shrink-0" />
+              <span>Public Announcements</span>
               {announcementsCount > 0 && (
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold tabular-nums ${
+                  className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[10px] font-extrabold tabular-nums shrink-0 ${
                     activeTab === 'announcements'
                       ? 'bg-[#145A38] text-white'
                       : 'bg-[#DFF4E4] text-[#062B1F]'
@@ -599,15 +599,15 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
               id="tab-direct-p2p-messages"
               type="button"
               onClick={() => setActiveTab('direct')}
-              className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`px-2.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer text-center whitespace-normal sm:whitespace-nowrap ${
                 activeTab === 'direct'
                   ? 'bg-[#062B1F] text-[#A8E635] shadow-md'
                   : 'text-[#0B3D2B] hover:bg-white/70'
               }`}
             >
-              <MessageSquare className="w-4 h-4 text-[#A8E635]" />
-              <span>Direct Messages (1-on-1)</span>
-              <span className="text-[10px] opacity-75 font-normal tabular-nums">({conversations.length})</span>
+              <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#A8E635] shrink-0" />
+              <span>Direct Messages</span>
+              <span className="text-[10px] opacity-75 font-normal tabular-nums shrink-0">({conversations.length})</span>
             </button>
           </div>
 
@@ -624,7 +624,7 @@ export const MessagingHub: React.FC<MessagingHubProps> = ({
       ) : (
         /* Direct Messages Interface */
         <LiquidGlassCard variant="light" className="overflow-hidden p-0">
-          <div className="min-h-[620px] flex flex-col md:flex-row">
+          <div className="min-h-[460px] md:min-h-[600px] flex flex-col md:flex-row">
             {/* Left Sidebar: Conversations */}
             <div
               className={`w-full md:w-80 border-r border-[#062B1F]/10 flex-col bg-white/45 ${

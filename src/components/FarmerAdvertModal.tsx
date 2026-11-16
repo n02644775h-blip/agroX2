@@ -945,7 +945,7 @@ export const FarmerAdvertModal: React.FC<FarmerAdvertModalProps> = ({
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2 bg-[#DFF4E4]/45 p-3 rounded-xl border border-[#145A38]/12 text-[11px] tabular-nums">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-[#DFF4E4]/45 p-3 rounded-xl border border-[#145A38]/12 text-[11px] tabular-nums">
                       <div>
                         <div className="text-[#0B3D2B]/65 font-medium">Start Date</div>
                         <div className="font-bold text-[#062B1F]">
