@@ -27,6 +27,7 @@ import {
   subscribeToFirebaseAdminAuditLogs
 } from '../services/firebaseSupportRequests';
 import { AdminEditFarmerModal } from './AdminEditFarmerModal';
+import { AdminTariroPanel } from './AdminTariroPanel';
 import {
   subscribeToFirebaseAnnouncements,
   createFirebaseAnnouncement,
@@ -81,7 +82,8 @@ import {
   Headphones,
   History,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  Bot
 } from 'lucide-react';
 import {
   BarChart,
@@ -110,7 +112,8 @@ type AdminTabId =
   | 'products'
   | 'reports'
   | 'announcements'
-  | 'categories';
+  | 'categories'
+  | 'tariro_ai';
 
 export const AdminDashboard: React.FC = () => {
   const { user: adminUser, updateUserProfile } = useAuth();
@@ -853,7 +856,13 @@ export const AdminDashboard: React.FC = () => {
     { id: 'products', label: 'Catalog Moderation', icon: <ShoppingBag className="w-4 h-4" />, badge: products.length },
     { id: 'reports', label: 'Reports', icon: <AlertTriangle className="w-4 h-4" />, badge: pendingReportsCount },
     { id: 'announcements', label: 'Broadcasts', icon: <Megaphone className="w-4 h-4" />, badge: announcementsList.length },
-    { id: 'categories', label: 'Categories', icon: <Tag className="w-4 h-4" />, badge: categories.length }
+    { id: 'categories', label: 'Categories', icon: <Tag className="w-4 h-4" />, badge: categories.length },
+    {
+      id: 'tariro_ai',
+      label: 'TARIRO AI & Library',
+      icon: <Bot className="w-4 h-4" />,
+      buttonId: 'admin-sidebar-tariro-btn'
+    }
   ];
 
   return (
@@ -2194,6 +2203,17 @@ export const AdminDashboard: React.FC = () => {
               )}
             </LiquidGlassCard>
           </div>
+        )}
+
+        {/* TARIRO AI Knowledge Library & Governance Tab */}
+        {activeTab === 'tariro_ai' && adminUser && (
+          <AdminTariroPanel
+            adminId={adminUser.id}
+            onNotice={(msg) => {
+              setSyncToast(msg);
+              setTimeout(() => setSyncToast(null), 4000);
+            }}
+          />
         )}
       </div>
 

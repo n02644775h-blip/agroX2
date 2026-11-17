@@ -560,3 +560,137 @@ export interface AdminAuditLog {
   timestamp: string;
 }
 
+export interface PushSubscriptionMeta {
+  id: string;
+  userId: string;
+  token: string;
+  platform: 'web' | 'android' | 'ios';
+  provider: 'fcm' | 'web_notification' | 'capacitor_local';
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TariroLanguage = 'auto' | 'en' | 'sn' | 'nd';
+
+export type KnowledgeDocSourceType = 'pdf' | 'docx' | 'txt' | 'md' | 'manual';
+
+export interface KnowledgeDocument {
+  id: string;
+  title: string;
+  question?: string;
+  alternativeQuestions?: string[];
+  category: string;
+  language: 'en' | 'sn' | 'nd' | 'multilingual';
+  sourceType: KnowledgeDocSourceType;
+  fileName?: string;
+  fileSize?: number;
+  tags: string[];
+  summary: string;
+  content?: string;
+  followUpQuestions?: string[];
+  sourceOrganization?: string;
+  sourceReference?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewStatus?: 'verified' | 'needs_review' | 'draft';
+  chunkCount: number;
+  charCount: number;
+  active: boolean;
+  uploadedBy: string;
+  isBuiltIn?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TariroCitation {
+  docId: string;
+  title: string;
+  category: string;
+  excerpt: string;
+  sourceOrganization?: string;
+  reviewedAt?: string;
+  confidenceScore?: number;
+}
+
+export interface TariroMatchedProduct {
+  id: string;
+  name: string;
+  price: number;
+  unit: string;
+  farmName: string;
+  farmerName: string;
+  city: string;
+  province: string;
+  availability: string;
+  quantityAvailable: number;
+  categoryName: string;
+  image?: string;
+}
+
+export interface TariroChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  language?: 'en' | 'sn' | 'nd';
+  topic?: string;
+  timestamp: string;
+  interactionId?: string;
+  citations?: TariroCitation[];
+  matchedProducts?: TariroMatchedProduct[];
+  followUpQuestions?: string[];
+  confidenceScore?: number;
+  confidenceBand?: 'high' | 'moderate' | 'low';
+  needsClarification?: boolean;
+  correctedTerms?: string[];
+  lowConfidence?: boolean;
+  feedbackGiven?: 'helpful' | 'not_helpful';
+  error?: boolean;
+}
+
+export interface TariroFeedbackEntry {
+  id: string;
+  interactionId: string;
+  userId?: string;
+  userRole?: string;
+  question: string;
+  answerSnippet: string;
+  rating: 'helpful' | 'not_helpful';
+  comment?: string;
+  language?: string;
+  createdAt: string;
+}
+
+export interface TariroUnansweredQuestion {
+  id: string;
+  question: string;
+  language: string;
+  userId?: string;
+  userRole?: string;
+  reason: string;
+  botReplySnippet?: string;
+  status: 'open' | 'resolved';
+  resolvedDocId?: string;
+  adminNotes?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface TariroAnalyticsSummary {
+  knowledgeEngineMode: 'free_local_kb';
+  geminiConfigured?: boolean;
+  totalQueries: number;
+  helpfulCount: number;
+  notHelpfulCount: number;
+  openUnansweredCount: number;
+  activeDocumentsCount: number;
+  totalDocumentsCount: number;
+  totalChunksCount: number;
+  totalCategoriesCount: number;
+  languageBreakdown: Record<string, number>;
+  topTopics: { topic: string; count: number }[];
+  recentFeedback: TariroFeedbackEntry[];
+  unansweredQuestions: TariroUnansweredQuestion[];
+}
+
+

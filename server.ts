@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -7,7 +8,13 @@ import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { store } from './server/store';
-import { getVerificationEmailConfigStatus, sendCompanyVerificationEmail } from './server/emailMailer';
+import {
+  getVerificationEmailConfigStatus,
+  verifySmtpCredentials,
+  sendCompanyVerificationEmail
+} from './server/emailMailer';
+import { pushService } from './server/pushService';
+import { tariroService } from './server/tariroService';
 import { User, Product, Order, Review, Announcement, Report, ProductCategory } from './src/types';
 
 const execFileAsync = promisify(execFile);
@@ -389,6 +396,73 @@ async function startServer() {
     });
   });
 
+  // Raw knowledge document upload route (PDF, DOCX, TXT, MD)
+  app.post(
+    '/api/tariro/knowledge/upload',
+    express.raw({
+      limit: '25mb',
+      type: () => true
+    }),
+    async (req: Request, res: Response) => {
+      try {
+        const actingAdminId = (
+          extractAuthUserId(req) ||
+          String(req.headers['x-acting-admin-id'] || '').trim()
+        );
+        const actingAdmin = await tariroService.verifyAdminActor(actingAdminId);
+        if (!actingAdmin) {
+          return res.status(403).json({
+            error: 'Unauthorized: active administrator privileges are required to upload knowledge documents.'
+          });
+        }
+
+        const buffer = req.body as Buffer;
+        if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+          return res.status(400).json({ error: 'No document file received.' });
+        }
+
+        const decodeHeader = (val: string | string[] | undefined, fallback = ''): string => {
+          const raw = Array.isArray(val) ? val[0] : val;
+          if (!raw) return fallback;
+          try {
+            return decodeURIComponent(String(raw));
+          } catch {
+            return String(raw);
+          }
+        };
+
+        const fileName = decodeHeader(req.headers['x-file-name'], 'agricultural-guide.pdf');
+        const mimeType = decodeHeader(req.headers['x-file-type'], String(req.headers['content-type'] || ''));
+        const title = decodeHeader(req.headers['x-doc-title'], fileName);
+        const category = decodeHeader(req.headers['x-doc-category'], 'General Agronomy');
+        const language = (decodeHeader(req.headers['x-doc-language'], 'en') || 'en') as 'en' | 'sn' | 'nd' | 'multilingual';
+        const tagsRaw = decodeHeader(req.headers['x-doc-tags'], '');
+        const tags = tagsRaw
+          .split(',')
+          .map(t => t.trim())
+          .filter(Boolean);
+        const question = decodeHeader(req.headers['x-doc-question'], '').trim() || undefined;
+
+        const doc = await tariroService.addKnowledgeDocument({
+          title,
+          question,
+          category,
+          language,
+          tags,
+          uploadedBy: actingAdmin.name || actingAdmin.id,
+          fileBuffer: buffer,
+          fileName,
+          mimeType
+        });
+
+        return res.status(201).type('application/json').json(doc);
+      } catch (err: any) {
+        console.error('TARIRO document upload error:', err);
+        return res.status(400).json({ error: err?.message || 'Could not process uploaded agricultural document.' });
+      }
+    }
+  );
+
   app.use(express.json({ limit: '40mb' }));
   app.use(express.urlencoded({ extended: true, limit: '40mb' }));
 
@@ -576,8 +650,15 @@ async function startServer() {
       companySmtpConfigured: status.companySmtpConfigured,
       firebaseAdminConfigured: status.firebaseAdminConfigured,
       ready: status.ready,
-      senderEmail: status.senderEmail
+      senderEmail: status.senderEmail,
+      smtpHost: status.smtpHost,
+      smtpPort: status.smtpPort
     });
+  });
+
+  app.get('/api/auth/verify-smtp', async (_req: Request, res: Response) => {
+    const result = await verifySmtpCredentials();
+    return res.json(result);
   });
 
   app.post('/api/auth/send-company-verification', async (req: Request, res: Response) => {
@@ -2016,6 +2097,260 @@ async function startServer() {
     }
     if (result === 'not_found') return res.status(404).json({ error: 'Buyer request not found' });
     res.json({ success: true });
+  });
+
+  // --- Push Notifications (FCM-Ready) ---
+  app.get('/api/push/status', (req: Request, res: Response) => {
+    const userId = (req.query.userId as string | undefined)?.trim();
+    return res.json(pushService.getStatus(userId));
+  });
+
+  app.post('/api/push/register', (req: Request, res: Response) => {
+    const { userId, token, platform, provider, enabled } = req.body || {};
+    if (!userId || !token) {
+      return res.status(400).json({ error: 'userId and device push token are required.' });
+    }
+    const record = pushService.registerSubscription({
+      userId: String(userId),
+      token: String(token),
+      platform: platform === 'android' || platform === 'ios' ? platform : 'web',
+      provider,
+      enabled,
+      userAgent: req.headers['user-agent']
+    });
+    return res.status(201).json(record);
+  });
+
+  app.post('/api/push/unregister', (req: Request, res: Response) => {
+    const { userId, token } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required.' });
+    }
+    const result = pushService.unregisterSubscription(String(userId), token ? String(token) : undefined);
+    return res.json(result);
+  });
+
+  app.post('/api/push/dispatch', async (req: Request, res: Response) => {
+    const { userId, title, body, type, link, data } = req.body || {};
+    if (!userId || !title || !body) {
+      return res.status(400).json({ error: 'userId, title, and body are required.' });
+    }
+    const record = await pushService.dispatchPushToUser({
+      userId: String(userId),
+      title: String(title),
+      body: String(body),
+      type: type === 'message' || type === 'system' ? type : 'order',
+      link: link ? String(link) : '/#orders',
+      data: data && typeof data === 'object' ? data : undefined
+    });
+    return res.json(record);
+  });
+
+  // --- TARIRO AI Agricultural Assistant & Knowledge Library ---
+  app.post('/api/tariro/chat', async (req: Request, res: Response) => {
+    try {
+      const { message, history, language, userId, userRole } = req.body || {};
+      const result = await tariroService.chat({
+        message,
+        history,
+        language,
+        userId,
+        userRole
+      });
+      return res.type('application/json').json(result);
+    } catch (err: any) {
+      const rawStatus = Number(err?.status) || 500;
+      const interceptedCodes = new Set([401, 403, 502, 503, 504]);
+      const safeStatus = interceptedCodes.has(rawStatus) ? 500 : rawStatus;
+      return res.status(safeStatus).type('application/json').json({
+        error: err?.message || 'TARIRO could not generate a response right now.',
+        code: err?.code || 'TARIRO_UNAVAILABLE'
+      });
+    }
+  });
+
+  app.get('/api/tariro/knowledge', (_req: Request, res: Response) => {
+    return res.type('application/json').json(tariroService.listKnowledgeDocuments());
+  });
+
+  app.get('/api/tariro/knowledge/:id', (req: Request, res: Response) => {
+    const doc = tariroService.getKnowledgeDocumentById(req.params.id);
+    if (!doc) return res.status(404).type('application/json').json({ error: 'Knowledge entry not found.' });
+    return res.type('application/json').json(doc);
+  });
+
+  app.post('/api/tariro/knowledge', async (req: Request, res: Response) => {
+    try {
+      const actingAdminId = (extractAuthUserId(req) || req.body?.actingAdminId || '').trim();
+      const actingAdmin = await tariroService.verifyAdminActor(actingAdminId);
+      if (!actingAdmin) {
+        return res.status(403).type('application/json').json({ error: 'Unauthorized: active administrator privileges are required.' });
+      }
+      const {
+        title,
+        question,
+        alternativeQuestions,
+        category,
+        language,
+        tags,
+        followUpQuestions,
+        sourceOrganization,
+        sourceReference,
+        reviewedAt,
+        reviewedBy,
+        reviewStatus,
+        content,
+        fileBase64,
+        fileName,
+        mimeType
+      } = req.body || {};
+      const fileBuffer =
+        typeof fileBase64 === 'string' && fileBase64.trim()
+          ? Buffer.from(fileBase64.replace(/^data:[^;]+;base64,/, ''), 'base64')
+          : undefined;
+
+      const created = await tariroService.addKnowledgeDocument({
+        title: String(title || fileName || 'Agricultural Extension Guide'),
+        question: typeof question === 'string' ? question : undefined,
+        alternativeQuestions: Array.isArray(alternativeQuestions) ? alternativeQuestions : undefined,
+        category: String(category || 'Crop Production'),
+        language: language || 'en',
+        tags: Array.isArray(tags) ? tags : [],
+        followUpQuestions: Array.isArray(followUpQuestions) ? followUpQuestions : [],
+        sourceOrganization: typeof sourceOrganization === 'string' ? sourceOrganization : undefined,
+        sourceReference: typeof sourceReference === 'string' ? sourceReference : undefined,
+        reviewedAt: typeof reviewedAt === 'string' ? reviewedAt : undefined,
+        reviewedBy: typeof reviewedBy === 'string' ? reviewedBy : actingAdmin.name,
+        reviewStatus: reviewStatus || 'verified',
+        uploadedBy: actingAdmin.name || actingAdmin.id,
+        rawText: typeof content === 'string' ? content : undefined,
+        fileBuffer,
+        fileName,
+        mimeType
+      });
+      return res.status(201).type('application/json').json(created);
+    } catch (err: any) {
+      return res.status(400).type('application/json').json({ error: err?.message || 'Could not add knowledge document.' });
+    }
+  });
+
+  app.put('/api/tariro/knowledge/:id', async (req: Request, res: Response) => {
+    const actingAdminId = (extractAuthUserId(req) || req.body?.actingAdminId || '').trim();
+    const actingAdmin = await tariroService.verifyAdminActor(actingAdminId);
+    if (!actingAdmin) {
+      return res.status(403).type('application/json').json({ error: 'Unauthorized: active administrator privileges are required.' });
+    }
+    const {
+      title,
+      question,
+      alternativeQuestions,
+      category,
+      language,
+      tags,
+      followUpQuestions,
+      sourceOrganization,
+      sourceReference,
+      reviewedAt,
+      reviewedBy,
+      reviewStatus,
+      content,
+      active
+    } = req.body || {};
+    const updated = tariroService.updateKnowledgeDocument(req.params.id, {
+      title,
+      question,
+      alternativeQuestions: Array.isArray(alternativeQuestions) ? alternativeQuestions : undefined,
+      category,
+      language,
+      tags: Array.isArray(tags) ? tags : undefined,
+      followUpQuestions: Array.isArray(followUpQuestions) ? followUpQuestions : undefined,
+      sourceOrganization,
+      sourceReference,
+      reviewedAt,
+      reviewedBy: reviewedBy || actingAdmin.name,
+      reviewStatus,
+      content,
+      active
+    });
+    if (!updated) return res.status(404).type('application/json').json({ error: 'Knowledge document not found.' });
+    return res.type('application/json').json(updated);
+  });
+
+  app.patch('/api/tariro/knowledge/:id', async (req: Request, res: Response) => {
+    const actingAdminId = (extractAuthUserId(req) || req.body?.actingAdminId || '').trim();
+    const actingAdmin = await tariroService.verifyAdminActor(actingAdminId);
+    if (!actingAdmin) {
+      return res.status(403).type('application/json').json({ error: 'Unauthorized: active administrator privileges are required.' });
+    }
+    const updated = tariroService.toggleKnowledgeDocument(req.params.id, Boolean(req.body?.active));
+    if (!updated) return res.status(404).type('application/json').json({ error: 'Knowledge document not found.' });
+    return res.type('application/json').json(updated);
+  });
+
+  app.delete('/api/tariro/knowledge/:id', async (req: Request, res: Response) => {
+    const actingAdminId = (
+      extractAuthUserId(req) ||
+      String(req.query.actingAdminId || req.body?.actingAdminId || '').trim()
+    );
+    const actingAdmin = await tariroService.verifyAdminActor(actingAdminId);
+    if (!actingAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: active administrator privileges are required.' });
+    }
+    const ok = tariroService.deleteKnowledgeDocument(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Knowledge document not found.' });
+    return res.json({ success: true });
+  });
+
+  app.post('/api/tariro/feedback', (req: Request, res: Response) => {
+    const { interactionId, userId, userRole, question, answerSnippet, rating, comment, language } = req.body || {};
+    if (!interactionId || (rating !== 'helpful' && rating !== 'not_helpful')) {
+      return res.status(400).json({ error: 'interactionId and valid rating (helpful | not_helpful) are required.' });
+    }
+    const entry = tariroService.recordFeedback({
+      interactionId: String(interactionId),
+      userId,
+      userRole,
+      question: String(question || ''),
+      answerSnippet: String(answerSnippet || ''),
+      rating,
+      comment,
+      language
+    });
+    return res.status(201).json(entry);
+  });
+
+  app.get('/api/tariro/analytics', async (req: Request, res: Response) => {
+    const actingAdminId = (extractAuthUserId(req) || String(req.query.actingAdminId || '')).trim();
+    const actingAdmin = await tariroService.verifyAdminActor(actingAdminId);
+    if (!actingAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: active administrator privileges are required.' });
+    }
+    return res.json(tariroService.getAnalyticsSummary());
+  });
+
+  app.patch('/api/tariro/unanswered/:id', async (req: Request, res: Response) => {
+    const actingAdminId = (extractAuthUserId(req) || req.body?.actingAdminId || '').trim();
+    const actingAdmin = await tariroService.verifyAdminActor(actingAdminId);
+    if (!actingAdmin) {
+      return res.status(403).json({ error: 'Unauthorized: active administrator privileges are required.' });
+    }
+    const { status, adminNotes, resolvedDocId } = req.body || {};
+    const updated = tariroService.resolveUnansweredQuestion(
+      req.params.id,
+      status === 'open' ? 'open' : 'resolved',
+      adminNotes,
+      resolvedDocId
+    );
+    if (!updated) return res.status(404).json({ error: 'Unanswered question record not found.' });
+    return res.json(updated);
+  });
+
+  // Catch-all for unknown /api/* routes so HTML SPA fallbacks are never returned to JSON clients
+  app.use('/api', (req: Request, res: Response) => {
+    return res.status(404).type('application/json').json({
+      error: `API endpoint not found: ${req.method} ${req.originalUrl}`,
+      code: 'API_ROUTE_NOT_FOUND'
+    });
   });
 
   // --- Vite Middleware & SPA Serving ---

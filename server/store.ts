@@ -42,6 +42,7 @@ import {
   calculateFarmerSalesRevenue,
   calculateFarmerWeeklySalesChart
 } from '../src/utils/orderUtils';
+import { pushService } from './pushService';
 
 class MarketplaceStore {
   private users: User[] = [...INITIAL_USERS];
@@ -495,15 +496,30 @@ class MarketplaceStore {
     this.orders.unshift(newOrder);
 
     // Notify farmer
+    const farmerOrderTitle = `New Order Received (${newOrder.orderNumber})`;
+    const farmerOrderMsg = `${newOrder.buyerName} placed a ${newOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${newOrder.totalAmount.toFixed(2)}.`;
     this.createNotification({
       userId: newOrder.farmerId,
-      title: `New Order Received (${newOrder.orderNumber})`,
-      message: `${newOrder.buyerName} placed a ${newOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${newOrder.totalAmount.toFixed(2)}.`,
+      title: farmerOrderTitle,
+      message: farmerOrderMsg,
       type: 'order',
       link: `/orders/${newOrder.id}`,
       read: false,
       createdAt: now,
       metadata: { orderId: newOrder.id }
+    });
+    void pushService.dispatchPushToUser({
+      userId: newOrder.farmerId,
+      title: farmerOrderTitle,
+      body: farmerOrderMsg,
+      type: 'order',
+      link: `/#orders`,
+      data: {
+        orderId: newOrder.id,
+        orderNumber: newOrder.orderNumber,
+        status: newOrder.status,
+        recipientRole: 'farmer'
+      }
     });
 
     // Notify buyer
@@ -593,15 +609,30 @@ class MarketplaceStore {
     const statusLabel = statusTitles[status] || `Order ${status.replace(/_/g, ' ')}`;
 
     // Notify buyer
+    const buyerStatusTitle = `${statusLabel} (${order.orderNumber})`;
+    const buyerStatusMsg = `${order.farmName} updated your order status to "${status.replace(/_/g, ' ')}". ${pickupTimeWindow ? `Pickup time: ${pickupTimeWindow}. ` : ''}${note ? `Note: ${note}` : ''}`.trim();
     this.createNotification({
       userId: order.buyerId,
-      title: `${statusLabel} (${order.orderNumber})`,
-      message: `${order.farmName} updated your order status to "${status.replace(/_/g, ' ')}". ${pickupTimeWindow ? `Pickup time: ${pickupTimeWindow}. ` : ''}${note ? `Note: ${note}` : ''}`,
+      title: buyerStatusTitle,
+      message: buyerStatusMsg,
       type: 'order',
       link: `/orders/${order.id}`,
       read: false,
       createdAt: now,
-      metadata: { orderId: order.id }
+      metadata: { orderId: order.id, status }
+    });
+    void pushService.dispatchPushToUser({
+      userId: order.buyerId,
+      title: buyerStatusTitle,
+      body: buyerStatusMsg,
+      type: 'order',
+      link: `/#orders`,
+      data: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status,
+        recipientRole: 'buyer'
+      }
     });
 
     return order;
@@ -626,15 +657,30 @@ class MarketplaceStore {
     order.paymentRejectionReason = undefined;
     order.updatedAt = now;
 
+    const popTitle = `Proof of Payment Uploaded (${order.orderNumber})`;
+    const popMsg = `${order.buyerName} uploaded Proof of Payment for $${order.totalAmount.toFixed(2)}. Please review and confirm.`;
     this.createNotification({
       userId: order.farmerId,
-      title: `Proof of Payment Uploaded (${order.orderNumber})`,
-      message: `${order.buyerName} uploaded Proof of Payment for $${order.totalAmount.toFixed(2)}. Please review and confirm.`,
+      title: popTitle,
+      message: popMsg,
       type: 'order',
       link: `/orders/${order.id}`,
       read: false,
       createdAt: now,
       metadata: { orderId: order.id }
+    });
+    void pushService.dispatchPushToUser({
+      userId: order.farmerId,
+      title: popTitle,
+      body: popMsg,
+      type: 'order',
+      link: `/#orders`,
+      data: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentStatus: 'pending_verification',
+        recipientRole: 'farmer'
+      }
     });
 
     return order;
@@ -659,20 +705,35 @@ class MarketplaceStore {
     }
 
     const label = paymentStatus === 'paid' ? 'Payment Confirmed' : paymentStatus === 'rejected' ? 'Payment Proof Rejected' : 'Payment Status Updated';
+    const payTitle = `${label} (${order.orderNumber})`;
+    const payMsg =
+      paymentStatus === 'paid'
+        ? `${order.farmName} verified and confirmed your payment of $${order.totalAmount.toFixed(2)}.`
+        : paymentStatus === 'rejected'
+          ? `${order.farmName} declined your proof of payment.${reason ? ` Reason: ${reason}` : ' Please upload a valid receipt.'}`
+          : `Payment status updated to ${paymentStatus.replace(/_/g, ' ')}.`;
     this.createNotification({
       userId: order.buyerId,
-      title: `${label} (${order.orderNumber})`,
-      message:
-        paymentStatus === 'paid'
-          ? `${order.farmName} verified and confirmed your payment of $${order.totalAmount.toFixed(2)}.`
-          : paymentStatus === 'rejected'
-            ? `${order.farmName} declined your proof of payment.${reason ? ` Reason: ${reason}` : ' Please upload a valid receipt.'}`
-            : `Payment status updated to ${paymentStatus.replace(/_/g, ' ')}.`,
+      title: payTitle,
+      message: payMsg,
       type: 'order',
       link: `/orders/${order.id}`,
       read: false,
       createdAt: now,
-      metadata: { orderId: order.id }
+      metadata: { orderId: order.id, paymentStatus }
+    });
+    void pushService.dispatchPushToUser({
+      userId: order.buyerId,
+      title: payTitle,
+      body: payMsg,
+      type: 'order',
+      link: `/#orders`,
+      data: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentStatus,
+        recipientRole: 'buyer'
+      }
     });
 
     return order;

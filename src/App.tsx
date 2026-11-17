@@ -29,6 +29,12 @@ import { AndroidInstallModal } from './components/AndroidInstallModal';
 import { AndroidDeviceShell } from './components/AndroidDeviceShell';
 import { OrderConfirmationModal } from './components/OrderConfirmationModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
+import { TariroChatbot } from './components/TariroChatbot';
+import { pushNotificationService } from './services/pushNotificationService';
+import { api } from './services/api';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './firebase/config';
+import { parseFirestoreProduct } from './services/firebaseProducts';
 import { Product, Order, User, AppNotification, MediaPost, BuyerRequest, isSellerRole } from './types';
 import {
   Phone,
@@ -38,6 +44,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   MailCheck,
+  BellRing,
   X
 } from 'lucide-react';
 
@@ -111,6 +118,7 @@ export function App() {
   const [marketplaceSearchQuery, setMarketplaceSearchQuery] = useState('');
   const [pendingScrollSection, setPendingScrollSection] = useState<string | null>(null);
   const [infoModal, setInfoModal] = useState<'support' | 'privacy' | 'terms' | null>(null);
+  const [livePushToast, setLivePushToast] = useState<AppNotification | null>(null);
 
   const wasSignedInRef = useRef<boolean>(false);
 
@@ -191,9 +199,14 @@ export function App() {
     }
   }, [user, authLoading, requiresEmailVerification, currentView]);
 
-  // Auto-check email verification when user returns from email link (#verified or window focus)
+  // Auto-check email verification when user returns from email link (?companyVerifyToken=, #verified, or window focus)
   useEffect(() => {
-    if (!user || !requiresEmailVerification) return;
+    const hasQueryToken =
+      typeof window !== 'undefined' &&
+      (window.location.search.includes('companyVerifyToken=') ||
+        window.location.search.includes('verifyEmailToken='));
+
+    if (!hasQueryToken && (!user || !requiresEmailVerification)) return;
 
     const tryVerify = () => {
       checkEmailVerification()
@@ -205,7 +218,7 @@ export function App() {
         .catch(() => {});
     };
 
-    if (window.location.hash === '#verified') {
+    if (hasQueryToken || window.location.hash === '#verified') {
       tryVerify();
     }
 
@@ -245,6 +258,22 @@ export function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [user, authLoading, currentView]);
+
+  // Listen for incoming real-time / FCM order push notifications
+  useEffect(() => {
+    let dismissTimer: number | undefined;
+    const unsub = pushNotificationService.onIncomingPushToast((notif) => {
+      setLivePushToast(notif as AppNotification);
+      if (dismissTimer) window.clearTimeout(dismissTimer);
+      dismissTimer = window.setTimeout(() => {
+        setLivePushToast(null);
+      }, 7000);
+    });
+    return () => {
+      unsub();
+      if (dismissTimer) window.clearTimeout(dismissTimer);
+    };
+  }, []);
 
   // Initialize native Capacitor mobile services (Splash Screen, Status Bar, Back Button)
   useEffect(() => {
@@ -1286,6 +1315,62 @@ export function App() {
             </div>
           </div>
         </LiquidGlassModal>
+
+        {/* Incoming Foreground Push Toast for Order Alerts */}
+        {livePushToast && (
+          <div
+            role="status"
+            className="fixed top-20 right-4 left-4 sm:left-auto sm:right-6 sm:max-w-sm z-50 lg-glass-dark text-white rounded-2xl p-3.5 shadow-2xl border border-[#A8E635]/45 flex items-start gap-3 animate-in fade-in slide-in-from-top-3 duration-200"
+          >
+            <div className="w-9 h-9 rounded-xl bg-[#A8E635]/20 border border-[#A8E635]/40 flex items-center justify-center shrink-0">
+              <BellRing className="w-4 h-4 text-[#A8E635]" />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                handleSelectNotification(livePushToast);
+                setLivePushToast(null);
+              }}
+              className="flex-1 text-left min-w-0"
+            >
+              <p className="text-xs font-extrabold text-white truncate">{livePushToast.title}</p>
+              <p className="text-[11px] text-white/80 line-clamp-2 mt-0.5 leading-snug">
+                {livePushToast.message}
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLivePushToast(null)}
+              aria-label="Dismiss notification alert"
+              className="p-1 rounded-lg text-white/60 hover:text-white hover:bg-white/10 shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* TARIRO AI Agricultural Assistant Floating Launcher & Chat Popup */}
+        <TariroChatbot
+          onSelectProductById={async (prodId) => {
+            try {
+              const prod = await api.getProductById(prodId);
+              if (prod) {
+                setSelectedProduct(prod);
+                return;
+              }
+            } catch {
+              // Fallback to Firestore direct read
+            }
+            try {
+              const snap = await getDoc(doc(db, 'products', prodId));
+              if (snap.exists()) {
+                setSelectedProduct(parseFirestoreProduct(snap.id, snap.data()));
+              }
+            } catch {
+              // ignore
+            }
+          }}
+        />
       </div>
     </AndroidDeviceShell>
   );

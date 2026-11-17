@@ -4,7 +4,8 @@ import {
   getDownloadURL,
   deleteObject
 } from 'firebase/storage';
-import { auth, storage } from '../firebase/config';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db, storage } from '../firebase/config';
 import { api } from './api';
 import { compressImageToBlob } from '../utils/imageCompressor';
 
@@ -482,17 +483,29 @@ export async function uploadMediaAsset(
 
   const fbUser = auth.currentUser;
   if (fbUser && !fbUser.emailVerified) {
-    return {
-      ok: false,
-      errorCode: 'auth/email-not-verified',
-      errorMessage: 'Please verify your email address before uploading photos or videos.'
-    };
+    let isCompanyVerified = false;
+    try {
+      const userSnap = await getDoc(doc(db, 'users', fbUser.uid));
+      const userData = userSnap.data() as any;
+      isCompanyVerified = Boolean(
+        userSnap.exists() && userData?.emailVerified === true && userData?.status === 'active'
+      );
+    } catch {
+      isCompanyVerified = false;
+    }
+    if (!isCompanyVerified) {
+      return {
+        ok: false,
+        errorCode: 'auth/email-not-verified',
+        errorMessage: 'Please verify your email address before uploading photos or videos.'
+      };
+    }
   }
 
   let storageFailure: { code?: string; message?: string } | null = null;
 
-  // 1. Primary path: Direct client-to-Firebase Storage upload (required for Vercel & scalable media hosting)
-  if (fbUser && !validation.needsServerConvert) {
+  // 1. Primary path: Direct client-to-Firebase Storage upload (when Firebase token has email_verified == true)
+  if (fbUser && fbUser.emailVerified && !validation.needsServerConvert) {
     onStatusNote?.('Uploading to cloud storage...');
     onProgress?.(4);
 

@@ -7,6 +7,7 @@ import {
   updateFirebaseOrderPayment
 } from '../services/firebaseOrders';
 import { createFirebaseNotification } from '../services/firebaseNotifications';
+import { pushNotificationService } from '../services/pushNotificationService';
 import {
   subscribeToFirebaseReviews,
   getRatingLabel
@@ -231,14 +232,26 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
       await updateFirebaseOrderStatus(order.id, nextStatus, order, note, pWin, pInstr);
 
       const label = getOrderStatusMeta(nextStatus, order.deliveryMethod).label;
+      const statusTitle = `Order ${order.orderNumber} — ${label}`;
+      const statusMsg = `Your order with ${order.farmName} is now ${label}${pWin && nextStatus === 'ready_for_pickup' ? ` (${pWin})` : ''}.`;
       await createFirebaseNotification({
         userId: order.buyerId,
-        title: `Order ${order.orderNumber} — ${label}`,
-        message: `Your order with ${order.farmName} is now ${label}${pWin && nextStatus === 'ready_for_pickup' ? ` (${pWin})` : ''}.`,
+        title: statusTitle,
+        message: statusMsg,
         type: 'order',
         link: 'orders',
         metadata: { orderId: order.id, status: nextStatus }
       });
+      pushNotificationService
+        .triggerRemotePushDispatch({
+          userId: order.buyerId,
+          title: statusTitle,
+          body: statusMsg,
+          type: 'order',
+          link: '/#orders',
+          data: { orderId: order.id, orderNumber: order.orderNumber, status: nextStatus }
+        })
+        .catch(() => {});
 
       const now = new Date().toISOString();
       setOrders(prev =>
@@ -282,17 +295,30 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
         order
       );
 
+      const payNotifTitle =
+        paymentStatus === 'paid' ? `Payment Verified — ${order.orderNumber}` : `POP Rejected — ${order.orderNumber}`;
+      const payNotifMsg =
+        paymentStatus === 'paid'
+          ? `${order.farmName} confirmed your payment of $${order.totalAmount.toFixed(2)}.`
+          : `Your payment proof for ${order.orderNumber} was rejected: ${reason}`;
       await createFirebaseNotification({
         userId: order.buyerId,
-        title: paymentStatus === 'paid' ? `Payment Verified — ${order.orderNumber}` : `POP Rejected — ${order.orderNumber}`,
-        message:
-          paymentStatus === 'paid'
-            ? `${order.farmName} confirmed your payment of $${order.totalAmount.toFixed(2)}.`
-            : `Your payment proof for ${order.orderNumber} was rejected: ${reason}`,
+        title: payNotifTitle,
+        message: payNotifMsg,
         type: 'order',
         link: 'orders',
         metadata: { orderId: order.id, paymentStatus }
       });
+      pushNotificationService
+        .triggerRemotePushDispatch({
+          userId: order.buyerId,
+          title: payNotifTitle,
+          body: payNotifMsg,
+          type: 'order',
+          link: '/#orders',
+          data: { orderId: order.id, orderNumber: order.orderNumber, paymentStatus }
+        })
+        .catch(() => {});
 
       setOrders(prev =>
         prev.map(o =>
@@ -376,14 +402,26 @@ export const OrderManagement: React.FC<OrderManagementProps> = ({
         order
       );
 
+      const popAlertTitle = `Proof of Payment Uploaded — ${order.orderNumber}`;
+      const popAlertMsg = `${order.buyerName} uploaded a POP (${uploadedName}) for review.`;
       await createFirebaseNotification({
         userId: order.farmerId,
-        title: `Proof of Payment Uploaded — ${order.orderNumber}`,
-        message: `${order.buyerName} uploaded a POP (${uploadedName}) for review.`,
+        title: popAlertTitle,
+        message: popAlertMsg,
         type: 'order',
         link: 'orders',
         metadata: { orderId: order.id, paymentStatus: 'pending_verification' }
       });
+      pushNotificationService
+        .triggerRemotePushDispatch({
+          userId: order.farmerId,
+          title: popAlertTitle,
+          body: popAlertMsg,
+          type: 'order',
+          link: '/#orders',
+          data: { orderId: order.id, orderNumber: order.orderNumber, paymentStatus: 'pending_verification' }
+        })
+        .catch(() => {});
 
       setOrders(prev =>
         prev.map(o =>

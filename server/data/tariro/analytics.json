@@ -1,0 +1,39 @@
+{
+  "totalQueries": 27,
+  "languageBreakdown": {
+    "en": 23,
+    "sn": 2,
+    "nd": 2
+  },
+  "topicCounts": {
+    "Soil Science & Fertilisers": 2,
+    "Horticulture": 2,
+    "Livestock & Poultry": 2,
+    "Zimbabwean Agricultural Practices": 2,
+    "Knowledge Gap": 2,
+    "Agribusiness & Marketing": 1,
+    "Vegetable Production": 3,
+    "Soya Bean Production": 2,
+    "Cattle Production": 2,
+    "Fertiliser Management": 1,
+    "Soil Science": 4,
+    "Crop Production": 1,
+    "Wheat Production": 1,
+    "Agricultural Pests and Diseases": 2
+  },
+  "feedback": [],
+  "unansweredQuestions": [
+    {
+      "id": "unans-1794911882453-fto",
+      "question": "What is the capital city of Japan?",
+      "language": "en",
+      "reason": "No matching verified entry found in Knowledge Base or live Marketplace",
+      "botReplySnippet": "I don't currently have verified information in my FarmBridge Agricultural Knowledge Base to answer that question reliably.\n\nBecause I am a knowledge-based agricultural assistant (and not an unrestricted generative model)",
+      "status": "resolved",
+      "createdAt": "2026-11-17T10:38:02.453Z",
+      "adminNotes": "Verified automated test query",
+      "resolvedAt": "2026-11-17T10:39:13.561Z"
+    }
+  ],
+  "deletedSeedIds": []
+}

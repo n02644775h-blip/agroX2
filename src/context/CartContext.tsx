@@ -11,6 +11,7 @@ import {
 import { api } from '../services/api';
 import { saveFirebaseOrder } from '../services/firebaseOrders';
 import { createFirebaseNotification } from '../services/firebaseNotifications';
+import { pushNotificationService } from '../services/pushNotificationService';
 import confetti from 'canvas-confetti';
 
 export const DELIVERY_FLAT_FEE = 3.0;
@@ -309,11 +310,14 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Persist in Firestore so buyer & farmer stay synchronized in real time across devices & reloads
         await saveFirebaseOrder(createdOrder);
 
+        const farmerOrderTitle = `New Order Received (${createdOrder.orderNumber})`;
+        const farmerOrderMsg = `${createdOrder.buyerName} placed a ${createdOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${createdOrder.totalAmount.toFixed(2)}.`;
+
         await Promise.all([
           createFirebaseNotification({
             userId: createdOrder.farmerId,
-            title: `New Order Received (${createdOrder.orderNumber})`,
-            message: `${createdOrder.buyerName} placed a ${createdOrder.deliveryMethod === 'pickup' ? 'Farm Pickup' : 'Delivery'} order for $${createdOrder.totalAmount.toFixed(2)}.`,
+            title: farmerOrderTitle,
+            message: farmerOrderMsg,
             type: 'order',
             link: `/orders/${createdOrder.id}`,
             metadata: { orderId: createdOrder.id }
@@ -327,6 +331,22 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
             metadata: { orderId: createdOrder.id }
           })
         ]);
+
+        // Ensure remote FCM dispatch fires even if server API order creation used fallback
+        pushNotificationService
+          .triggerRemotePushDispatch({
+            userId: createdOrder.farmerId,
+            title: farmerOrderTitle,
+            body: farmerOrderMsg,
+            type: 'order',
+            link: '/#orders',
+            data: {
+              orderId: createdOrder.id,
+              orderNumber: createdOrder.orderNumber,
+              status: createdOrder.status
+            }
+          })
+          .catch(() => {});
 
         createdOrders.push(createdOrder);
       }

@@ -165,6 +165,74 @@
         "timestamp": { "type": "string" }
       },
       "required": ["adminId", "action", "affectedUserId", "timestamp"]
+    },
+    "PushToken": {
+      "title": "PushToken",
+      "description": "FCM Web Push and device notification token registered per user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "token": { "type": "string" },
+        "platform": { "type": "string" },
+        "provider": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userId", "platform", "enabled"]
+    },
+    "KnowledgeDocument": {
+      "title": "KnowledgeDocument",
+      "description": "Structured agricultural knowledge guides, Q&As, and extension manuals for TARIRO local search assistant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "question": { "type": "string" },
+        "alternativeQuestions": { "type": "array" },
+        "category": { "type": "string" },
+        "language": { "type": "string", "enum": ["en", "sn", "nd", "multilingual"] },
+        "fileName": { "type": "string" },
+        "sourceType": { "type": "string" },
+        "content": { "type": "string" },
+        "sourceOrganization": { "type": "string" },
+        "sourceReference": { "type": "string" },
+        "reviewedAt": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "reviewStatus": { "type": "string", "enum": ["verified", "needs_review", "draft"] },
+        "chunkCount": { "type": "number" },
+        "active": { "type": "boolean" },
+        "uploadedBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "category", "active"]
+    },
+    "TariroFeedback": {
+      "title": "TariroFeedback",
+      "description": "Farmer and buyer helpfulness ratings for TARIRO AI responses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "messageId": { "type": "string" },
+        "question": { "type": "string" },
+        "rating": { "type": "string", "enum": ["helpful", "not_helpful"] },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["messageId", "rating"]
+    },
+    "TariroUnanswered": {
+      "title": "TariroUnanswered",
+      "description": "Questions flagged for agricultural knowledge library expansion",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "question": { "type": "string" },
+        "language": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "resolved"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["question", "status"]
     }
   },
   "firestore": {
@@ -207,6 +275,22 @@
     "/adminAuditLogs/{logId}": {
       "schema": "AdminAuditLog",
       "description": "Immutable audit logs for administrative farmer edits"
+    },
+    "/pushTokens/{tokenId}": {
+      "schema": "PushToken",
+      "description": "User FCM Web Push and device push notification subscriptions"
+    },
+    "/knowledgeDocuments/{docId}": {
+      "schema": "KnowledgeDocument",
+      "description": "TARIRO AI Agricultural Knowledge Library documents"
+    },
+    "/tariroFeedback/{feedbackId}": {
+      "schema": "TariroFeedback",
+      "description": "User ratings on TARIRO AI agricultural guidance"
+    },
+    "/tariroUnanswered/{questionId}": {
+      "schema": "TariroUnanswered",
+      "description": "Unanswered agricultural questions logged for admin review"
     }
   }
 }

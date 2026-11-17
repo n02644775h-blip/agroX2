@@ -228,9 +228,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
         setNewPendingEmail(registeredUser.email || email.trim());
         setMode('verify_email');
         setResendCooldown(60);
-        setSuccessMsg(
-          'Verification email sent! Please check your inbox and verify your email address to activate your FarmBridge account.'
-        );
+        setSuccessMsg('');
       }
     } catch (err: any) {
       console.error('Authentication Error:', err);
@@ -711,18 +709,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
               </div>
             )}
 
-            <div className="p-3.5 rounded-2xl bg-[#A8E635]/18 border border-[#A8E635]/40 text-white text-xs space-y-1.5">
-              <div className="font-bold flex items-start gap-2 text-[#DFF4E4]">
-                <CheckCircle2 className="w-4 h-4 text-[#A8E635] shrink-0 mt-0.5" />
-                <span>
-                  {successMsg ||
-                    'Verification email sent! Please check your inbox and verify your email address to activate your FarmBridge account.'}
-                </span>
+            {(successMsg || !lastVerificationError) && (
+              <div className="p-3.5 rounded-2xl bg-[#A8E635]/18 border border-[#A8E635]/40 text-white text-xs space-y-1.5">
+                <div className="font-bold flex items-start gap-2 text-[#DFF4E4]">
+                  <CheckCircle2 className="w-4 h-4 text-[#A8E635] shrink-0 mt-0.5" />
+                  <span>
+                    {successMsg ||
+                      'Verification email sent! Please check your inbox and verify your email address to activate your FarmBridge account.'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-white/80 pl-6 leading-relaxed">
+                  Open the verification link in your inbox (or spam/junk folder), then tap below to activate full access.
+                </p>
               </div>
-              <p className="text-[11px] text-white/80 pl-6 leading-relaxed">
-                Open the verification link in your inbox (or spam/junk folder), then tap below to activate full access.
-              </p>
-            </div>
+            )}
 
             <div className="space-y-2.5 text-xs">
               <button

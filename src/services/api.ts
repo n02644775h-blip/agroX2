@@ -20,7 +20,14 @@ import {
   BuyerRequestStatus,
   SupportRequest,
   SupportRequestStatus,
-  AdminAuditLog
+  AdminAuditLog,
+  KnowledgeDocument,
+  TariroLanguage,
+  TariroCitation,
+  TariroMatchedProduct,
+  TariroFeedbackEntry,
+  TariroAnalyticsSummary,
+  TariroUnansweredQuestion
 } from '../types';
 
 const API_BASE = '/api';
@@ -53,25 +60,43 @@ class ApiService {
         headers
       });
 
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      const rawText = (await response.text()).trim();
+      const looksLikeHtml =
+        contentType.includes('text/html') ||
+        rawText.startsWith('<') ||
+        /<!doctype|<html|<head|<body|<title/i.test(rawText);
+
       if (!response.ok) {
-        let errorMessage = `HTTP error ${response.status}`;
-        try {
-          const text = await response.text();
-          if (text) {
-            try {
-              const json = JSON.parse(text);
-              errorMessage = json.error || json.message || json.detail || errorMessage;
-            } catch {
-              errorMessage = text.length < 120 ? text : errorMessage;
+        let errorMessage = `Unable to reach the server right now (HTTP ${response.status}). Please try again.`;
+        if (rawText && !looksLikeHtml) {
+          try {
+            const json = JSON.parse(rawText);
+            errorMessage = json.error || json.message || json.detail || errorMessage;
+          } catch {
+            if (rawText.length < 240) {
+              errorMessage = rawText;
             }
           }
-        } catch {
-          // ignore stream read error
         }
         throw new Error(errorMessage);
       }
 
-      return await response.json();
+      if (looksLikeHtml || (contentType && !contentType.includes('application/json'))) {
+        throw new Error(
+          'Received an HTML response instead of JSON from the API endpoint. Please verify the backend service is running and try again.'
+        );
+      }
+
+      if (!rawText) {
+        return {} as T;
+      }
+
+      try {
+        return JSON.parse(rawText) as T;
+      } catch {
+        throw new Error('The server returned an invalid JSON response. Please try again.');
+      }
     } catch (err: any) {
       console.warn(`API request to ${endpoint} failed:`, err?.message || err);
       throw err;
@@ -126,18 +151,40 @@ class ApiService {
 
   async sendCompanyVerificationEmail(params: {
     idToken: string;
+    appOrigin?: string;
     continueUrl?: string;
     newEmail?: string;
   }): Promise<{
     sent: boolean;
     fallbackToFirebaseDefault: boolean;
     senderEmail?: string;
+    mode?: 'firebase_admin_smtp' | 'company_smtp';
     reason?: string;
   }> {
     return this.request('/auth/send-company-verification', {
       method: 'POST',
       body: JSON.stringify(params)
     });
+  }
+
+  async confirmCompanyEmailToken(token: string): Promise<{
+    verified: boolean;
+    uid?: string;
+    email?: string;
+    error?: string;
+  }> {
+    return this.request('/auth/confirm-email-verification', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    });
+  }
+
+  async getCompanyVerificationStatus(idToken: string): Promise<{
+    verified: boolean;
+    uid?: string;
+    email?: string;
+  }> {
+    return this.request(`/auth/verification-status?idToken=${encodeURIComponent(idToken)}`);
   }
 
   // --- Categories ---
@@ -1007,6 +1054,188 @@ class ApiService {
   async deleteBuyerRequest(id: string, buyerId?: string): Promise<void> {
     const query = buyerId ? `?buyerId=${encodeURIComponent(buyerId)}` : '';
     await this.request(`/buyer-requests/${id}${query}`, { method: 'DELETE' });
+  }
+
+  // --- TARIRO AI Agricultural Assistant & Knowledge Library ---
+  async chatWithTariro(payload: {
+    message: string;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    language?: TariroLanguage;
+    userId?: string;
+    userRole?: string;
+  }): Promise<{
+    interactionId: string;
+    reply: string;
+    language: 'en' | 'sn' | 'nd';
+    topic: string;
+    citations: TariroCitation[];
+    matchedProducts: TariroMatchedProduct[];
+    followUpQuestions: string[];
+    confidenceScore?: number;
+    confidenceBand?: 'high' | 'moderate' | 'low';
+    needsClarification?: boolean;
+    correctedTerms?: string[];
+    lowConfidence: boolean;
+    unansweredLogged: boolean;
+    knowledgeDocsSearched: number;
+  }> {
+    return this.request('/tariro/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async getKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
+    return this.request<KnowledgeDocument[]>('/tariro/knowledge');
+  }
+
+  async getKnowledgeDocumentById(id: string): Promise<KnowledgeDocument> {
+    return this.request<KnowledgeDocument>(`/tariro/knowledge/${encodeURIComponent(id)}`);
+  }
+
+  async createKnowledgeEntry(payload: {
+    actingAdminId: string;
+    title: string;
+    question?: string;
+    alternativeQuestions?: string[];
+    category: string;
+    language: 'en' | 'sn' | 'nd' | 'multilingual';
+    tags?: string[];
+    followUpQuestions?: string[];
+    sourceOrganization?: string;
+    sourceReference?: string;
+    reviewedAt?: string;
+    reviewStatus?: 'verified' | 'needs_review' | 'draft';
+    content: string;
+  }): Promise<KnowledgeDocument> {
+    return this.request<KnowledgeDocument>('/tariro/knowledge', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async updateKnowledgeDocument(
+    id: string,
+    payload: {
+      actingAdminId: string;
+      title?: string;
+      question?: string;
+      alternativeQuestions?: string[];
+      category?: string;
+      language?: 'en' | 'sn' | 'nd' | 'multilingual';
+      tags?: string[];
+      followUpQuestions?: string[];
+      sourceOrganization?: string;
+      sourceReference?: string;
+      reviewedAt?: string;
+      reviewStatus?: 'verified' | 'needs_review' | 'draft';
+      content?: string;
+      active?: boolean;
+    }
+  ): Promise<KnowledgeDocument> {
+    return this.request<KnowledgeDocument>(`/tariro/knowledge/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async uploadKnowledgeDocumentFile(
+    file: File,
+    meta: {
+      actingAdminId: string;
+      title: string;
+      question?: string;
+      category: string;
+      language: 'en' | 'sn' | 'nd' | 'multilingual';
+      tags?: string[];
+    }
+  ): Promise<KnowledgeDocument> {
+    const headers: Record<string, string> = {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-Acting-Admin-Id': meta.actingAdminId,
+      'X-File-Name': encodeURIComponent(file.name),
+      'X-File-Type': encodeURIComponent(file.type || 'application/octet-stream'),
+      'X-Doc-Title': encodeURIComponent(meta.title || file.name),
+      'X-Doc-Question': encodeURIComponent(meta.question || ''),
+      'X-Doc-Category': encodeURIComponent(meta.category || 'Crop Production'),
+      'X-Doc-Language': encodeURIComponent(meta.language || 'en'),
+      'X-Doc-Tags': encodeURIComponent((meta.tags || []).join(','))
+    };
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await fetch(`${API_BASE}/tariro/knowledge/upload`, {
+      method: 'POST',
+      headers,
+      body: file
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data?.error || `Document upload failed (HTTP ${res.status}).`);
+    }
+    return data as KnowledgeDocument;
+  }
+
+  async toggleKnowledgeDocument(
+    id: string,
+    active: boolean,
+    actingAdminId: string
+  ): Promise<KnowledgeDocument> {
+    return this.request<KnowledgeDocument>(`/tariro/knowledge/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ active, actingAdminId })
+    });
+  }
+
+  async deleteKnowledgeDocument(id: string, actingAdminId: string): Promise<void> {
+    await this.request(
+      `/tariro/knowledge/${encodeURIComponent(id)}?actingAdminId=${encodeURIComponent(actingAdminId)}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ actingAdminId })
+      }
+    );
+  }
+
+  async submitTariroFeedback(payload: {
+    interactionId: string;
+    userId?: string;
+    userRole?: string;
+    question: string;
+    answerSnippet: string;
+    rating: 'helpful' | 'not_helpful';
+    comment?: string;
+    language?: string;
+  }): Promise<TariroFeedbackEntry> {
+    return this.request<TariroFeedbackEntry>('/tariro/feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async getTariroAnalytics(actingAdminId: string): Promise<TariroAnalyticsSummary> {
+    return this.request<TariroAnalyticsSummary>(
+      `/tariro/analytics?actingAdminId=${encodeURIComponent(actingAdminId)}`
+    );
+  }
+
+  async updateTariroUnanswered(
+    id: string,
+    payload: {
+      actingAdminId: string;
+      status: 'open' | 'resolved';
+      adminNotes?: string;
+      resolvedDocId?: string;
+    }
+  ): Promise<TariroUnansweredQuestion> {
+    return this.request<TariroUnansweredQuestion>(
+      `/tariro/unanswered/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      }
+    );
   }
 }
 

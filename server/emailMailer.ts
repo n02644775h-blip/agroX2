@@ -52,7 +52,10 @@ function getFirebaseAdminApp(): App | null {
       });
       return adminAppInstance;
     } catch (err) {
-      console.warn('Could not parse FIREBASE_SERVICE_ACCOUNT_KEY for email verification links:', err instanceof Error ? err.message : err);
+      console.warn(
+        'Could not parse FIREBASE_SERVICE_ACCOUNT_KEY for email verification links:',
+        err instanceof Error ? err.message : err
+      );
       return null;
     }
   }
@@ -81,20 +84,138 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function getVerificationEmailConfigStatus() {
+function getSmtpSettings() {
+  const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
+  const parsedPort = Number(process.env.SMTP_PORT || 465);
+  const smtpPort = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 465;
+  const smtpSecure = process.env.SMTP_SECURE !== 'false' && smtpPort === 465;
   const smtpUser = (process.env.SMTP_USER || DEFAULT_COMPANY_EMAIL).trim();
-  const smtpPass = (process.env.SMTP_PASS || '').trim();
+  const rawPass = (process.env.SMTP_PASS || '').trim();
+  const isGmail = smtpHost.toLowerCase().includes('gmail.com');
+  // Google displays 16-char App Passwords with spaces ("xxxx xxxx xxxx xxxx"); strip spaces cleanly
+  const smtpPass = isGmail ? rawPass.replace(/\s+/g, '') : rawPass;
   const smtpFrom = (process.env.SMTP_FROM || `FarmBridge <${smtpUser}>`).trim();
-  const companySmtpConfigured = Boolean(smtpUser && smtpPass);
+
+  return {
+    smtpHost,
+    smtpPort,
+    smtpSecure,
+    smtpUser,
+    smtpPass,
+    smtpFrom,
+    isGmail
+  };
+}
+
+function createSmtpTransporter() {
+  const settings = getSmtpSettings();
+
+  const transportConfig: Record<string, any> = settings.isGmail
+    ? {
+        service: 'gmail',
+        host: settings.smtpHost,
+        port: settings.smtpPort,
+        secure: settings.smtpSecure,
+        requireTLS: !settings.smtpSecure,
+        auth: {
+          user: settings.smtpUser,
+          pass: settings.smtpPass
+        },
+        tls: {
+          minVersion: 'TLSv1.2'
+        }
+      }
+    : {
+        host: settings.smtpHost,
+        port: settings.smtpPort,
+        secure: settings.smtpSecure,
+        requireTLS: !settings.smtpSecure,
+        auth: {
+          user: settings.smtpUser,
+          pass: settings.smtpPass
+        }
+      };
+
+  return {
+    transporter: nodemailer.createTransport(transportConfig),
+    ...settings
+  };
+}
+
+export function getVerificationEmailConfigStatus() {
+  const settings = getSmtpSettings();
+  const companySmtpConfigured = Boolean(settings.smtpUser && settings.smtpPass);
   const firebaseAdminConfigured = Boolean(getFirebaseAdminApp());
 
   return {
     companySmtpConfigured,
     firebaseAdminConfigured,
     ready: companySmtpConfigured && firebaseAdminConfigured,
-    senderEmail: smtpUser,
-    senderFrom: smtpFrom
+    senderEmail: settings.smtpUser,
+    senderFrom: settings.smtpFrom,
+    smtpHost: settings.smtpHost,
+    smtpPort: settings.smtpPort
   };
+}
+
+export async function verifySmtpCredentials(): Promise<{
+  ok: boolean;
+  configured: boolean;
+  verified: boolean;
+  senderEmail: string;
+  host: string;
+  port: number;
+  firebaseAdminConfigured: boolean;
+  message: string;
+}> {
+  const { transporter, smtpUser, smtpPass, smtpHost, smtpPort } = createSmtpTransporter();
+  const firebaseAdminConfigured = Boolean(getFirebaseAdminApp());
+
+  if (!smtpUser || !smtpPass) {
+    return {
+      ok: false,
+      configured: false,
+      verified: false,
+      senderEmail: smtpUser || DEFAULT_COMPANY_EMAIL,
+      host: smtpHost,
+      port: smtpPort,
+      firebaseAdminConfigured,
+      message:
+        'SMTP_PASS is not set in environment variables. Configure a 16-character Google App Password for farmbridge2026@gmail.com in Secrets or .env.'
+    };
+  }
+
+  try {
+    await transporter.verify();
+    return {
+      ok: true,
+      configured: true,
+      verified: true,
+      senderEmail: smtpUser,
+      host: smtpHost,
+      port: smtpPort,
+      firebaseAdminConfigured,
+      message: `SMTP credentials verified successfully for ${smtpUser} via ${smtpHost}:${smtpPort}.`
+    };
+  } catch (err: any) {
+    const rawMsg = err?.message || String(err);
+    const isAuthFailure =
+      rawMsg.includes('535') ||
+      rawMsg.toLowerCase().includes('username and password not accepted') ||
+      rawMsg.toLowerCase().includes('invalid login');
+    return {
+      ok: false,
+      configured: true,
+      verified: false,
+      senderEmail: smtpUser,
+      host: smtpHost,
+      port: smtpPort,
+      firebaseAdminConfigured,
+      message: isAuthFailure
+        ? `Gmail rejected SMTP authentication for ${smtpUser}. Ensure 2-Step Verification is enabled and SMTP_PASS is a 16-character Google App Password.`
+        : `SMTP verification failed: ${rawMsg}`
+    };
+  }
 }
 
 export async function sendCompanyVerificationEmail(params: {
@@ -105,6 +226,7 @@ export async function sendCompanyVerificationEmail(params: {
   sent: boolean;
   fallbackToFirebaseDefault: boolean;
   senderEmail: string;
+  messageId?: string;
   reason?: string;
 }> {
   const status = getVerificationEmailConfigStatus();
@@ -161,28 +283,15 @@ export async function sendCompanyVerificationEmail(params: {
       );
     }
 
-    const smtpHost = (process.env.SMTP_HOST || 'smtp.gmail.com').trim();
-    const smtpPort = Number(process.env.SMTP_PORT || 465);
-    const smtpSecure = process.env.SMTP_SECURE !== 'false' && smtpPort === 465;
-    const smtpUser = status.senderEmail;
-    const smtpPass = (process.env.SMTP_PASS || '').trim();
-
-    const transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpSecure,
-      auth: {
-        user: smtpUser,
-        pass: smtpPass
-      }
-    });
+    const { transporter, smtpUser, smtpFrom } = createSmtpTransporter();
+    await transporter.verify();
 
     const displayName = decoded.name || 'FarmBridge Member';
     const safeName = escapeHtml(displayName);
     const safeUrl = escapeHtml(verificationLink);
 
-    await transporter.sendMail({
-      from: status.senderFrom,
+    const mailInfo = await transporter.sendMail({
+      from: smtpFrom,
       replyTo: smtpUser,
       to: recipientEmail,
       subject: 'Verify your FarmBridge account email address',
@@ -240,7 +349,8 @@ export async function sendCompanyVerificationEmail(params: {
     return {
       sent: true,
       fallbackToFirebaseDefault: false,
-      senderEmail: smtpUser
+      senderEmail: smtpUser,
+      messageId: mailInfo?.messageId
     };
   } catch (err: any) {
     console.warn('Company SMTP email verification fallback triggered:', err?.message || err);

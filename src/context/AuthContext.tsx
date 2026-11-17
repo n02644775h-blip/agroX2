@@ -39,6 +39,7 @@ import {
   markFirebaseNotificationRead,
   markAllFirebaseNotificationsRead
 } from '../services/firebaseNotifications';
+import { pushNotificationService } from '../services/pushNotificationService';
 import { User, UserRole, Notification, isSellerRole } from '../types';
 import { api } from '../services/api';
 
@@ -296,12 +297,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (fbUser) {
-          authoritativeEmailVerified = Boolean(fbUser.emailVerified);
-          if (authoritativeEmailVerified && (fsData.status === 'pending_verification' || fsData.emailVerified !== true)) {
+          const isCompanyOrFirestoreVerified =
+            fsData.emailVerified === true &&
+            fsData.status === 'active' &&
+            (fsData.emailVerifiedVia === 'company_smtp' || fsData.emailVerifiedVia === 'firebase');
+          authoritativeEmailVerified = Boolean(fbUser.emailVerified) || isCompanyOrFirestoreVerified;
+          if (fbUser.emailVerified && (fsData.status === 'pending_verification' || fsData.emailVerified !== true)) {
             await fbUser.getIdToken(true).catch(() => {});
             await updateDoc(userDocRef, {
               status: 'active',
               emailVerified: true,
+              emailVerifiedVia: 'firebase',
               updatedAt: serverTimestamp()
             }).catch(() => {});
             userStatus = 'active';
@@ -613,7 +619,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const incomingName = fsData.fullName || fsData.name;
         const incomingPhone = fsData.phone !== undefined ? fsData.phone : undefined;
         const fbNow = auth.currentUser;
-        const canBeActive = fbNow ? Boolean(fbNow.emailVerified) : fsData.status !== 'pending_verification';
+        const isFsVerified =
+          fsData.emailVerified === true &&
+          fsData.status === 'active' &&
+          (fsData.emailVerifiedVia === 'company_smtp' || fsData.emailVerifiedVia === 'firebase');
+        const canBeActive = fbNow
+          ? Boolean(fbNow.emailVerified) || isFsVerified
+          : fsData.status !== 'pending_verification';
         const resolvedStatus: User['status'] = canBeActive ? (fsData.status || 'active') : 'pending_verification';
         setUser(prev => {
           if (!prev || prev.id !== user.id) return prev;
@@ -691,11 +703,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user?.id, user?.email]);
 
-  // Real-time synchronization of user notifications (order updates, POP reviews, broadcasts)
+  // Real-time synchronization of user notifications (order updates, POP reviews, broadcasts) & push alerts
   useEffect(() => {
     if (!user?.id) return;
 
+    pushNotificationService.initializeForUser(user.id, false).catch(() => {});
+
     const unsubNotifs = subscribeToFirebaseNotifications(user.id, (fbNotifs) => {
+      fbNotifs.forEach((n) => {
+        if (!n.read) {
+          pushNotificationService.presentRealtimeOrderNotification(n);
+        }
+      });
       setNotifications(prev => {
         const map = new Map<string, Notification>();
         prev.forEach(n => map.set(n.id, n));
@@ -728,19 +747,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { sent: false, errorMessage: msg };
     }
     setLastVerificationError(null);
-    const continueUrl =
+    const appOrigin =
       typeof window !== 'undefined' && window.location?.origin
-        ? `${window.location.origin}/#verified`
+        ? window.location.origin
         : undefined;
+    const continueUrl = appOrigin ? `${appOrigin}/#verified` : undefined;
+
+    let smtpFailureReason: string | undefined;
 
     try {
       const idToken = await fbTarget.getIdToken().catch(() => '');
       if (idToken) {
         const relayRes = await api
-          .sendCompanyVerificationEmail({ idToken, continueUrl })
-          .catch(() => null);
+          .sendCompanyVerificationEmail({ idToken, appOrigin, continueUrl })
+          .catch((err: any) => ({
+            sent: false,
+            fallbackToFirebaseDefault: true,
+            reason: err?.message
+          }));
         if (relayRes?.sent) {
           return { sent: true };
+        }
+        if (relayRes?.reason) {
+          smtpFailureReason = relayRes.reason;
         }
       }
 
@@ -765,33 +794,99 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await sendEmailVerification(fbTarget);
       return { sent: true };
     } catch (err: any) {
-      const friendly = getFriendlyAuthErrorMessage(err);
-      console.error('sendVerificationEmail error:', err);
-      setLastVerificationError(friendly);
-      return { sent: false, errorMessage: friendly };
+      const firebaseMsg = getFriendlyAuthErrorMessage(err);
+      const combined = smtpFailureReason
+        ? `${smtpFailureReason} (Backup email failed: ${firebaseMsg})`
+        : firebaseMsg;
+      console.error('sendVerificationEmail error:', err, smtpFailureReason || '');
+      setLastVerificationError(combined);
+      return { sent: false, errorMessage: combined };
     }
   };
 
-  // Reload Firebase Auth user & verify whether email link was confirmed
+  // Reload Firebase Auth user & verify whether Firebase OR Company SMTP email link was confirmed
   const checkEmailVerification = async (): Promise<{ verified: boolean; user?: User }> => {
     const fbTarget = auth.currentUser;
+    let urlToken = '';
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        urlToken = (params.get('companyVerifyToken') || params.get('verifyEmailToken') || '').trim();
+      }
+    } catch {}
+
+    let tokenConfirmation: { verified: boolean; uid?: string; email?: string } | null = null;
+    if (urlToken) {
+      tokenConfirmation = await api.confirmCompanyEmailToken(urlToken).catch(() => null);
+      if (typeof window !== 'undefined') {
+        try {
+          const cleanUrl = `${window.location.pathname}${window.location.hash === '#verified' ? '' : window.location.hash}`;
+          window.history.replaceState(window.history.state, '', cleanUrl || '/');
+        } catch {}
+      }
+    }
+
     if (!fbTarget) {
+      if (tokenConfirmation?.verified && tokenConfirmation.uid) {
+        await setDoc(
+          doc(db, 'users', tokenConfirmation.uid),
+          sanitizeForFirestore({
+            status: 'active',
+            emailVerified: true,
+            emailVerifiedVia: 'company_smtp',
+            ...(tokenConfirmation.email ? { email: tokenConfirmation.email } : {}),
+            updatedAt: serverTimestamp()
+          }),
+          { merge: true }
+        ).catch(() => {});
+        const synced = await syncUserProfile(null, tokenConfirmation.uid);
+        return { verified: true, user: synced || undefined };
+      }
       if (user && user.emailVerified !== false && user.status !== 'pending_verification') {
         return { verified: true, user };
       }
       return { verified: false };
     }
+
     try {
-      await reload(fbTarget);
-      if (!fbTarget.emailVerified) {
+      await reload(fbTarget).catch(() => {});
+      let isNowVerified = Boolean(fbTarget.emailVerified);
+      let verifiedVia: 'firebase' | 'company_smtp' = 'firebase';
+      let confirmedEmail = fbTarget.email || undefined;
+
+      if (!isNowVerified && tokenConfirmation?.verified && (!tokenConfirmation.uid || tokenConfirmation.uid === fbTarget.uid)) {
+        isNowVerified = true;
+        verifiedVia = 'company_smtp';
+        confirmedEmail = tokenConfirmation.email || confirmedEmail;
+      }
+
+      if (!isNowVerified) {
+        const idToken = await fbTarget.getIdToken().catch(() => '');
+        if (idToken) {
+          const statusRes = await api.getCompanyVerificationStatus(idToken).catch(() => null);
+          if (statusRes?.verified) {
+            isNowVerified = true;
+            verifiedVia = 'company_smtp';
+            confirmedEmail = statusRes.email || confirmedEmail;
+          }
+        }
+      }
+
+      if (!isNowVerified) {
         return { verified: false };
       }
-      await fbTarget.getIdToken(true).catch(() => {});
+
+      if (fbTarget.emailVerified) {
+        await fbTarget.getIdToken(true).catch(() => {});
+      }
+
       await setDoc(
         doc(db, 'users', fbTarget.uid),
         sanitizeForFirestore({
           status: 'active',
           emailVerified: true,
+          emailVerifiedVia: verifiedVia,
+          ...(confirmedEmail ? { email: confirmedEmail } : {}),
           updatedAt: serverTimestamp()
         }),
         { merge: true }
@@ -828,16 +923,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     try {
       await enforceNotSuspended(fbTarget.uid, cleanNewEmail);
-      const continueUrl =
+      const appOrigin =
         typeof window !== 'undefined' && window.location?.origin
-          ? `${window.location.origin}/#verified`
+          ? window.location.origin
           : undefined;
+      const continueUrl = appOrigin ? `${appOrigin}/#verified` : undefined;
 
       const idToken = await fbTarget.getIdToken().catch(() => '');
       const relayRes = idToken
         ? await api
             .sendCompanyVerificationEmail({
               idToken,
+              appOrigin,
               continueUrl,
               newEmail: cleanNewEmail
             })
@@ -1557,7 +1654,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isEmailVerified = !user
     ? false
     : currentUser
-      ? Boolean(currentUser.emailVerified)
+      ? Boolean(currentUser.emailVerified || (user.emailVerified === true && user.status === 'active'))
       : user.status !== 'pending_verification' && user.emailVerified !== false;
   const requiresEmailVerification = Boolean(user && !isEmailVerified);
 

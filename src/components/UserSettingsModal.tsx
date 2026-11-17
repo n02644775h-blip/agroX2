@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { isSellerRole } from '../types';
 import { DeleteAccountModal } from './DeleteAccountModal';
 import { ContactSupportModal } from './ContactSupportModal';
+import { pushNotificationService } from '../services/pushNotificationService';
 import { LiquidGlassModal, LiquidGlassButton } from './glass';
 import {
   User as UserIcon,
@@ -16,7 +17,9 @@ import {
   Lock,
   ChevronDown,
   ChevronUp,
-  Headphones
+  Headphones,
+  Bell,
+  BellOff
 } from 'lucide-react';
 
 interface UserSettingsModalProps {
@@ -58,6 +61,11 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState<boolean>(() => pushNotificationService.isUserPushEnabled());
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    pushNotificationService.getPermissionStatus()
+  );
+  const [togglingPush, setTogglingPush] = useState(false);
 
   useEffect(() => {
     if (user && isOpen) {
@@ -69,8 +77,35 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
       setIsEditExpanded(false);
       setSavedMsg('');
       setErrorMsg('');
+      setPushEnabled(pushNotificationService.isUserPushEnabled());
+      setPushPermission(pushNotificationService.getPermissionStatus());
     }
   }, [user, isOpen]);
+
+  const handleTogglePushAlerts = async () => {
+    if (!user) return;
+    setTogglingPush(true);
+    setErrorMsg('');
+    try {
+      if (pushEnabled && pushPermission === 'granted') {
+        await pushNotificationService.disableForUser(user.id);
+        setPushEnabled(false);
+        setSavedMsg('Order push alerts paused for this device.');
+      } else {
+        pushNotificationService.setUserPushEnabled(true);
+        const state = await pushNotificationService.initializeForUser(user.id, true);
+        setPushPermission(state.permission);
+        setPushEnabled(state.enabled || state.permission === 'granted');
+        if (state.permission === 'denied') {
+          setErrorMsg('Browser notifications are blocked in site settings. Enable permission in your browser bar to receive desktop alerts.');
+        } else {
+          setSavedMsg('Order push alerts enabled for new orders & status updates!');
+        }
+      }
+    } finally {
+      setTogglingPush(false);
+    }
+  };
 
   if (!user) return null;
 
@@ -345,6 +380,44 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({
                 </div>
               </form>
             )}
+          </div>
+
+          {/* Push Notifications Preference */}
+          <div className="p-4 rounded-2xl bg-white/80 border border-[#062B1F]/10 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-extrabold text-[#062B1F] flex items-center gap-1.5">
+                {pushEnabled && pushPermission !== 'denied' ? (
+                  <Bell className="w-3.5 h-3.5 text-[#145A38]" />
+                ) : (
+                  <BellOff className="w-3.5 h-3.5 text-amber-600" />
+                )}
+                <span>Order Push Alerts</span>
+              </div>
+              <p className="text-[11px] text-[#0B3D2B]/75 mt-0.5 leading-snug">
+                {pushPermission === 'denied'
+                  ? 'Blocked in browser settings. In-app alerts still appear.'
+                  : pushEnabled && pushPermission === 'granted'
+                    ? 'Active: instant alerts for new orders & delivery status changes.'
+                    : 'Get instant alerts for new orders and status updates.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              id="user-settings-toggle-push-btn"
+              disabled={togglingPush}
+              onClick={handleTogglePushAlerts}
+              className={`px-3 py-2 rounded-xl font-bold text-[11px] transition-colors shrink-0 cursor-pointer disabled:opacity-50 ${
+                pushEnabled && pushPermission === 'granted'
+                  ? 'bg-[#DFF4E4] text-[#145A38] border border-[#145A38]/25 hover:bg-rose-50 hover:text-rose-700'
+                  : 'bg-[#062B1F] text-[#A8E635] hover:bg-[#0B3D2B]'
+              }`}
+            >
+              {togglingPush
+                ? 'Updating...'
+                : pushEnabled && pushPermission === 'granted'
+                  ? 'Enabled'
+                  : 'Enable Alerts'}
+            </button>
           </div>
 
           {/* Account Management / Danger Zone (Buyers & Farmers/Suppliers) */}

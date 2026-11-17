@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { AppNotification } from '../types';
+import { pushNotificationService } from '../services/pushNotificationService';
 import { LiquidGlassModal } from './glass';
 import {
   Bell,
@@ -12,7 +13,8 @@ import {
   CheckCheck,
   Clock,
   Megaphone,
-  Sparkles
+  Sparkles,
+  BellRing
 } from 'lucide-react';
 
 interface NotificationsModalProps {
@@ -24,7 +26,23 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   onClose,
   onSelectNotification
 }) => {
-  const { notifications, markNotificationAsRead, markAllNotificationsAsRead } = useAuth();
+  const { user, notifications, markNotificationAsRead, markAllNotificationsAsRead } = useAuth();
+  const [pushPerm, setPushPerm] = useState<NotificationPermission | 'unsupported'>(() =>
+    pushNotificationService.getPermissionStatus()
+  );
+  const [enablingPush, setEnablingPush] = useState(false);
+
+  const handleEnablePush = async () => {
+    if (!user?.id) return;
+    setEnablingPush(true);
+    try {
+      pushNotificationService.setUserPushEnabled(true);
+      const res = await pushNotificationService.initializeForUser(user.id, true);
+      setPushPerm(res.permission);
+    } finally {
+      setEnablingPush(false);
+    }
+  };
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -85,6 +103,23 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             </button>
           </div>
         </div>
+
+        {pushPerm === 'default' && user?.id && (
+          <div className="px-4 py-2.5 bg-[#DFF4E4]/85 border-b border-[#145A38]/15 flex items-center justify-between gap-2 text-xs shrink-0">
+            <div className="flex items-center gap-2 text-[#062B1F] font-semibold">
+              <BellRing className="w-4 h-4 text-[#145A38] shrink-0" />
+              <span>Turn on push alerts for instant order &amp; delivery updates</span>
+            </div>
+            <button
+              type="button"
+              disabled={enablingPush}
+              onClick={handleEnablePush}
+              className="px-3 py-1.5 rounded-xl bg-[#062B1F] text-[#A8E635] font-bold text-[11px] shrink-0 cursor-pointer hover:bg-[#0B3D2B] disabled:opacity-50"
+            >
+              {enablingPush ? 'Enabling...' : 'Enable'}
+            </button>
+          </div>
+        )}
 
         {/* List */}
         <div className="overflow-y-auto divide-y divide-[#062B1F]/10 p-3 flex-1 space-y-1.5">
